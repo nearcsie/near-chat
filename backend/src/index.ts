@@ -2,9 +2,9 @@ import express from "express";
 import http from "http";
 import cors from "cors";
 import { Server } from "socket.io";
-import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import pool from "./db";
 
 const app = express();
 const server = http.createServer(app);
@@ -14,7 +14,6 @@ const io = new Server(server, {
   },
 });
 
-const prisma = new PrismaClient();
 const PORT = process.env.PORT || 4000;
 const JWT_SECRET = process.env.JWT_SECRET || "dev_secret_key";
 
@@ -26,22 +25,19 @@ app.use(express.json());
 app.post("/auth/register", async (req, res) => {
   const { username, password } = req.body;
   try {
-    const existing = await prisma.user.findUnique({ where: { username } });
-    if (existing) {
+    const existing = await pool.query("SELECT * FROM users WHERE username = $1", [username]);
+    if (existing.rows.length > 0) {
       return res.status(400).json({ error: "Username already exists" });
     }
     const hashedPassword = await bcrypt.hash(password, 10);
-    const user = await prisma.user.create({
-      data: { username, password: hashedPassword },
-    });
-    // Create default room if doesn't exist just to test
-    const defaultRoom = await prisma.room.findFirst({ where: { name: "General" } });
-    if (!defaultRoom) {
-      await prisma.room.create({ data: { name: "General" } });
-    }
+    const result = await pool.query(
+      "INSERT INTO users (username, password) VALUES ($1, $2) RETURNING id, username",
+      [username, hashedPassword]
+    );
+    const user = result.rows[0];
 
     const token = jwt.sign({ userId: user.id, username: user.username }, JWT_SECRET);
-    res.json({ token, user: { id: user.id, username: user.username } });
+    res.json({ token, user });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Register failed" });
@@ -51,7 +47,8 @@ app.post("/auth/register", async (req, res) => {
 app.post("/auth/login", async (req, res) => {
   const { username, password } = req.body;
   try {
-    const user = await prisma.user.findUnique({ where: { username } });
+    const result = await pool.query("SELECT * FROM users WHERE username = $1", [username]);
+    const user = result.rows[0];
     if (!user) {
       return res.status(400).json({ error: "Invalid credentials" });
     }
@@ -68,28 +65,39 @@ app.post("/auth/login", async (req, res) => {
 });
 
 app.get("/rooms", async (req, res) => {
-  const rooms = await prisma.room.findMany();
-  res.json(rooms);
+  try {
+    const result = await pool.query("SELECT * FROM rooms");
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: "Failed to fetch rooms" });
+  }
 });
 
 app.post("/rooms", async (req, res) => {
   const { name } = req.body;
   try {
-    const room = await prisma.room.create({ data: { name } });
-    res.json(room);
+    const result = await pool.query("INSERT INTO rooms (name) VALUES ($1) RETURNING *", [name]);
+    res.json(result.rows[0]);
   } catch (error) {
     res.status(400).json({ error: "Room creation failed" });
   }
 });
 
 app.get("/rooms/:id/messages", async (req, res) => {
-  const roomId = parseInt(req.params.id);
-  const messages = await prisma.message.findMany({
-    where: { roomId },
-    include: { user: { select: { username: true } } },
-    orderBy: { createdAt: "asc" },
-  });
-  res.json(messages);
+  const roomId = req.params.id;
+  try {
+    const result = await pool.query(
+      `SELECT m.*, u.username 
+       FROM messages m 
+       JOIN users u ON m.userId = u.id 
+       WHERE m.roomId = $1 
+       ORDER BY m.createdAt ASC`,
+      [roomId]
+    );
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: "Failed to fetch messages" });
+  }
 });
 
 // --- Socket.IO WebSockets ---
@@ -116,16 +124,13 @@ io.on("connection", (socket) => {
   socket.on("send_message", async (data) => {
     const { roomId, content } = data;
     try {
-      const message = await prisma.message.create({
-        data: {
-          content,
-          roomId: Number(roomId),
-          userId: s.user.userId,
-        },
-        include: {
-          user: { select: { username: true } },
-        },
-      });
+      const result = await pool.query(
+        "INSERT INTO messages (content, roomId, userId) VALUES ($1, $2, $3) RETURNING *",
+        [content, roomId, s.user.userId]
+      );
+      const message = result.rows[0];
+      // Add username for frontend
+      message.username = s.user.username;
 
       io.to(`room_${roomId}`).emit("new_message", message);
     } catch (err) {

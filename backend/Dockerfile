@@ -7,9 +7,9 @@ WORKDIR /app
 
 COPY package.json pnpm-lock.yaml ./
 
-RUN pnpm install
+RUN pnpm install --no-frozen-lockfile --ignore-scripts
 
-# COPY ..
+COPY . .
 
 EXPOSE 4000
 
