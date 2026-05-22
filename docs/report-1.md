@@ -1,4 +1,4 @@
-# 附錄 -- Project Report 1
+# Project Report 1
 
 ## 專題名稱
 即時文字通訊系統

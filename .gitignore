@@ -36,3 +36,4 @@ yarn-error.log*
 *.swp
 *.swo
 *~
+.antigravitycli
