@@ -449,6 +449,13 @@ export default function MainPage() {
     setIsCreateFolderOpen(false);
   };
 
+  // Categorize Active Room
+  const handleCategorizeRoom = (folderId: string | null) => {
+    setRooms(
+      rooms.map((r) => (r.id === activeRoom.id ? { ...r, folderId: folderId } : r))
+    );
+  };
+
   // Modify local nickname in active room
   const handleModifyNickname = () => {
     const currentNick = activeRoomNicknames[activeRoom.id] || "我";
@@ -882,6 +889,16 @@ export default function MainPage() {
               }
               items={[
                 { label: "修改暱稱", onClick: handleModifyNickname },
+                {
+                  label: "分類…",
+                  subMenuItems: [
+                    { label: "無分類", onClick: () => handleCategorizeRoom(null) },
+                    ...folders.map((f) => ({
+                      label: f.name,
+                      onClick: () => handleCategorizeRoom(f.id),
+                    })),
+                  ],
+                },
                 {
                   label: activeRoom.type === "group" ? "退出聊天室" : activeRoom.isArchived ? "解除封鎖" : "封鎖聯絡人",
                   onClick: handleLeaveOrBlock,
