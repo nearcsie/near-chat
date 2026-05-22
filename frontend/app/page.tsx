@@ -45,7 +45,24 @@ interface Message {
     content: string;
   } | null;
   attachments?: { filename: string; filetype: string }[];
+  isRead?: boolean;
 }
+
+// --- Helper to map user display names to mock avatars ---
+export const getAvatarForUser = (username: string, currentUserAvatar?: string, currentUsername?: string) => {
+  if (username === "我" || (currentUsername && username === currentUsername)) {
+    return currentUserAvatar || "";
+  }
+  const avatarMap: Record<string, string> = {
+    "陳小明": "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&h=100&fit=crop",
+    "吳同學": "https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?w=100&h=100&fit=crop",
+    "鄭朋友": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&h=100&fit=crop",
+    "李大大": "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100&h=100&fit=crop",
+    "多點鹽不健康餐盒": "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=100&h=100&fit=crop",
+    "王同學": "https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?w=100&h=100&fit=crop"
+  };
+  return avatarMap[username] || "";
+};
 
 export default function MainPage() {
   const router = useRouter();
@@ -96,14 +113,37 @@ export default function MainPage() {
   const [messages, setMessages] = useState<Message[]>([
     // Room 1 (陳小明)
     { id: "m1-1", roomId: "1", senderName: "陳小明", content: "哈囉，你今天會來開會嗎？", timestamp: "10:15 AM" },
-    { id: "m1-2", roomId: "1", senderName: "我", content: "會的，我大概下午兩點到。", timestamp: "10:16 AM", isOutgoing: true },
+    { id: "m1-2", roomId: "1", senderName: "我", content: "會的，我大概下午兩點到。", timestamp: "10:16 AM", isOutgoing: true, isRead: true },
     { id: "m1-3", roomId: "1", senderName: "陳小明", content: "OK，那我們兩點見！", timestamp: "10:18 AM" },
 
     // Room 2 (師大資工117)
     { id: "m2-1", roomId: "2", senderName: "鄭朋友", content: "這學期的資料庫專題報告要開始分組囉", timestamp: "Yesterday 3:40 PM" },
     { id: "m2-2", roomId: "2", senderName: "吳同學", content: "我們這組已經有三個人了，還缺一個", timestamp: "Yesterday 4:00 PM" },
     { id: "m2-3", roomId: "2", senderName: "我", content: "那我加入你們組好了！", timestamp: "Yesterday 4:10 PM", isOutgoing: true },
+
+    // Room 3 (李大大)
+    { id: "m3-1", roomId: "3", senderName: "李大大", content: "作業寫完了嗎？", timestamp: "Monday 1:15 PM" },
+    { id: "m3-2", roomId: "3", senderName: "我", content: "寫完了，等下傳給你參考。", timestamp: "Monday 1:20 PM", isOutgoing: true, isRead: true },
+
+    // Room 4 (資料庫報告第九組)
+    { id: "m4-1", roomId: "4", senderName: "我", content: "我們來討論一下資料庫期末報告的題目吧", timestamp: "Tuesday 2:00 PM", isOutgoing: true },
+    { id: "m4-2", roomId: "4", senderName: "王同學", content: "好啊，你有什麼想法嗎？", timestamp: "Tuesday 2:05 PM" },
+
+    // Room 5 (多點鹽不健康餐盒)
+    { id: "m5-1", roomId: "5", senderName: "多點鹽不健康餐盒", content: "您好！今天有限定餐盒：蒜香舒肥雞胸，歡迎訂購！", timestamp: "11:00 AM" },
   ]);
+
+  // --- Watermark Group Read States ---
+  // Tracks the last read message ID for each group member in each group room
+  const [groupReadStates, setGroupReadStates] = useState<Record<string, Record<string, string>>>({
+    "2": {
+      "吳同學": "m2-3",
+      "鄭朋友": "m2-3",
+    },
+    "4": {
+      "王同學": "m4-2",
+    },
+  });
 
   // --- Active Chat Room State ---
   const [activeRoomId, setActiveRoomId] = useState<string>("1");
@@ -139,6 +179,105 @@ export default function MainPage() {
 
   // Ref for auto scroll messages
   const messageEndRef = useRef<HTMLDivElement>(null);
+
+  // Helper to determine who read this message in the group (Messenger style)
+  const getReadAvatarsForMessage = (msg: Message): string[] => {
+    if (activeRoom.type !== "group") return [];
+    
+    const roomReads = groupReadStates[activeRoom.id];
+    if (!roomReads) return [];
+    
+    const avatars: string[] = [];
+    Object.entries(roomReads).forEach(([memberName, lastReadId]) => {
+      // Messenger shows other group members who read this message.
+      if (memberName === "我" || memberName === user.username) return;
+      // Don't show the member's avatar on their own message.
+      if (memberName === msg.senderName) return;
+      
+      if (lastReadId === msg.id) {
+        const avatarUrl = getAvatarForUser(memberName, user.avatar, user.username);
+        avatars.push(avatarUrl);
+      }
+    });
+    return avatars;
+  };
+
+  // Simulate read status update and automatic incoming replies (simulation only)
+  const triggerReadAndReplySimulation = (newMsg: Message) => {
+    const roomId = newMsg.roomId;
+    const room = rooms.find((r) => r.id === roomId);
+    if (!room) return;
+
+    if (room.type === "msg") {
+      // 1. Simulate recipient reading the DM message after 1.5s
+      setTimeout(() => {
+        setMessages((prevMessages) =>
+          prevMessages.map((m) => (m.id === newMsg.id ? { ...m, isRead: true } : m))
+        );
+      }, 1500);
+
+      // 2. Simulate recipient replying after 3.0s
+      setTimeout(() => {
+        const recipientName = room.name;
+        const replyMsg: Message = {
+          id: `m-reply-${Date.now()}`,
+          roomId: roomId,
+          senderName: recipientName,
+          content: `好的，我已經收到您的訊息了！「${newMsg.content.substring(0, 15)}${newMsg.content.length > 15 ? "..." : ""}」`,
+          timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        };
+        setMessages((prevMessages) => [...prevMessages, replyMsg]);
+      }, 3000);
+    } else {
+      // Group room
+      const members = room.members || [];
+      const nonSelfMembers = members.filter((m) => m.name !== "我" && m.name !== user.username);
+      
+      if (nonSelfMembers.length > 0) {
+        // 1. Simulate group members reading the message one-by-one with staggered timers
+        nonSelfMembers.forEach((member, index) => {
+          const delay = (index + 1) * 1200; // e.g. 1.2s, 2.4s...
+          setTimeout(() => {
+            setGroupReadStates((prev) => {
+              const roomReads = prev[roomId] || {};
+              return {
+                ...prev,
+                [roomId]: {
+                  ...roomReads,
+                  [member.name]: newMsg.id,
+                },
+              };
+            });
+          }, delay);
+        });
+
+        // 2. Simulate a group member replying after 4.0s
+        setTimeout(() => {
+          const replyingMember = nonSelfMembers[0].name; // choose first non-self member
+          const replyMsg: Message = {
+            id: `m-group-reply-${Date.now()}`,
+            roomId: roomId,
+            senderName: replyingMember,
+            content: `收到！大家加油～`,
+            timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+          };
+          setMessages((prevMessages) => [...prevMessages, replyMsg]);
+          
+          // Also immediately advance this member's watermark to this new message so they have read it!
+          setGroupReadStates((prev) => {
+            const roomReads = prev[roomId] || {};
+            return {
+              ...prev,
+              [roomId]: {
+                ...roomReads,
+                [replyingMember]: replyMsg.id,
+              },
+            };
+          });
+        }, 4000);
+      }
+    }
+  };
 
   // --- Mount Gate ---
   useEffect(() => {
@@ -219,9 +358,10 @@ export default function MainPage() {
         : null,
     };
 
-    setMessages([...messages, newMsg]);
+    setMessages((prev) => [...prev, newMsg]);
     setInputText("");
     setReplyTarget(null);
+    triggerReadAndReplySimulation(newMsg);
   };
 
   // Mock upload attachments
@@ -239,7 +379,8 @@ export default function MainPage() {
       attachments: [{ filename, filetype: filename.split(".").pop() || "unknown" }],
     };
 
-    setMessages([...messages, newMsg]);
+    setMessages((prev) => [...prev, newMsg]);
+    triggerReadAndReplySimulation(newMsg);
   };
 
   // Recall Message
@@ -493,6 +634,7 @@ export default function MainPage() {
                               room={room}
                               isActive={room.id === activeRoomId}
                               onClick={() => setActiveRoomId(room.id)}
+                              avatarSrc={getAvatarForUser(room.name, user.avatar, user.username)}
                             />
                           ))
                         )}
@@ -507,7 +649,7 @@ export default function MainPage() {
           {/* Root Chats Section */}
           <div className="py-2 flex flex-col gap-0.5">
             <span className="px-4 text-[10px] font-bold text-text-muted uppercase tracking-widest block mb-1">
-              所有對話
+              未分類
             </span>
             {rootRooms.map((room) => (
               <RoomItem
@@ -515,6 +657,7 @@ export default function MainPage() {
                 room={room}
                 isActive={room.id === activeRoomId}
                 onClick={() => setActiveRoomId(room.id)}
+                avatarSrc={getAvatarForUser(room.name, user.avatar, user.username)}
               />
             ))}
           </div>
@@ -564,7 +707,7 @@ export default function MainPage() {
         {/* Chat Panel Header */}
         <div className="h-14 border-b border-border-primary px-6 flex items-center justify-between select-none shrink-0 bg-surface-card z-10">
           <div className="flex items-center gap-3">
-            <Avatar name={activeRoom.name} size="sm" isOnline={activeRoom.isOnline} />
+            <Avatar name={activeRoom.name} src={getAvatarForUser(activeRoom.name, user.avatar, user.username)} size="sm" isOnline={activeRoom.isOnline} />
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-sm font-bold text-foreground truncate max-w-[200px]">
@@ -639,6 +782,10 @@ export default function MainPage() {
                   isRecalled={msg.isRecalled}
                   replyTo={msg.replyTo || undefined}
                   attachments={msg.attachments}
+                  senderAvatar={msg.isOutgoing ? user.avatar : getAvatarForUser(msg.senderName, user.avatar, user.username)}
+                  isRead={msg.isRead}
+                  readByAvatars={getReadAvatarsForMessage(msg)}
+                  roomType={activeRoom.type}
                 />
 
                 {/* Message Hover Actions */}
@@ -737,7 +884,7 @@ export default function MainPage() {
               return (
                 <div key={index} className="p-3.5 flex items-center justify-between hover:bg-surface-muted/50 transition-colors">
                   <div className="flex items-center gap-3 min-w-0">
-                    <Avatar name={member.name} size="sm" />
+                    <Avatar name={member.name} src={getAvatarForUser(member.name, user.avatar, user.username)} size="sm" />
                     <div className="min-w-0">
                       <p className="text-xs font-semibold text-foreground truncate">{displayNick}</p>
                       <p className="text-[9px] text-text-muted capitalize mt-0.5 font-mono">{member.role}</p>
@@ -813,7 +960,7 @@ export default function MainPage() {
               {groupSettingsMembers.map((member, idx) => (
                 <div key={idx} className="flex items-center justify-between p-2.5 text-xs">
                   <div className="flex items-center gap-2">
-                    <Avatar name={member.name} size="sm" />
+                    <Avatar name={member.name} src={getAvatarForUser(member.name, user.avatar, user.username)} size="sm" />
                     <span className="font-semibold">{member.name}</span>
                     <span className="text-[9px] text-text-muted capitalize font-mono">
                       ({member.role})
@@ -990,9 +1137,10 @@ interface RoomItemProps {
   room: ChatRoom;
   isActive: boolean;
   onClick: () => void;
+  avatarSrc?: string;
 }
 
-function RoomItem({ room, isActive, onClick }: RoomItemProps) {
+function RoomItem({ room, isActive, onClick, avatarSrc }: RoomItemProps) {
   return (
     <div
       onClick={onClick}
@@ -1006,7 +1154,7 @@ function RoomItem({ room, isActive, onClick }: RoomItemProps) {
       )}
 
       <div className="flex items-center gap-2.5 min-w-0">
-        <Avatar name={room.name} size="sm" isOnline={room.isOnline} />
+        <Avatar name={room.name} src={avatarSrc} size="sm" isOnline={room.isOnline} />
         <span className="text-xs text-foreground truncate max-w-[140px]">{room.name}</span>
       </div>
 
