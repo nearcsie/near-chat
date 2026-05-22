@@ -149,6 +149,22 @@ export default function MainPage() {
   const [activeRoomId, setActiveRoomId] = useState<string>("1");
   const activeRoom = rooms.find((r) => r.id === activeRoomId) || rooms[0];
 
+  // --- View States ---
+  const [activeView, setActiveView] = useState<"chat" | "personal-settings" | "group-settings">("chat");
+
+  // --- Personal Settings States (embedded) ---
+  const [personalUsername, setPersonalUsername] = useState("我");
+  const [personalEmail, setPersonalEmail] = useState("your@email.com");
+  const [personalAvatar, setPersonalAvatar] = useState("");
+  const [desktopNotifications, setDesktopNotifications] = useState(true);
+  const [messageSounds, setMessageSounds] = useState(true);
+  const [personalTheme, setPersonalTheme] = useState("light");
+  const [personalLanguage, setPersonalLanguage] = useState("zh-TW");
+  const [personalNewPassword, setPersonalNewPassword] = useState("");
+  const [personalConfirmPassword, setPersonalConfirmPassword] = useState("");
+  const [personalSuccessMsg, setPersonalSuccessMsg] = useState("");
+  const [personalErrorMsg, setPersonalErrorMsg] = useState("");
+
   // --- Interactive UI States ---
   const [inputText, setInputText] = useState("");
   const [replyTarget, setReplyTarget] = useState<Message | null>(null);
@@ -464,6 +480,103 @@ export default function MainPage() {
     }
   };
 
+  // Helper to change room and close settings
+  const selectRoom = (roomId: string) => {
+    setActiveRoomId(roomId);
+    setActiveView("chat");
+  };
+
+  // Open Personal Settings Helper
+  const openPersonalSettings = () => {
+    const savedUser = localStorage.getItem("user");
+    if (savedUser) {
+      try {
+        const u = JSON.parse(savedUser);
+        setPersonalUsername(u.username || "我");
+        setPersonalEmail(u.email || "your@email.com");
+        setPersonalAvatar(u.avatar || "");
+      } catch (e) {
+        console.error(e);
+      }
+    } else {
+      setPersonalUsername(user.username);
+      setPersonalEmail(user.email);
+      setPersonalAvatar(user.avatar);
+    }
+
+    const savedTheme = localStorage.getItem("theme") || "light";
+    setPersonalTheme(savedTheme);
+
+    const savedNotify = localStorage.getItem("notify-desktop");
+    setDesktopNotifications(savedNotify !== "false");
+
+    const savedSound = localStorage.getItem("notify-sound");
+    setMessageSounds(savedSound !== "false");
+
+    setPersonalNewPassword("");
+    setPersonalConfirmPassword("");
+    setPersonalSuccessMsg("");
+    setPersonalErrorMsg("");
+    setActiveView("personal-settings");
+  };
+
+  // Save Personal Settings Changes
+  const handleSavePersonalSettings = (e: React.FormEvent) => {
+    e.preventDefault();
+    setPersonalErrorMsg("");
+    setPersonalSuccessMsg("");
+
+    if (personalNewPassword && personalNewPassword.length < 8) {
+      setPersonalErrorMsg("新密碼長度至少需要 8 個字元");
+      return;
+    }
+
+    if (personalNewPassword !== personalConfirmPassword) {
+      setPersonalErrorMsg("密碼與確認密碼不相符");
+      return;
+    }
+
+    const updatedUser = {
+      username: personalUsername,
+      email: personalEmail,
+      avatar: personalAvatar,
+      bio: "隨意聊天的地方",
+    };
+    localStorage.setItem("user", JSON.stringify(updatedUser));
+    localStorage.setItem("theme", personalTheme);
+    localStorage.setItem("notify-desktop", String(desktopNotifications));
+    localStorage.setItem("notify-sound", String(messageSounds));
+
+    setUser(updatedUser);
+    setPersonalSuccessMsg("設定已成功儲存！");
+    setTimeout(() => {
+      setActiveView("chat");
+    }, 800);
+  };
+
+  // Theme Change Handler
+  const handlePersonalThemeChange = (newTheme: string) => {
+    setPersonalTheme(newTheme);
+    if (newTheme === "dark") {
+      document.documentElement.classList.add("dark");
+    } else {
+      document.documentElement.classList.remove("dark");
+    }
+  };
+
+  // Avatar Change Handler
+  const handlePersonalAvatarChange = () => {
+    const avatars = [
+      "",
+      "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&h=100&fit=crop",
+      "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&h=100&fit=crop",
+      "https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?w=100&h=100&fit=crop",
+    ];
+    const currentIndex = avatars.indexOf(personalAvatar);
+    const nextIndex = (currentIndex + 1) % avatars.length;
+    setPersonalAvatar(avatars[nextIndex]);
+  };
+
   // Group settings modal open helper
   const openGroupSettings = () => {
     setGroupSettingsName(activeRoom.name);
@@ -472,7 +585,7 @@ export default function MainPage() {
     setGroupSettingsInvite(!!activeRoom.allowInvite);
     setGroupSettingsUpload(!!activeRoom.allowUpload);
     setGroupSettingsMembers(activeRoom.members || []);
-    setIsGroupSettingsOpen(true);
+    setActiveView("group-settings");
   };
 
   // Save Group Settings Changes
@@ -493,14 +606,14 @@ export default function MainPage() {
           : r
       )
     );
-    setIsGroupSettingsOpen(false);
+    setActiveView("chat");
   };
 
   // Delete Group Chat Room (Danger zone)
   const handleDeleteGroupRoom = () => {
     if (confirm("警告！刪除群組聊天室將無法復原，所有訊息及成員資料都將被永久刪除。確認刪除嗎？")) {
       setRooms(rooms.filter((r) => r.id !== activeRoom.id));
-      setIsGroupSettingsOpen(false);
+      setActiveView("chat");
       const remaining = rooms.filter((r) => r.id !== activeRoom.id);
       if (remaining.length > 0) setActiveRoomId(remaining[0].id);
     }
@@ -633,7 +746,7 @@ export default function MainPage() {
                               key={room.id}
                               room={room}
                               isActive={room.id === activeRoomId}
-                              onClick={() => setActiveRoomId(room.id)}
+                              onClick={() => selectRoom(room.id)}
                               avatarSrc={getAvatarForUser(room.name, user.avatar, user.username)}
                             />
                           ))
@@ -656,7 +769,7 @@ export default function MainPage() {
                 key={room.id}
                 room={room}
                 isActive={room.id === activeRoomId}
-                onClick={() => setActiveRoomId(room.id)}
+                onClick={() => selectRoom(room.id)}
                 avatarSrc={getAvatarForUser(room.name, user.avatar, user.username)}
               />
             ))}
@@ -677,7 +790,7 @@ export default function MainPage() {
           <div className="flex items-center justify-between border-t border-border-secondary/40 pt-3">
             <Button
               variant="ghost"
-              onClick={() => router.push("/settings")}
+              onClick={openPersonalSettings}
               className="text-xs flex items-center gap-1.5 hover:underline"
             >
               <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
@@ -700,9 +813,11 @@ export default function MainPage() {
         </div>
       </div>
 
-      {/* ========================================================
-          MAIN CHAT PANEL
-         ======================================================== */}
+      {activeView === "chat" && (
+        <>
+          {/* ========================================================
+              MAIN CHAT PANEL
+             ======================================================== */}
       <div className="flex-1 flex flex-col bg-background h-full overflow-hidden">
         {/* Chat Panel Header */}
         <div className="h-14 border-b border-border-primary px-6 flex items-center justify-between select-none shrink-0 bg-surface-card z-10">
@@ -866,11 +981,329 @@ export default function MainPage() {
           )}
         </div>
       </div>
+        </>
+      )}
+
+      {/* ========================================================
+          EMBEDDED SETTINGS PANELS
+         ======================================================== */}
+      {activeView === "personal-settings" && (
+        <div className="flex-1 flex flex-col bg-background h-full overflow-hidden">
+          <div className="h-14 border-b border-border-primary px-6 flex items-center justify-between select-none shrink-0 bg-surface-card z-10">
+            <h1 className="text-sm font-bold text-foreground tracking-wider">個人設定</h1>
+            <div className="flex gap-2">
+              <Button type="button" variant="secondary" onClick={() => setActiveView("chat")} className="text-xs py-1 px-3">
+                返回聊天
+              </Button>
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-6 flex justify-center items-start">
+            <div className="w-full max-w-xl border border-border-primary rounded-sm bg-surface-card p-6 shadow-sm">
+              <form onSubmit={handleSavePersonalSettings} className="flex flex-col gap-6">
+                {/* Profile Section */}
+                <div className="flex flex-col gap-4">
+                  <h2 className="text-xs font-bold uppercase tracking-wider text-primary border-b border-border-secondary pb-1">
+                    個人資料
+                  </h2>
+                  <div className="flex items-center gap-6 py-2">
+                    <Avatar name={personalUsername} src={personalAvatar} size="lg" />
+                    <Button type="button" variant="secondary" onClick={handlePersonalAvatarChange}>
+                      變更頭像
+                    </Button>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <Input
+                      label="使用者名稱"
+                      type="text"
+                      value={personalUsername}
+                      onChange={(e) => setPersonalUsername(e.target.value)}
+                      required
+                    />
+                    <Input
+                      label="電子郵件"
+                      type="email"
+                      value={personalEmail}
+                      onChange={(e) => setPersonalEmail(e.target.value)}
+                      required
+                    />
+                  </div>
+                </div>
+
+                {/* Notifications Section */}
+                <div className="flex flex-col gap-3">
+                  <h2 className="text-xs font-bold uppercase tracking-wider text-primary border-b border-border-secondary pb-1">
+                    通知設定
+                  </h2>
+                  <div className="flex flex-col gap-3.5 mt-1">
+                    <Checkbox
+                      label="啟用桌面通知"
+                      checked={desktopNotifications}
+                      onChange={(e) => setDesktopNotifications(e.target.checked)}
+                    />
+                    <Checkbox
+                      label="啟用訊息音效"
+                      checked={messageSounds}
+                      onChange={(e) => setMessageSounds(e.target.checked)}
+                    />
+                  </div>
+                </div>
+
+                {/* Appearance Section */}
+                <div className="flex flex-col gap-4">
+                  <h2 className="text-xs font-bold uppercase tracking-wider text-primary border-b border-border-secondary pb-1">
+                    外觀
+                  </h2>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-xs font-bold uppercase tracking-wider text-text-muted mb-2.5 select-none">
+                      主題
+                    </label>
+                    <div className="flex gap-6">
+                      <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+                        <input
+                          type="radio"
+                          name="theme"
+                          value="light"
+                          checked={personalTheme === "light"}
+                          onChange={() => handlePersonalThemeChange("light")}
+                          className="accent-primary h-4.5 w-4.5"
+                        />
+                        <span>淺色</span>
+                      </label>
+                      <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+                        <input
+                          type="radio"
+                          name="theme"
+                          value="dark"
+                          checked={personalTheme === "dark"}
+                          onChange={() => handlePersonalThemeChange("dark")}
+                          className="accent-primary h-4.5 w-4.5"
+                        />
+                        <span>深色</span>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Language Section */}
+                <div className="flex flex-col gap-4">
+                  <h2 className="text-xs font-bold uppercase tracking-wider text-primary border-b border-border-secondary pb-1">
+                    語言
+                  </h2>
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-bold uppercase tracking-wider text-text-muted select-none">
+                      顯示語言
+                    </label>
+                    <select
+                      value={personalLanguage}
+                      onChange={(e) => setPersonalLanguage(e.target.value)}
+                      className="bg-surface-card border border-border-secondary hover:border-border-primary focus:border-primary focus:outline-none rounded-sm px-3 py-2.5 text-sm text-foreground transition-colors max-w-xs cursor-pointer"
+                    >
+                      <option value="zh-TW">繁體中文</option>
+                      <option value="en">English</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Security Section */}
+                <div className="flex flex-col gap-4">
+                  <h2 className="text-xs font-bold uppercase tracking-wider text-primary border-b border-border-secondary pb-1">
+                    安全性 (變更密碼)
+                  </h2>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <Input
+                      label="新密碼"
+                      type="password"
+                      placeholder="留空則不修改"
+                      value={personalNewPassword}
+                      onChange={(e) => setPersonalNewPassword(e.target.value)}
+                    />
+                    <Input
+                      label="確認新密碼"
+                      type="password"
+                      placeholder="再次輸入新密碼"
+                      value={personalConfirmPassword}
+                      onChange={(e) => setPersonalConfirmPassword(e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                {/* Feedback messages */}
+                {personalErrorMsg && (
+                  <p className="text-xs text-red-600 font-sans text-center mt-2">{personalErrorMsg}</p>
+                )}
+                {personalSuccessMsg && (
+                  <p className="text-xs text-green-600 font-sans font-bold text-center mt-2">
+                    {personalSuccessMsg}
+                  </p>
+                )}
+
+                {/* Submit Actions */}
+                <div className="border-t border-border-primary pt-6 mt-2 flex items-center justify-end gap-3">
+                  <Button type="button" variant="secondary" onClick={() => setActiveView("chat")}>
+                    取消
+                  </Button>
+                  <Button type="submit" variant="primary">
+                    儲存變更
+                  </Button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeView === "group-settings" && (
+        <div className="flex-1 flex flex-col bg-background h-full overflow-hidden">
+          {/* Header */}
+          <div className="h-14 border-b border-border-primary px-6 flex items-center justify-between select-none shrink-0 bg-surface-card z-10">
+            <h1 className="text-sm font-bold text-foreground tracking-wider">群組設定 - {groupSettingsName}</h1>
+            <div className="flex gap-2">
+              <Button type="button" variant="secondary" onClick={() => setActiveView("chat")} className="text-xs py-1 px-3">
+                取消
+              </Button>
+              <Button type="button" variant="primary" onClick={saveGroupSettings} className="text-xs py-1 px-3">
+                儲存變更
+              </Button>
+            </div>
+          </div>
+
+          {/* Centered Scrollable Content */}
+          <div className="flex-1 overflow-y-auto p-6 flex justify-center items-start">
+            <div className="w-full max-w-xl border border-border-primary rounded-sm bg-surface-card p-6 shadow-sm">
+              <form onSubmit={saveGroupSettings} className="flex flex-col gap-6">
+                {/* Section: Basic Info */}
+                <div className="flex flex-col gap-4">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-primary border-b border-border-secondary pb-1">
+                    基本資訊
+                  </h3>
+                  <Input
+                    label="聊天室名稱"
+                    value={groupSettingsName}
+                    onChange={(e) => setGroupSettingsName(e.target.value)}
+                    required
+                  />
+                  <div className="flex flex-col gap-1.5 w-full">
+                    <label className="text-xs font-bold uppercase tracking-wider text-text-muted select-none">
+                      描述
+                    </label>
+                    <textarea
+                      value={groupSettingsDesc}
+                      onChange={(e) => setGroupSettingsDesc(e.target.value)}
+                      className="w-full bg-surface-card border border-border-secondary hover:border-border-primary focus:border-primary focus:outline-none rounded-sm px-3 py-2 text-sm text-foreground transition-colors min-h-[60px]"
+                    />
+                  </div>
+                  <Checkbox
+                    label="公開聊天室"
+                    description="允許任何人加入此聊天室"
+                    checked={groupSettingsPublic}
+                    onChange={(e) => setGroupSettingsPublic(e.target.checked)}
+                  />
+                </div>
+
+                {/* Section: Member Management */}
+                <div className="flex flex-col gap-3">
+                  <div className="flex items-center justify-between border-b border-border-secondary pb-1">
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-primary">
+                      成員管理
+                    </h3>
+                    <Button type="button" variant="ghost" onClick={handleInviteMember} className="text-xs select-none">
+                      邀請成員
+                    </Button>
+                  </div>
+                  <span className="text-[10px] text-text-muted font-bold font-mono">
+                    共 {groupSettingsMembers.length} 位成員
+                  </span>
+                  <div className="flex flex-col border border-border-primary divide-y divide-border-secondary rounded-sm overflow-hidden bg-surface-card max-h-[160px] overflow-y-auto">
+                    {groupSettingsMembers.map((member, idx) => (
+                      <div key={idx} className="flex items-center justify-between p-2.5 text-xs">
+                        <div className="flex items-center gap-2">
+                          <Avatar name={member.name} src={getAvatarForUser(member.name, user.avatar, user.username)} size="sm" />
+                          <span className="font-semibold">{member.name}</span>
+                          <span className="text-[9px] text-text-muted capitalize font-mono">
+                            ({member.role})
+                          </span>
+                        </div>
+                        {member.name !== "我" && (
+                          <div className="flex gap-2">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              onClick={() => handleToggleMuteMember(member.name)}
+                              className={`text-[10px] font-sans ${member.isMuted ? "text-green-600" : "text-text-muted"}`}
+                            >
+                              {member.isMuted ? "解禁" : "禁言"}
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              onClick={() => handleKickMember(member.name)}
+                              className="text-[10px] text-red-600 font-sans"
+                            >
+                              踢出
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Section: Permissions */}
+                <div className="flex flex-col gap-4">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-primary border-b border-border-secondary pb-1">
+                    權限設定
+                  </h3>
+                  <div className="flex flex-col gap-3.5">
+                    <Checkbox
+                      label="允許成員邀請他人"
+                      description="成員可以邀請新成員加入聊天室"
+                      checked={groupSettingsInvite}
+                      onChange={(e) => setGroupSettingsInvite(e.target.checked)}
+                    />
+                    <Checkbox
+                      label="允許成員上傳檔案"
+                      description="成員可以在聊天室中上傳檔案"
+                      checked={groupSettingsUpload}
+                      onChange={(e) => setGroupSettingsUpload(e.target.checked)}
+                    />
+                  </div>
+                </div>
+
+                {/* Section: Danger Zone */}
+                <div className="flex flex-col gap-3 border border-red-500/20 p-4 bg-red-500/5 rounded-sm">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-red-600">
+                    危險區域
+                  </h3>
+                  <div className="flex flex-col items-start gap-2">
+                    <Button type="button" variant="secondary" onClick={handleDeleteGroupRoom} className="text-red-600 border-red-600 hover:bg-red-500/10">
+                      刪除聊天室
+                    </Button>
+                    <span className="text-[10px] text-red-600/70 leading-normal">
+                      刪除後將無法復原，所有訊息和成員資料都會被永久刪除。
+                    </span>
+                  </div>
+                </div>
+
+                {/* Footer Actions */}
+                <div className="border-t border-border-primary pt-5 mt-2 flex items-center justify-end gap-3">
+                  <Button type="button" variant="secondary" onClick={() => setActiveView("chat")}>
+                    取消
+                  </Button>
+                  <Button type="submit" variant="primary">
+                    儲存變更
+                  </Button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ========================================================
           RIGHT SIDEBAR (MEMBER LIST FOR GROUPS, 240px)
          ======================================================== */}
-      {activeRoom.type === "group" && activeRoom.members && (
+      {(activeView === "chat" || activeView === "group-settings") && activeRoom.type === "group" && activeRoom.members && (
         <div className="w-[240px] shrink-0 border-l border-border-primary bg-surface-card flex flex-col h-full select-none">
           <div className="h-14 border-b border-border-primary px-4 flex items-center select-none shrink-0 bg-surface-muted">
             <span className="text-[10px] font-bold text-text-muted uppercase tracking-widest block">
@@ -910,134 +1343,6 @@ export default function MainPage() {
       {/* ========================================================
           MODALS
          ======================================================== */}
-
-      {/* 1. Group Settings Modal */}
-      <Modal isOpen={isGroupSettingsOpen} onClose={() => setIsGroupSettingsOpen(false)} title="群組聊天室設定">
-        <form onSubmit={saveGroupSettings} className="flex flex-col gap-6">
-          {/* Section: Basic Info */}
-          <div className="flex flex-col gap-4">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-primary border-b border-border-secondary pb-1">
-              基本資訊
-            </h3>
-            <Input
-              label="聊天室名稱"
-              value={groupSettingsName}
-              onChange={(e) => setGroupSettingsName(e.target.value)}
-              required
-            />
-            <div className="flex flex-col gap-1.5 w-full">
-              <label className="text-xs font-bold uppercase tracking-wider text-text-muted select-none">
-                描述
-              </label>
-              <textarea
-                value={groupSettingsDesc}
-                onChange={(e) => setGroupSettingsDesc(e.target.value)}
-                className="w-full bg-surface-card border border-border-secondary hover:border-border-primary focus:border-primary focus:outline-none rounded-sm px-3 py-2 text-sm text-foreground transition-colors min-h-[60px]"
-              />
-            </div>
-            <Checkbox
-              label="公開聊天室"
-              description="允許任何人加入此聊天室"
-              checked={groupSettingsPublic}
-              onChange={(e) => setGroupSettingsPublic(e.target.checked)}
-            />
-          </div>
-
-          {/* Section: Member Management */}
-          <div className="flex flex-col gap-3">
-            <div className="flex items-center justify-between border-b border-border-secondary pb-1">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-primary">
-                成員管理
-              </h3>
-              <Button type="button" variant="ghost" onClick={handleInviteMember} className="text-xs select-none">
-                [[邀請成員]]
-              </Button>
-            </div>
-            <span className="text-[10px] text-text-muted font-bold font-mono">
-              共 {groupSettingsMembers.length} 位成員
-            </span>
-            <div className="flex flex-col border border-border-primary divide-y divide-border-secondary rounded-sm overflow-hidden bg-surface-card max-h-[160px] overflow-y-auto">
-              {groupSettingsMembers.map((member, idx) => (
-                <div key={idx} className="flex items-center justify-between p-2.5 text-xs">
-                  <div className="flex items-center gap-2">
-                    <Avatar name={member.name} src={getAvatarForUser(member.name, user.avatar, user.username)} size="sm" />
-                    <span className="font-semibold">{member.name}</span>
-                    <span className="text-[9px] text-text-muted capitalize font-mono">
-                      ({member.role})
-                    </span>
-                  </div>
-                  {member.name !== "我" && (
-                    <div className="flex gap-2">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        onClick={() => handleToggleMuteMember(member.name)}
-                        className={`text-[10px] font-sans ${member.isMuted ? "text-green-600" : "text-text-muted"}`}
-                      >
-                        {member.isMuted ? "解禁" : "禁言"}
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        onClick={() => handleKickMember(member.name)}
-                        className="text-[10px] text-red-600 font-sans"
-                      >
-                        踢出
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Section: Permissions */}
-          <div className="flex flex-col gap-4">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-primary border-b border-border-secondary pb-1">
-              權限設定
-            </h3>
-            <div className="flex flex-col gap-3.5">
-              <Checkbox
-                label="允許成員邀請他人"
-                description="成員可以邀請新成員加入聊天室"
-                checked={groupSettingsInvite}
-                onChange={(e) => setGroupSettingsInvite(e.target.checked)}
-              />
-              <Checkbox
-                label="允許成員上傳檔案"
-                description="成員可以在聊天室中上傳檔案"
-                checked={groupSettingsUpload}
-                onChange={(e) => setGroupSettingsUpload(e.target.checked)}
-              />
-            </div>
-          </div>
-
-          {/* Section: Danger Zone */}
-          <div className="flex flex-col gap-3 border border-red-500/20 p-4 bg-red-500/5 rounded-sm">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-red-600">
-              危險區域
-            </h3>
-            <div className="flex flex-col items-start gap-2">
-              <Button type="button" variant="secondary" onClick={handleDeleteGroupRoom} className="text-red-600 border-red-600 hover:bg-red-500/10">
-                刪除聊天室
-              </Button>
-              <span className="text-[10px] text-red-600/70 leading-normal">
-                刪除後將無法復原，所有訊息和成員資料都會被永久刪除。
-              </span>
-            </div>
-          </div>
-
-          {/* Footer Actions */}
-          <div className="border-t border-border-primary pt-5 mt-2 flex items-center justify-end gap-3">
-            <Button type="button" variant="secondary" onClick={() => setIsGroupSettingsOpen(false)}>
-              取消
-            </Button>
-            <Button type="submit" variant="primary">
-              儲存變更
-            </Button>
-          </div>
-        </form>
-      </Modal>
 
       {/* 2. Create Chat Room Modal */}
       <Modal isOpen={isCreateRoomOpen} onClose={() => setIsCreateRoomOpen(false)} title="新增聊天室">
