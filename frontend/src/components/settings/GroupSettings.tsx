@@ -107,9 +107,8 @@ export default function GroupSettings({ roomId, onClose }: GroupSettingsProps) {
       </div>
 
       {/* Centered Scrollable Content */}
-      <div className="flex-1 overflow-y-auto p-6 flex justify-center items-start">
-        <div className="w-full max-w-xl border border-border-primary rounded-sm bg-surface-card p-6 shadow-sm">
-          <form onSubmit={handleSave} className="flex flex-col gap-6">
+      <div className="flex-1 overflow-y-auto p-6 bg-surface-card">
+        <form onSubmit={handleSave} className="flex flex-col gap-6">
             {/* Section: Basic Info */}
             <div className="flex flex-col gap-4">
               <h3 className="text-xs font-bold uppercase tracking-wider text-primary border-b border-border-secondary pb-1">
@@ -233,7 +232,6 @@ export default function GroupSettings({ roomId, onClose }: GroupSettingsProps) {
               </Button>
             </div>
           </form>
-        </div>
       </div>
     </div>
   );

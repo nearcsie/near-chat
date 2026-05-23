@@ -122,9 +122,8 @@ export default function PersonalSettings() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6 flex justify-center items-start">
-        <div className="w-full max-w-xl border border-border-primary rounded-sm bg-surface-card p-6 shadow-sm">
-          <form onSubmit={handleSubmit} className="flex flex-col gap-6">
+      <div className="flex-1 overflow-y-auto p-6 bg-surface-card">
+        <form onSubmit={handleSubmit} className="flex flex-col gap-6">
             {/* Profile Section */}
             <div className="flex flex-col gap-4">
               <h2 className="text-xs font-bold uppercase tracking-wider text-primary border-b border-border-secondary pb-1">
@@ -272,7 +271,6 @@ export default function PersonalSettings() {
               </Button>
             </div>
           </form>
-        </div>
       </div>
     </div>
   );
