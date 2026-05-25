@@ -1,0 +1,23 @@
+services:
+  db-test:
+    image: postgres:16
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ntnu_test
+    networks:
+      - app_network
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+
+networks:
+  app_network:
+    external: true
+    name: 1142-ntnu-db-app_default
