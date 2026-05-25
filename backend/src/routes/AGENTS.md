@@ -1,50 +1,38 @@
 <!-- Parent: ../AGENTS.md -->
-<!-- Generated: 2026-05-22 | Updated: 2026-05-24 -->
+<!-- Generated: 2026-05-22 | Updated: 2026-05-25 -->
 
 # routes
 
 ## Purpose
 Express Router handlers defining the REST API surface for User, Room, and Message resources. Each file is responsible solely for HTTP concerns: parsing request params/body, input validation, delegating to the service layer, and setting the correct HTTP response status codes. No database logic lives here.
 
-## Key Files
+## Current State
 
-| File | Description |
-|------|-------------|
-| `userRoutes.ts` | Full CRUD for `User` — `POST /`, `GET /`, `GET /:id`, `PUT /:id`, `DELETE /:id`; delegates to `userService` |
-| `roomRoutes.ts` | Full CRUD for `Room` — `POST /`, `GET /`, `GET /:id`, `PUT /:id`, `DELETE /:id`; delegates to `roomService` |
-| `messageRoutes.ts` | Message operations scoped to a room — `GET /:roomId/messages`, `GET /:roomId/messages/:messageId`, `POST /:roomId/messages`, `PATCH /:roomId/messages/:messageId`, `DELETE /:roomId/messages/:messageId`; delegates to `messageService` |
+**All route files in this directory were quarantined (deleted) in issue #0.** New implementations following the layered architecture are being created in issues #9–#11.
+
+| File | Status |
+|------|--------|
+| `userRoutes.ts` | Deleted — reimplemented in [#9] User Controller + Auth Routes |
+| `roomRoutes.ts` | Deleted — reimplemented in [#10] Room Controller + Routes |
+| `messageRoutes.ts` | Deleted — reimplemented in [#11] Message Controller + Routes |
 
 ## For AI Agents
 
 ### Working In This Directory
-- These routers are **not yet mounted** in `src/index.ts`. To activate them, add to `index.ts`:
-  ```ts
-  import userRouter from './routes/userRoutes';
-  import roomRouter from './routes/roomRoutes';
-  import messageRouter from './routes/messageRoutes';
+- Do not recreate the old route files here. New implementations follow the controller pattern defined in `backend/AGENTS.md`.
+- New controllers use JWT middleware from issue #4 rather than the placeholder `(req as any).user` pattern.
+- All ID params must be validated (parseInt + isNaN check) before passing to the service layer.
 
-  app.use('/api/users', userRouter);
-  app.use('/api/rooms', roomRouter);
-  app.use('/api/rooms', messageRouter); // messageRoutes uses /:roomId/messages prefix
-  ```
-- `messageRoutes.ts` has a placeholder auth pattern (`(req as any).user || { userId: 1 }`) — replace with real JWT middleware before production use.
-- All ID params are parsed with `parseInt` and validated with `isNaN` before being passed to services.
-
-### Testing Requirements
-- Route-level HTTP tests are not yet written; current tests in `backend/tests/` test the service layer directly.
-- To test routes via HTTP, mount them in `index.ts` and use a tool like `curl` or write Supertest/Vitest HTTP tests.
-
-### Common Patterns
-- Route → Service → Prisma is the strict call chain; routes never import `PrismaClient` directly.
-- Error messages from the service layer are inspected with `.includes(keyword)` to map to appropriate HTTP status codes (400, 404, 500).
+### Common Patterns (for new implementations)
+- Route → Controller → Service → Repository is the strict call chain; routes never import database drivers directly.
+- Typed `AppError` instances (from issue #2) are caught by the central error handler — no per-route error message string matching.
 - `res.status(204).send()` for successful DELETE — no body.
 
 ## Dependencies
 
 ### Internal
-- `../services/userService` — called by `userRoutes.ts`
-- `../services/roomService` — called by `roomRoutes.ts`
-- `../services/messageService` — called by `messageRoutes.ts`
+- `../services/` — service layer (implemented in #6–#8)
+- `../middleware/auth` — JWT auth middleware (implemented in #4)
 
 ### External
 - `express` — `Router`, `Request`, `Response` types
