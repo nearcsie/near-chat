@@ -26,6 +26,8 @@ services:
     volumes:
       - ./backend:/app
       - /app/node_modules
+      - ./tsconfig.base.json:/tsconfig.base.json:ro
+      - ./shared:/shared:ro
     depends_on:
       - db
 
@@ -42,9 +44,10 @@ services:
     volumes:
       - ./frontend:/app
       - /app/node_modules
+      - ./tsconfig.base.json:/tsconfig.base.json:ro
+      - ./shared:/shared:ro
     depends_on:
       - backend
 
-# 定義具名卷
 volumes:
   pgdata:
