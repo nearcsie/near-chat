@@ -87,3 +87,56 @@ docker compose exec backend pnpm run migrate:up
 - Frontend: http://localhost:3000
 - Backend API: http://localhost:4000
 - Database connection: localhost:5432
+
+---
+
+## Testing Strategy
+
+This project uses three separate containers for testing. Each layer is tested in the container that matches its runtime.
+
+### Container Roles
+
+| Container | Role | When to use |
+|-----------|------|-------------|
+| `backend` | TypeScript type-check + unit tests | `tsc --noEmit`, Vitest unit tests (mocked repo) |
+| `frontend` | TypeScript type-check | `tsc --noEmit` |
+| `db` | Integration tests only | Vitest integration tests that need a real DB |
+
+> **Note:** The `db` container is the production Postgres instance. Integration tests should use a separate ephemeral container defined in `docker-compose.test.yml` (see Issue #2).
+
+### Running TypeScript Type Checks
+
+```bash
+# Backend
+docker compose exec backend ./node_modules/.bin/tsc --noEmit
+
+# Frontend
+docker compose exec frontend ./node_modules/.bin/tsc --noEmit
+```
+
+### Running Tests
+
+```bash
+# Unit tests (no DB required)
+docker compose exec backend pnpm run test:unit
+
+# Integration tests (starts ephemeral test DB automatically)
+docker compose exec backend pnpm run test:integration
+```
+
+### Why Non-Root Containers
+
+Both `backend` and `frontend` containers run as the built-in `node` user (UID 1000) rather than root. This ensures any files written back to the bind-mounted source directory on the host are owned by the current user, preventing root-owned file accumulation.
+
+The `db` container is intentionally left as-is — Postgres manages its own internal permission scheme and should not be modified.
+
+### Shared Types
+
+`shared/` and `tsconfig.base.json` (repo root) are mounted read-only into both `backend` and `frontend` containers:
+
+```
+/tsconfig.base.json   ← ./tsconfig.base.json
+/shared/              ← ./shared/
+```
+
+This allows `import type { X } from '@shared/types'` to resolve correctly inside containers without a monorepo workspace setup.
