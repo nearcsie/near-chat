@@ -52,9 +52,9 @@ The Next.js 16 / React 19 client application. Styled with Tailwind CSS v4 and se
 - Communicates with `backend/` via REST (`NEXT_PUBLIC_API_URL`) and Socket.IO WebSocket.
 
 ### External
-- `next` 16.2.1 — framework
-- `react` / `react-dom` 19.2.4 — UI library
+- `next` 16.2.6 — framework
+- `react` / `react-dom` 19.2.6 — UI library
 - `tailwindcss` ^4 — utility-first CSS framework
-- `typescript` ^5 — type safety
+- `typescript` ^6.0.3 — type safety
 
 <!-- MANUAL: Any manually added notes below this line are preserved on regeneration -->

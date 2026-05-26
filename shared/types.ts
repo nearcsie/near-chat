@@ -8,6 +8,10 @@
  *   - Database: snake_case  (user_id, room_id, created_at, password_hash, joined_at)
  *   - API boundary: camelCase  (userId, roomId, createdAt, passwordHash, joinedAt)
  *   - Repositories own the snake_case → camelCase mapping; nothing above the repo layer sees snake_case
+ *
+ * NOTE: The convention above is the **target state** for the ongoing refactor.
+ * The current `backend/src/index.ts` is the legacy monolith and still uses camelCase
+ * column aliases directly in SQL — it will be replaced as each repository is implemented.
  */
 
 // ---------------------------------------------------------------------------

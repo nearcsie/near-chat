@@ -34,8 +34,8 @@ The Express + TypeScript API server for the chat application. Handles user authe
 - Socket.IO uses a JWT middleware (`io.use(...)`) — all socket connections require a valid token in `handshake.auth.token`.
 
 ### Testing Requirements
-- Tests require a running PostgreSQL instance matching `DATABASE_URL` in the environment.
-- Run tests with: `pnpm vitest` (or `pnpm test` if script is configured).
+- Tests require a running PostgreSQL instance; set `DATABASE_URL_TEST` (copy `.env.test.example` → `.env.test`).
+- Run unit tests (no DB): `pnpm run test:unit`. Run integration tests: `pnpm run test:db:up && pnpm run test:integration`.
 - Tests use real database calls (integration style) — each test suite creates and tears down its own records.
 
 ### Common Patterns

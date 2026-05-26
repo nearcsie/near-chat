@@ -120,7 +120,8 @@ docker compose exec frontend ./node_modules/.bin/tsc --noEmit
 # Unit tests (no DB required)
 docker compose exec backend pnpm run test:unit
 
-# Integration tests (starts ephemeral test DB automatically)
+# Start ephemeral test DB, then run integration tests
+docker compose exec backend pnpm run test:db:up
 docker compose exec backend pnpm run test:integration
 ```
 

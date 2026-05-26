@@ -23,7 +23,7 @@ Vitest integration tests for the backend service layer. Tests call the actual se
 - Test isolation: each suite creates a unique named record in `beforeAll` and deletes it in `afterAll`. Avoid using names like "TestRoomForAPI" or "TestUserAPI" in manual DB operations to prevent conflicts.
 
 ### Testing Requirements
-- `DATABASE_URL` env var must be set before running tests (points to the ephemeral test DB).
+- `DATABASE_URL_TEST` env var must be set before running tests (points to the ephemeral test DB). Copy `.env.test.example` to `.env.test`.
 - Tests are integration tests — they mutate real data. Do not run against a production database.
 
 ### Common Patterns (for new implementations)
