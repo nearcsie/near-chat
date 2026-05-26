@@ -18,7 +18,7 @@ TypeScript source code for the Express backend. Contains the monolithic applicat
 | Directory | Purpose |
 |-----------|---------|
 | `routes/` | Express Router handlers for User, Room, and Message CRUD — responsible for HTTP parsing, validation, and response codes (see `routes/AGENTS.md`) |
-| `services/` | Prisma data-access layer — each service exports typed async functions for CRUD operations (see `services/AGENTS.md`) |
+| `services/` | Repository-backed service layer — each service exports typed async functions that call repository interfaces; Prisma has been removed (see `services/AGENTS.md`) |
 
 ## For AI Agents
 
@@ -28,7 +28,7 @@ TypeScript source code for the Express backend. Contains the monolithic applicat
 - The Socket.IO JWT middleware runs via `io.use(...)` — it attaches `decoded` JWT payload as `socket.user`. Access it in handlers as `(socket as any).user`.
 
 ### Common Patterns
-- The two-layer pattern: routes parse/validate HTTP input → call service functions → services call Prisma → throw descriptive errors up the chain.
+- The four-layer pattern: routes parse/validate HTTP input → call service functions → services call repository interfaces → repositories execute raw SQL via `pg`. Prisma has been fully removed.
 - Keep `index.ts` focused on wiring (middleware, route mounting, socket setup); business logic belongs in `services/`.
 
 ## Dependencies

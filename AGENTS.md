@@ -9,7 +9,7 @@ A real-time group chat application built as an NTNU database course project. The
 
 | File | Description |
 |------|-------------|
-| `docker-compose.yml` | Defines the three-service stack: `db` (Postgres 17), `backend` (Express, port 4000), `frontend` (Next.js, port 3000) |
+| `docker-compose.yml` | Defines the three-service stack: `db` (Postgres 18), `backend` (Express, port 4000), `frontend` (Next.js, port 3000) |
 | `.env.example` | Template for required environment variables — copy to `.env` before running locally |
 | `.gitignore` | Excludes `.env`, `node_modules`, build artifacts |
 | `LICENSE` | Project licence |
