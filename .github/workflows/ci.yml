@@ -22,22 +22,6 @@ jobs:
 
   integration-tests:
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: ntnu_test
-        ports:
-          - 5433:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 2s
-          --health-timeout 5s
-          --health-retries 10
-    env:
-      DATABASE_URL_TEST: postgresql://postgres:postgres@localhost:5433/ntnu_test
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -45,5 +29,20 @@ jobs:
           node-version: 20
       - run: npm install -g pnpm
       - run: pnpm --prefix backend install
-      - run: DATABASE_URL=$DATABASE_URL_TEST pnpm --prefix backend run migrate:up
-      - run: pnpm --prefix backend run test:integration
+      - name: Create env files
+        run: |
+          printf 'POSTGRES_USER=postgres\nPOSTGRES_PASSWORD=postgres\nPOSTGRES_DB=ntnu_db\nDATABASE_URL=postgresql://postgres:postgres@db:5432/ntnu_db\nJWT_SECRET=ci_test_secret\nNODE_ENV=development\nPORT=4000\nNEXT_PUBLIC_API_URL=http://localhost:4000\n' > .env
+          echo "DATABASE_URL_TEST=postgresql://postgres:postgres@db-test:5432/ntnu_test" > backend/.env.test
+      - name: Start services
+        run: |
+          docker compose up -d db
+          until docker compose exec -T db pg_isready -U postgres; do sleep 1; done
+          docker compose up -d backend
+          pnpm --prefix backend run test:db:up
+      - name: Apply migration to test database
+        run: |
+          docker compose exec -T \
+            -e DATABASE_URL=postgresql://postgres:postgres@db-test:5432/ntnu_test \
+            backend pnpm run migrate:up
+      - name: Run integration tests
+        run: docker compose exec -T backend pnpm run test:integration
