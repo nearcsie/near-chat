@@ -79,6 +79,7 @@ export default function Sidebar() {
     toggleFolder,
     handleCreateRoom,
     handleCreateFolder,
+    handleCategorizeRoom,
     handleLogout,
   } = useChat();
 
@@ -90,6 +91,9 @@ export default function Sidebar() {
   const [newRoomType, setNewRoomType] = useState<"msg" | "group">("msg");
   const [newRoomFolder, setNewRoomFolder] = useState("");
   const [newFolderName, setNewFolderName] = useState("");
+  const [draggedRoomId, setDraggedRoomId] = useState<string | null>(null);
+  const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null);
+  const [isRootDropActive, setIsRootDropActive] = useState(false);
 
   const rootRooms = rooms.filter((room) => !room.folderId);
   const getFolderRooms = (folderId: string) => rooms.filter((room) => room.folderId === folderId);
@@ -125,6 +129,43 @@ export default function Sidebar() {
     router.push("/settings");
   };
 
+  const resetDragState = () => {
+    setDraggedRoomId(null);
+    setDragOverFolderId(null);
+    setIsRootDropActive(false);
+  };
+
+  const getDroppedRoomId = (event: React.DragEvent) =>
+    event.dataTransfer.getData("text/plain") || draggedRoomId;
+
+  const handleRoomDragStart = (event: React.DragEvent, roomId: string) => {
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", roomId);
+    setDraggedRoomId(roomId);
+  };
+
+  const handleDropToRoot = (event: React.DragEvent) => {
+    event.preventDefault();
+    const roomId = getDroppedRoomId(event);
+    if (roomId) {
+      handleCategorizeRoom(roomId, null);
+    }
+    resetDragState();
+  };
+
+  const handleDropToFolder = (event: React.DragEvent, folderId: string) => {
+    event.preventDefault();
+    const roomId = getDroppedRoomId(event);
+    if (roomId) {
+      handleCategorizeRoom(roomId, folderId);
+      const targetFolder = folders.find((folder) => folder.id === folderId);
+      if (targetFolder?.collapsed) {
+        toggleFolder(folderId);
+      }
+    }
+    resetDragState();
+  };
+
   return (
     <div className="w-[300px] shrink-0 border-r border-border-primary bg-surface-card flex flex-col h-full">
       <div className="h-14 border-b border-border-primary px-4 flex items-center justify-between select-none shrink-0">
@@ -146,13 +187,27 @@ export default function Sidebar() {
 
       <div className="flex-1 overflow-y-auto select-none">
         <SectionLabel label={t.chats} />
-        <div className="flex flex-col gap-0.5 pb-2">
+        <div
+          onDragOver={(event) => {
+            if (!draggedRoomId) return;
+            event.preventDefault();
+            event.dataTransfer.dropEffect = "move";
+            setIsRootDropActive(true);
+          }}
+          onDragLeave={() => setIsRootDropActive(false)}
+          onDrop={handleDropToRoot}
+          className={`flex flex-col gap-0.5 pb-2 transition-colors ${
+            isRootDropActive ? "bg-primary/5 outline outline-1 outline-primary/40 outline-offset-[-1px]" : ""
+          }`}
+        >
           {rootRooms.map((room) => (
             <RoomItem
               key={room.id}
               room={room}
               isActive={room.id === activeRoomId && !isSettingsPage}
               onClick={() => router.push(`/chat/${room.id}`)}
+              onDragStart={(event) => handleRoomDragStart(event, room.id)}
+              onDragEnd={resetDragState}
               avatarSrc={getAvatarForUser(room.name, user.avatar, user.username)}
               noMessagesText={t.noMessages}
             />
@@ -169,7 +224,17 @@ export default function Sidebar() {
                   <div key={folder.id}>
                     <button
                       onClick={() => toggleFolder(folder.id)}
-                      className="w-full px-4 py-2 flex items-center justify-between text-xs font-semibold text-foreground hover:bg-surface-muted transition-colors"
+                      onDragOver={(event) => {
+                        if (!draggedRoomId) return;
+                        event.preventDefault();
+                        event.dataTransfer.dropEffect = "move";
+                        setDragOverFolderId(folder.id);
+                      }}
+                      onDragLeave={() => setDragOverFolderId(null)}
+                      onDrop={(event) => handleDropToFolder(event, folder.id)}
+                      className={`w-full px-4 py-2 flex items-center justify-between text-xs font-semibold text-foreground hover:bg-surface-muted transition-colors ${
+                        dragOverFolderId === folder.id ? "bg-primary/10 text-primary" : ""
+                      }`}
                     >
                       <span className="flex items-center gap-2">
                         <span className={folder.collapsed ? "" : "rotate-90"}>›</span>
@@ -187,6 +252,8 @@ export default function Sidebar() {
                             room={room}
                             isActive={room.id === activeRoomId && !isSettingsPage}
                             onClick={() => router.push(`/chat/${room.id}`)}
+                            onDragStart={(event) => handleRoomDragStart(event, room.id)}
+                            onDragEnd={resetDragState}
                             avatarSrc={getAvatarForUser(room.name, user.avatar, user.username)}
                             noMessagesText={t.noMessages}
                           />
@@ -350,19 +417,26 @@ function RoomItem({
   room,
   isActive,
   onClick,
+  onDragStart,
+  onDragEnd,
   avatarSrc,
   noMessagesText,
 }: {
   room: ChatRoom;
   isActive: boolean;
   onClick: () => void;
+  onDragStart: (event: React.DragEvent<HTMLButtonElement>) => void;
+  onDragEnd: () => void;
   avatarSrc?: string;
   noMessagesText: string;
 }) {
   return (
     <button
       onClick={onClick}
-      className={`relative w-full px-4 py-2.5 flex items-center gap-2.5 text-left hover:bg-surface-muted/70 transition-colors select-none ${
+      draggable
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
+      className={`relative w-full px-4 py-2.5 flex items-center gap-2.5 text-left hover:bg-surface-muted/70 transition-colors select-none cursor-grab active:cursor-grabbing ${
         isActive ? "bg-surface-muted" : ""
       }`}
     >
