@@ -2,6 +2,7 @@
 
 import React from "react";
 import { ChatProvider, useChat } from "@/context/ChatContext";
+import AppRail from "@/components/layout/AppRail";
 import Sidebar from "@/components/layout/Sidebar";
 
 function MainLayoutContent({ children }: { children: React.ReactNode }) {
@@ -17,6 +18,7 @@ function MainLayoutContent({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-background text-foreground font-sans transition-colors">
+      <AppRail />
       <Sidebar />
       {children}
     </div>

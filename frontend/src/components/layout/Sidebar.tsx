@@ -71,8 +71,6 @@ export default function Sidebar() {
   const {
     rooms,
     folders,
-    friends,
-    friendRequests,
     user,
     uiLanguage,
     activeRoomNicknames,
@@ -85,6 +83,7 @@ export default function Sidebar() {
 
   const activeRoomId = params?.chatId as string | undefined;
   const isSettingsPage = pathname === "/settings";
+  const isChatPage = pathname === "/" || pathname.startsWith("/chat");
   const [isCreateRoomOpen, setIsCreateRoomOpen] = useState(false);
   const [isCreateFolderOpen, setIsCreateFolderOpen] = useState(false);
   const [newRoomName, setNewRoomName] = useState("");
@@ -98,7 +97,6 @@ export default function Sidebar() {
   const rootRooms = rooms.filter((room) => !room.folderId);
   const getFolderRooms = (folderId: string) => rooms.filter((room) => room.folderId === folderId);
   const activeUserDisplayName = (activeRoomId && activeRoomNicknames[activeRoomId]) || user.username;
-  const pendingIncoming = friendRequests.filter((request) => request.direction === "incoming").length;
   const t = sidebarCopy[uiLanguage];
 
   const handleCreateRoomSubmit = (event: React.FormEvent) => {
@@ -204,7 +202,7 @@ export default function Sidebar() {
             <RoomItem
               key={room.id}
               room={room}
-              isActive={room.id === activeRoomId && !isSettingsPage}
+              isActive={room.id === activeRoomId && isChatPage}
               onClick={() => router.push(`/chat/${room.id}`)}
               onDragStart={(event) => handleRoomDragStart(event, room.id)}
               onDragEnd={resetDragState}
@@ -250,7 +248,7 @@ export default function Sidebar() {
                           <RoomItem
                             key={room.id}
                             room={room}
-                            isActive={room.id === activeRoomId && !isSettingsPage}
+                            isActive={room.id === activeRoomId && isChatPage}
                             onClick={() => router.push(`/chat/${room.id}`)}
                             onDragStart={(event) => handleRoomDragStart(event, room.id)}
                             onDragEnd={resetDragState}
@@ -266,22 +264,6 @@ export default function Sidebar() {
             </div>
           </>
         )}
-
-        <SectionLabel label={t.friends} />
-        <button
-          onClick={() => router.push("/settings")}
-          className={`w-full px-4 py-3 flex items-center justify-between text-left hover:bg-surface-muted transition-colors ${
-            isSettingsPage ? "bg-surface-muted" : ""
-          }`}
-        >
-          <span className="flex flex-col">
-            <span className="text-xs font-semibold text-foreground">{t.friendList}</span>
-            <span className="text-[10px] text-text-muted font-mono">
-              {friends.length} {t.friendsUnit} / {pendingIncoming} {t.pending}
-            </span>
-          </span>
-          {pendingIncoming > 0 && <Badge variant="danger">{pendingIncoming}</Badge>}
-        </button>
       </div>
 
       <div className="border-t border-border-primary p-4 bg-surface-muted select-none shrink-0 flex flex-col gap-3">
