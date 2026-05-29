@@ -19,11 +19,6 @@
   - 實作了 `join_room` 事件用於加入特定聊天室頻道。
   - 實作了 `send_message` 事件發送訊息至資料庫，並透過 `new_message` 向房內客戶端廣播。
 
-### 🎨 前端 UI 與重構 (Frontend)
-- **架構升級**：全面遷移至 Next.js App Router (`src/app` 結構)。
-- **UI 模組化**：將原本龐大的組件拆分成 `Sidebar`、`Chatroom`、`PersonalSettings`、`GroupSettings` 等模組。
-- **Mock Data 與狀態管理**：目前前端的狀態完全交由 `ChatContext.tsx` 處理。現有資料（包含 `rooms`、`messages`）皆為**寫死的假資料 (Mock Data)**，且訊息回覆機制是透過 `setTimeout` 在本地端模擬的。
-
 ---
 
 ## 2. 給前端部門的測試與串接指南
