@@ -45,4 +45,5 @@ jobs:
           node-version: 20
       - run: npm install -g pnpm
       - run: pnpm --prefix backend install
+      - run: DATABASE_URL=$DATABASE_URL_TEST pnpm --prefix backend run migrate:up
       - run: pnpm --prefix backend run test:integration
