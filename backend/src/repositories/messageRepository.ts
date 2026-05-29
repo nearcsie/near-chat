@@ -1,5 +1,5 @@
 import { Pool } from 'pg';
-import type { Message } from '@shared/types';
+import type { Message, MessageWithSender } from '@shared/types';
 import type { IMessageRepository } from './IMessageRepository';
 
 function mapRowToMessage(row: any): Message {
@@ -14,6 +14,19 @@ function mapRowToMessage(row: any): Message {
   };
 }
 
+function mapRowToMessageWithSender(row: any): MessageWithSender {
+  return {
+    ...mapRowToMessage(row),
+    sender: row.sender_user_id
+      ? {
+          userId: row.sender_user_id,
+          name: row.sender_name,
+          avatarUrl: row.sender_avatar_url ?? undefined,
+        }
+      : null,
+  };
+}
+
 export class MessageRepository implements IMessageRepository {
   constructor(private db: Pool) {}
 
@@ -25,56 +38,84 @@ export class MessageRepository implements IMessageRepository {
     return res.rows.length === 0 ? null : mapRowToMessage(res.rows[0]);
   }
 
-  async findByRoom(roomId: string, opts: { beforeId?: string; limit: number }): Promise<Message[]> {
+  async findByRoom(roomId: string, opts: { beforeId?: string; limit: number }): Promise<MessageWithSender[]> {
     const limit = Math.max(1, opts.limit);
 
     if (opts.beforeId) {
       const res = await this.db.query(
-        `SELECT *
-         FROM messages
-         WHERE room_id = $1
-           AND sent_at < (
+        `SELECT
+           m.*,
+           u.user_id AS sender_user_id,
+           u.name AS sender_name,
+           u.avatar_url AS sender_avatar_url
+         FROM messages m
+         LEFT JOIN users u ON u.user_id = m.sender_id
+         WHERE m.room_id = $1
+           AND m.sent_at < (
              SELECT sent_at
              FROM messages
              WHERE message_id = $2 AND room_id = $1
            )
-         ORDER BY sent_at ASC
+         ORDER BY m.sent_at ASC
          LIMIT $3`,
         [roomId, opts.beforeId, limit],
       );
-      return res.rows.map(mapRowToMessage);
+      return res.rows.map(mapRowToMessageWithSender);
     }
 
     const res = await this.db.query(
-      `SELECT *
-       FROM messages
-       WHERE room_id = $1
-       ORDER BY sent_at ASC
+      `SELECT
+         m.*,
+         u.user_id AS sender_user_id,
+         u.name AS sender_name,
+         u.avatar_url AS sender_avatar_url
+       FROM messages m
+       LEFT JOIN users u ON u.user_id = m.sender_id
+       WHERE m.room_id = $1
+       ORDER BY m.sent_at ASC
        LIMIT $2`,
       [roomId, limit],
     );
-    return res.rows.map(mapRowToMessage);
+    return res.rows.map(mapRowToMessageWithSender);
   }
 
-  async create(data: Pick<Message, 'roomId' | 'senderId' | 'content' | 'replyToId'>): Promise<Message> {
+  async create(data: Pick<Message, 'roomId' | 'senderId' | 'content' | 'replyToId'>): Promise<MessageWithSender> {
     const res = await this.db.query(
-      `INSERT INTO messages (room_id, sender_id, content, reply_to_id)
-       VALUES ($1, $2, $3, $4)
-       RETURNING *`,
+      `WITH inserted AS (
+         INSERT INTO messages (room_id, sender_id, content, reply_to_id)
+         VALUES ($1, $2, $3, $4)
+         RETURNING *
+       )
+       SELECT
+         inserted.*,
+         u.user_id AS sender_user_id,
+         u.name AS sender_name,
+         u.avatar_url AS sender_avatar_url
+       FROM inserted
+       LEFT JOIN users u ON u.user_id = inserted.sender_id`,
       [data.roomId, data.senderId, data.content, data.replyToId ?? null],
     );
-    return mapRowToMessage(res.rows[0]);
+    return mapRowToMessageWithSender(res.rows[0]);
   }
 
-  async markRecalled(messageId: string): Promise<Message> {
+  async markRecalled(messageId: string): Promise<MessageWithSender> {
     const res = await this.db.query(
-      `UPDATE messages
-       SET is_recalled = true
-       WHERE message_id = $1
-       RETURNING *`,
+      `WITH updated AS (
+         UPDATE messages
+         SET is_recalled = true
+         WHERE message_id = $1
+         RETURNING *
+       )
+       SELECT
+         updated.*,
+         u.user_id AS sender_user_id,
+         u.name AS sender_name,
+         u.avatar_url AS sender_avatar_url
+       FROM updated
+       LEFT JOIN users u ON u.user_id = updated.sender_id`,
       [messageId],
     );
     if (res.rows.length === 0) throw new Error('Message not found');
-    return mapRowToMessage(res.rows[0]);
+    return mapRowToMessageWithSender(res.rows[0]);
   }
 }
