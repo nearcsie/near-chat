@@ -37,12 +37,11 @@ jobs:
         run: |
           docker compose up -d db
           until docker compose exec -T db pg_isready -U postgres; do sleep 1; done
-          docker compose up -d backend
           pnpm --prefix backend run test:db:up
       - name: Apply migration to test database
         run: |
-          docker compose exec -T \
+          docker compose run --rm --no-deps \
             -e DATABASE_URL=postgresql://postgres:postgres@db-test:5432/ntnu_test \
             backend pnpm run migrate:up
       - name: Run integration tests
-        run: docker compose exec -T backend pnpm run test:integration
+        run: docker compose run --rm --no-deps backend pnpm run test:integration
