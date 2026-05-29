@@ -1,14 +1,10 @@
-import { beforeEach, afterAll, describe, it, expect } from 'vitest';
+import { beforeEach, describe, it, expect } from 'vitest';
 import { testPool } from '../helpers/testPool';
 import { resetDb } from '../helpers/resetDb';
 
-describe('Database Schema & Constraints (PR#26)', () => {
+describe('Database Schema & Constraints', () => {
   beforeEach(async () => {
     await resetDb();
-  });
-
-  afterAll(async () => {
-    await testPool.end();
   });
 
   describe('users table constraints', () => {
