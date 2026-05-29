@@ -9,6 +9,61 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 
+const sidebarCopy = {
+  "zh-TW": {
+    newFolder: "新增資料夾",
+    newChat: "新增聊天室",
+    chats: "聊天室",
+    folders: "資料夾",
+    friends: "好友",
+    friendList: "好友列表",
+    friendsUnit: "位好友",
+    pending: "待處理",
+    backToChat: "返回聊天",
+    settings: "設定",
+    logout: "登出",
+    createChat: "建立聊天室",
+    chatName: "聊天室名稱",
+    chatNamePlaceholder: "好友或群組名稱",
+    directMessage: "私人訊息",
+    group: "群組",
+    folder: "資料夾",
+    rootChats: "根目錄聊天室",
+    cancel: "取消",
+    create: "建立",
+    createFolder: "建立資料夾",
+    folderName: "資料夾名稱",
+    folderNamePlaceholder: "課程專案",
+    noMessages: "尚無訊息",
+  },
+  en: {
+    newFolder: "New folder",
+    newChat: "New chat",
+    chats: "Chats",
+    folders: "Folders",
+    friends: "Friends",
+    friendList: "Friend list",
+    friendsUnit: "friends",
+    pending: "pending",
+    backToChat: "Back to chat",
+    settings: "Settings",
+    logout: "Logout",
+    createChat: "Create chat",
+    chatName: "Chat name",
+    chatNamePlaceholder: "Friend or group name",
+    directMessage: "Direct message",
+    group: "Group",
+    folder: "Folder",
+    rootChats: "Root chats",
+    cancel: "Cancel",
+    create: "Create",
+    createFolder: "Create folder",
+    folderName: "Folder name",
+    folderNamePlaceholder: "Course Work",
+    noMessages: "No messages yet",
+  },
+} as const;
+
 export default function Sidebar() {
   const router = useRouter();
   const params = useParams();
@@ -19,6 +74,7 @@ export default function Sidebar() {
     friends,
     friendRequests,
     user,
+    uiLanguage,
     activeRoomNicknames,
     toggleFolder,
     handleCreateRoom,
@@ -39,6 +95,7 @@ export default function Sidebar() {
   const getFolderRooms = (folderId: string) => rooms.filter((room) => room.folderId === folderId);
   const activeUserDisplayName = (activeRoomId && activeRoomNicknames[activeRoomId]) || user.username;
   const pendingIncoming = friendRequests.filter((request) => request.direction === "incoming").length;
+  const t = sidebarCopy[uiLanguage];
 
   const handleCreateRoomSubmit = (event: React.FormEvent) => {
     event.preventDefault();
@@ -78,17 +135,17 @@ export default function Sidebar() {
           <span className="font-mono text-sm font-bold uppercase tracking-wider">DB-9CHAT</span>
         </div>
         <div className="flex gap-1">
-          <IconButton label="New folder" onClick={() => setIsCreateFolderOpen(true)}>
+          <IconButton label={t.newFolder} onClick={() => setIsCreateFolderOpen(true)}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M3 7h6l2 2h10v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" />
           </IconButton>
-          <IconButton label="New chat" onClick={() => setIsCreateRoomOpen(true)}>
+          <IconButton label={t.newChat} onClick={() => setIsCreateRoomOpen(true)}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
           </IconButton>
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto select-none">
-        <SectionLabel label="Chats" />
+        <SectionLabel label={t.chats} />
         <div className="flex flex-col gap-0.5 pb-2">
           {rootRooms.map((room) => (
             <RoomItem
@@ -97,13 +154,14 @@ export default function Sidebar() {
               isActive={room.id === activeRoomId && !isSettingsPage}
               onClick={() => router.push(`/chat/${room.id}`)}
               avatarSrc={getAvatarForUser(room.name, user.avatar, user.username)}
+              noMessagesText={t.noMessages}
             />
           ))}
         </div>
 
         {folders.length > 0 && (
           <>
-            <SectionLabel label="Folders" />
+            <SectionLabel label={t.folders} />
             <div className="flex flex-col gap-0.5 pb-2">
               {folders.map((folder) => {
                 const folderRooms = getFolderRooms(folder.id);
@@ -130,6 +188,7 @@ export default function Sidebar() {
                             isActive={room.id === activeRoomId && !isSettingsPage}
                             onClick={() => router.push(`/chat/${room.id}`)}
                             avatarSrc={getAvatarForUser(room.name, user.avatar, user.username)}
+                            noMessagesText={t.noMessages}
                           />
                         ))}
                       </div>
@@ -141,7 +200,7 @@ export default function Sidebar() {
           </>
         )}
 
-        <SectionLabel label="Friends" />
+        <SectionLabel label={t.friends} />
         <button
           onClick={() => router.push("/settings")}
           className={`w-full px-4 py-3 flex items-center justify-between text-left hover:bg-surface-muted transition-colors ${
@@ -149,9 +208,9 @@ export default function Sidebar() {
           }`}
         >
           <span className="flex flex-col">
-            <span className="text-xs font-semibold text-foreground">Friend list</span>
+            <span className="text-xs font-semibold text-foreground">{t.friendList}</span>
             <span className="text-[10px] text-text-muted font-mono">
-              {friends.length} friends / {pendingIncoming} pending
+              {friends.length} {t.friendsUnit} / {pendingIncoming} {t.pending}
             </span>
           </span>
           {pendingIncoming > 0 && <Badge variant="danger">{pendingIncoming}</Badge>}
@@ -168,22 +227,22 @@ export default function Sidebar() {
         </div>
         <div className="flex items-center justify-between border-t border-border-secondary/40 pt-3">
           <Button variant="ghost" onClick={handleSettingsClick} className="text-xs">
-            {isSettingsPage ? "Back to chat" : "Settings"}
+            {isSettingsPage ? t.backToChat : t.settings}
           </Button>
           <Button variant="ghost" onClick={handleLogout} className="text-xs text-red-600 hover:text-red-700">
-            Logout
+            {t.logout}
           </Button>
         </div>
       </div>
 
-      <Modal isOpen={isCreateRoomOpen} onClose={() => setIsCreateRoomOpen(false)} title="Create chat">
+      <Modal isOpen={isCreateRoomOpen} onClose={() => setIsCreateRoomOpen(false)} title={t.createChat}>
         <form onSubmit={handleCreateRoomSubmit} className="flex flex-col gap-5">
           <Input
-            label="Chat name"
+            label={t.chatName}
             value={newRoomName}
             onChange={(event) => setNewRoomName(event.target.value)}
             required
-            placeholder="Friend or group name"
+            placeholder={t.chatNamePlaceholder}
           />
           <div className="flex gap-6">
             <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
@@ -194,7 +253,7 @@ export default function Sidebar() {
                 onChange={() => setNewRoomType("msg")}
                 className="accent-primary"
               />
-              Direct message
+              {t.directMessage}
             </label>
             <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
               <input
@@ -204,17 +263,17 @@ export default function Sidebar() {
                 onChange={() => setNewRoomType("group")}
                 className="accent-primary"
               />
-              Group
+              {t.group}
             </label>
           </div>
           <label className="flex flex-col gap-1.5">
-            <span className="text-xs font-bold uppercase tracking-wider text-text-muted">Folder</span>
+              <span className="text-xs font-bold uppercase tracking-wider text-text-muted">{t.folder}</span>
             <select
               value={newRoomFolder}
               onChange={(event) => setNewRoomFolder(event.target.value)}
               className="bg-surface-card border border-border-secondary hover:border-border-primary focus:border-primary focus:outline-none rounded-sm px-3 py-2.5 text-sm text-foreground transition-colors"
             >
-              <option value="">Root chats</option>
+              <option value="">{t.rootChats}</option>
               {folders.map((folder) => (
                 <option key={folder.id} value={folder.id}>
                   {folder.name}
@@ -224,30 +283,30 @@ export default function Sidebar() {
           </label>
           <div className="border-t border-border-primary pt-5 flex items-center justify-end gap-3">
             <Button type="button" variant="secondary" onClick={() => setIsCreateRoomOpen(false)}>
-              Cancel
+              {t.cancel}
             </Button>
             <Button type="submit" variant="primary">
-              Create
+              {t.create}
             </Button>
           </div>
         </form>
       </Modal>
 
-      <Modal isOpen={isCreateFolderOpen} onClose={() => setIsCreateFolderOpen(false)} title="Create folder">
+      <Modal isOpen={isCreateFolderOpen} onClose={() => setIsCreateFolderOpen(false)} title={t.createFolder}>
         <form onSubmit={handleCreateFolderSubmit} className="flex flex-col gap-5">
           <Input
-            label="Folder name"
+            label={t.folderName}
             value={newFolderName}
             onChange={(event) => setNewFolderName(event.target.value)}
             required
-            placeholder="Course Work"
+            placeholder={t.folderNamePlaceholder}
           />
           <div className="border-t border-border-primary pt-5 flex items-center justify-end gap-3">
             <Button type="button" variant="secondary" onClick={() => setIsCreateFolderOpen(false)}>
-              Cancel
+              {t.cancel}
             </Button>
             <Button type="submit" variant="primary">
-              Create
+              {t.create}
             </Button>
           </div>
         </form>
@@ -292,11 +351,13 @@ function RoomItem({
   isActive,
   onClick,
   avatarSrc,
+  noMessagesText,
 }: {
   room: ChatRoom;
   isActive: boolean;
   onClick: () => void;
   avatarSrc?: string;
+  noMessagesText: string;
 }) {
   return (
     <button
@@ -313,7 +374,7 @@ function RoomItem({
           <span className="text-[9px] text-text-muted font-mono shrink-0">{room.lastMessageAt}</span>
         </span>
         <span className="mt-0.5 flex items-center gap-2">
-          <span className="text-[10px] text-text-muted truncate flex-1">{room.lastMessagePreview || "No messages yet"}</span>
+          <span className="text-[10px] text-text-muted truncate flex-1">{room.lastMessagePreview || noMessagesText}</span>
           {room.unreadCount ? <Badge variant="danger">{room.unreadCount}</Badge> : null}
         </span>
       </span>

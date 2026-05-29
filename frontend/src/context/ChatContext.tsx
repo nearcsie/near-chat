@@ -90,6 +90,8 @@ export interface EmergencySettings {
   contacts: EmergencyContact[];
 }
 
+export type UiLanguage = "zh-TW" | "en";
+
 export const getAvatarForUser = (
   username: string,
   currentUserAvatar?: string,
@@ -115,6 +117,7 @@ interface PersonalSettingsInput {
   email: string;
   avatar: string;
   theme: string;
+  language: UiLanguage;
   notifyDesktop: boolean;
   notifySound: boolean;
 }
@@ -139,6 +142,7 @@ interface ChatContextType {
   friendRequests: FriendRequest[];
   blockedUsers: BlockedUser[];
   emergencySettings: EmergencySettings;
+  uiLanguage: UiLanguage;
   isAuthenticated: boolean;
   isMounted: boolean;
 
@@ -170,6 +174,7 @@ interface ChatContextType {
   blockFriend: (friendId: string) => void;
   unblockUser: (blockedId: string) => void;
   saveEmergencySettings: (settings: EmergencySettings) => void;
+  setUiLanguage: (language: UiLanguage) => void;
 }
 
 const ChatContext = createContext<ChatContextType | undefined>(undefined);
@@ -273,6 +278,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   });
 
   const [activeRoomNicknames, setActiveRoomNicknames] = useState<Record<string, string>>({});
+  const [uiLanguage, setUiLanguageState] = useState<UiLanguage>("zh-TW");
   const [friends, setFriends] = useState<Friend[]>([
     { id: "f1", name: "Alex Chen", email: "alex@example.com", status: "online", isEmergencyContact: true },
     { id: "f2", name: "Mina Lin", email: "mina@example.com", status: "online" },
@@ -329,6 +335,11 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       } catch (error) {
         console.error(error);
       }
+    }
+
+    const savedLanguage = localStorage.getItem("language");
+    if (savedLanguage === "zh-TW" || savedLanguage === "en") {
+      setUiLanguageState(savedLanguage);
     }
 
     const savedTheme = localStorage.getItem("theme");
@@ -488,10 +499,12 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     };
     localStorage.setItem("user", JSON.stringify(updatedUser));
     localStorage.setItem("theme", settings.theme);
+    localStorage.setItem("language", settings.language);
     localStorage.setItem("notify-desktop", String(settings.notifyDesktop));
     localStorage.setItem("notify-sound", String(settings.notifySound));
     document.documentElement.classList.toggle("dark", settings.theme === "dark");
     setUser(updatedUser);
+    setUiLanguageState(settings.language);
   };
 
   const saveGroupSettings = (roomId: string, settings: GroupSettingsInput) => {
@@ -596,6 +609,11 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     );
   };
 
+  const setUiLanguage = (language: UiLanguage) => {
+    localStorage.setItem("language", language);
+    setUiLanguageState(language);
+  };
+
   return (
     <ChatContext.Provider
       value={{
@@ -609,6 +627,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         friendRequests,
         blockedUsers,
         emergencySettings,
+        uiLanguage,
         isAuthenticated,
         isMounted,
         setRooms,
@@ -637,6 +656,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         blockFriend,
         unblockUser,
         saveEmergencySettings,
+        setUiLanguage,
       }}
     >
       {children}

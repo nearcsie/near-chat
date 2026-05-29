@@ -7,11 +7,77 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 
+const friendsCopy = {
+  "zh-TW": {
+    friendList: "好友列表",
+    accepted: "已接受",
+    search: "搜尋",
+    searchPlaceholder: "名稱或 email",
+    emergency: "緊急聯絡人",
+    remove: "移除",
+    block: "封鎖",
+    noMatch: "沒有符合搜尋的好友。",
+    addFriend: "新增好友",
+    mockRequest: "模擬邀請",
+    name: "名稱",
+    namePlaceholder: "課程夥伴",
+    email: "Email",
+    emailPlaceholder: "friend@example.com",
+    sendRequest: "送出邀請",
+    friendRequests: "好友邀請",
+    incoming: "收到",
+    outgoing: "送出",
+    incomingTitle: "收到的邀請",
+    outgoingTitle: "送出的邀請",
+    noIncoming: "沒有收到的邀請。",
+    noOutgoing: "沒有送出的邀請。",
+    accept: "接受",
+    reject: "拒絕",
+    cancel: "取消",
+    blockedUsers: "封鎖名單",
+    blocked: "已封鎖",
+    unblock: "解除封鎖",
+    noBlocked: "沒有封鎖使用者。",
+  },
+  en: {
+    friendList: "Friend list",
+    accepted: "accepted",
+    search: "Search",
+    searchPlaceholder: "Name or email",
+    emergency: "Emergency",
+    remove: "Remove",
+    block: "Block",
+    noMatch: "No friends match this search.",
+    addFriend: "Add friend",
+    mockRequest: "Mock request",
+    name: "Name",
+    namePlaceholder: "Course teammate",
+    email: "Email",
+    emailPlaceholder: "friend@example.com",
+    sendRequest: "Send request",
+    friendRequests: "Friend requests",
+    incoming: "incoming",
+    outgoing: "outgoing",
+    incomingTitle: "Incoming",
+    outgoingTitle: "Outgoing",
+    noIncoming: "No incoming requests.",
+    noOutgoing: "No outgoing requests.",
+    accept: "Accept",
+    reject: "Reject",
+    cancel: "Cancel",
+    blockedUsers: "Blocked users",
+    blocked: "blocked",
+    unblock: "Unblock",
+    noBlocked: "No blocked users.",
+  },
+} as const;
+
 export default function FriendsPanel() {
   const {
     friends,
     friendRequests,
     blockedUsers,
+    uiLanguage,
     sendFriendRequest,
     acceptFriendRequest,
     rejectFriendRequest,
@@ -35,6 +101,7 @@ export default function FriendsPanel() {
 
   const incomingRequests = friendRequests.filter((request) => request.direction === "incoming");
   const outgoingRequests = friendRequests.filter((request) => request.direction === "outgoing");
+  const t = friendsCopy[uiLanguage];
 
   const handleSendRequest = (event: React.FormEvent) => {
     event.preventDefault();
@@ -47,13 +114,13 @@ export default function FriendsPanel() {
     <div className="flex flex-col gap-6">
       <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_320px] gap-6">
         <section className="border border-border-primary rounded-sm bg-surface-card">
-          <PanelHeader title="Friend list" meta={`${friends.length} accepted`} />
+          <PanelHeader title={t.friendList} meta={`${friends.length} ${t.accepted}`} />
           <div className="p-4 border-b border-border-secondary">
             <Input
-              label="Search"
+              label={t.search}
               value={searchText}
               onChange={(event) => setSearchText(event.target.value)}
-              placeholder="Name or email"
+              placeholder={t.searchPlaceholder}
             />
           </div>
           <div className="divide-y divide-border-secondary">
@@ -64,7 +131,7 @@ export default function FriendsPanel() {
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <p className="text-sm font-semibold text-foreground truncate">{friend.name}</p>
-                      {friend.isEmergencyContact && <Badge variant="secondary">Emergency</Badge>}
+                      {friend.isEmergencyContact && <Badge variant="secondary">{t.emergency}</Badge>}
                     </div>
                     <p className="text-[10px] text-text-muted font-mono truncate">{friend.email}</p>
                   </div>
@@ -76,7 +143,7 @@ export default function FriendsPanel() {
                     className="text-xs py-1 px-2"
                     onClick={() => removeFriend(friend.id)}
                   >
-                    Remove
+                    {t.remove}
                   </Button>
                   <Button
                     type="button"
@@ -84,67 +151,67 @@ export default function FriendsPanel() {
                     className="text-xs py-1 px-2 text-red-600"
                     onClick={() => blockFriend(friend.id)}
                   >
-                    Block
+                    {t.block}
                   </Button>
                 </div>
               </div>
             ))}
             {filteredFriends.length === 0 && (
-              <div className="p-6 text-center text-xs text-text-muted">No friends match this search.</div>
+              <div className="p-6 text-center text-xs text-text-muted">{t.noMatch}</div>
             )}
           </div>
         </section>
 
         <section className="border border-border-primary rounded-sm bg-surface-card">
-          <PanelHeader title="Add friend" meta="Mock request" />
+          <PanelHeader title={t.addFriend} meta={t.mockRequest} />
           <form onSubmit={handleSendRequest} className="p-4 flex flex-col gap-4">
             <Input
-              label="Name"
+              label={t.name}
               value={newFriendName}
               onChange={(event) => setNewFriendName(event.target.value)}
-              placeholder="Course teammate"
+              placeholder={t.namePlaceholder}
               required
             />
             <Input
-              label="Email"
+              label={t.email}
               type="email"
               value={newFriendEmail}
               onChange={(event) => setNewFriendEmail(event.target.value)}
-              placeholder="friend@example.com"
+              placeholder={t.emailPlaceholder}
               required
             />
             <Button type="submit" variant="primary">
-              Send request
+              {t.sendRequest}
             </Button>
           </form>
         </section>
       </div>
 
       <section className="border border-border-primary rounded-sm bg-surface-card">
-        <PanelHeader title="Friend requests" meta={`${incomingRequests.length} incoming / ${outgoingRequests.length} outgoing`} />
+        <PanelHeader title={t.friendRequests} meta={`${incomingRequests.length} ${t.incoming} / ${outgoingRequests.length} ${t.outgoing}`} />
         <div className="grid grid-cols-1 lg:grid-cols-2 divide-y lg:divide-y-0 lg:divide-x divide-border-secondary">
           <RequestColumn
-            title="Incoming"
-            empty="No incoming requests."
+            title={t.incomingTitle}
+            empty={t.noIncoming}
             requests={incomingRequests}
             renderActions={(requestId) => (
               <>
                 <Button type="button" variant="primary" className="text-xs py-1 px-2" onClick={() => acceptFriendRequest(requestId)}>
-                  Accept
+                  {t.accept}
                 </Button>
                 <Button type="button" variant="secondary" className="text-xs py-1 px-2" onClick={() => rejectFriendRequest(requestId)}>
-                  Reject
+                  {t.reject}
                 </Button>
               </>
             )}
           />
           <RequestColumn
-            title="Outgoing"
-            empty="No outgoing requests."
+            title={t.outgoingTitle}
+            empty={t.noOutgoing}
             requests={outgoingRequests}
             renderActions={(requestId) => (
               <Button type="button" variant="secondary" className="text-xs py-1 px-2" onClick={() => rejectFriendRequest(requestId)}>
-                Cancel
+                {t.cancel}
               </Button>
             )}
           />
@@ -152,7 +219,7 @@ export default function FriendsPanel() {
       </section>
 
       <section className="border border-border-primary rounded-sm bg-surface-card">
-        <PanelHeader title="Blocked users" meta={`${blockedUsers.length} blocked`} />
+        <PanelHeader title={t.blockedUsers} meta={`${blockedUsers.length} ${t.blocked}`} />
         <div className="divide-y divide-border-secondary">
           {blockedUsers.map((user) => (
             <div key={user.id} className="p-4 flex items-center justify-between gap-4">
@@ -161,12 +228,12 @@ export default function FriendsPanel() {
                 <p className="text-[10px] text-text-muted font-mono truncate">{user.email}</p>
               </div>
               <Button type="button" variant="secondary" className="text-xs py-1 px-2" onClick={() => unblockUser(user.id)}>
-                Unblock
+                {t.unblock}
               </Button>
             </div>
           ))}
           {blockedUsers.length === 0 && (
-            <div className="p-6 text-center text-xs text-text-muted">No blocked users.</div>
+            <div className="p-6 text-center text-xs text-text-muted">{t.noBlocked}</div>
           )}
         </div>
       </section>
