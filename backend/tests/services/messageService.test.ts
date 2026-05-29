@@ -4,7 +4,7 @@ import { ForbiddenError, NotFoundError, ValidationError } from '../../src/errors
 import type { IMessageRepository } from '../../src/repositories/IMessageRepository';
 import type { IRoomMemberRepository } from '../../src/repositories/IRoomMemberRepository';
 import type { IRoomRepository } from '../../src/repositories/IRoomRepository';
-import type { Message, Room, RoomMember } from '../../../shared/types';
+import type { Message, MessageWithSender, Room, RoomMember } from '../../../shared/types';
 
 describe('messageService', () => {
   let messageRepo: Mocked<IMessageRepository>;
@@ -39,6 +39,15 @@ describe('messageService', () => {
     sentAt: new Date('2026-01-01T00:00:00.000Z'),
   };
 
+  const messageWithSender: MessageWithSender = {
+    ...message,
+    sender: {
+      userId: 'user-1',
+      name: 'Sender',
+      avatarUrl: undefined,
+    },
+  };
+
   beforeEach(() => {
     messageRepo = {
       findById: vi.fn(),
@@ -66,7 +75,7 @@ describe('messageService', () => {
   it('sendMessage validates, checks room membership, and creates a message', async () => {
     roomRepo.findById.mockResolvedValue(room);
     roomMemberRepo.findMember.mockResolvedValue(member);
-    messageRepo.create.mockResolvedValue(message);
+    messageRepo.create.mockResolvedValue(messageWithSender);
 
     const result = await messageService.sendMessage('user-1', 'room-1', '  hello  ');
 
@@ -77,7 +86,7 @@ describe('messageService', () => {
       senderId: 'user-1',
       content: 'hello',
     });
-    expect(result).toEqual({ ...message, sender: null });
+    expect(result).toBe(messageWithSender);
   });
 
   it('sendMessage rejects empty content before touching repositories', async () => {
@@ -105,7 +114,7 @@ describe('messageService', () => {
   it('listForRoom checks membership and returns chronological messages from the repository', async () => {
     roomRepo.findById.mockResolvedValue(room);
     roomMemberRepo.findMember.mockResolvedValue(member);
-    messageRepo.findByRoom.mockResolvedValue([message]);
+    messageRepo.findByRoom.mockResolvedValue([messageWithSender]);
 
     const result = await messageService.listForRoom('user-1', 'room-1', {
       beforeId: 'message-0',
@@ -116,11 +125,11 @@ describe('messageService', () => {
       beforeId: 'message-0',
       limit: 10,
     });
-    expect(result).toEqual([{ ...message, sender: null }]);
+    expect(result).toEqual([messageWithSender]);
   });
 
   it('recallMessage checks membership and recalls messages that belong to the room', async () => {
-    const recalled = { ...message, isRecalled: true };
+    const recalled: MessageWithSender = { ...messageWithSender, isRecalled: true };
     roomRepo.findById.mockResolvedValue(room);
     roomMemberRepo.findMember.mockResolvedValue(member);
     messageRepo.findById.mockResolvedValue(message);
@@ -129,7 +138,7 @@ describe('messageService', () => {
     const result = await messageService.recallMessage('user-1', 'room-1', 'message-1');
 
     expect(messageRepo.markRecalled).toHaveBeenCalledWith('message-1');
-    expect(result).toEqual({ ...recalled, sender: null });
+    expect(result).toBe(recalled);
   });
 
   it('recallMessage hides messages outside the room behind NotFoundError', async () => {

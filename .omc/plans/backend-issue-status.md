@@ -21,11 +21,11 @@ Status legend:
 | #5a | Repository interfaces + migration | Complete | Repository interfaces and initial migration exist. Actual table name is `chat_rooms`, while the planning text sometimes says `rooms`. |
 | #5b | userRepository (pg) + integration test | Complete | `userRepository.ts` and repository tests exist. |
 | #5c | roomRepository (pg) + integration test | Complete | `roomRepository.ts` and integration tests exist. |
-| #5d | messageRepository (pg) + integration test | Complete | `messageRepository.ts` and integration tests exist. |
+| #5d | messageRepository (pg) + integration test | Complete | `messageRepository.ts` and integration tests exist. `findByRoom`, `create`, and `markRecalled` return `MessageWithSender` via `LEFT JOIN users`. |
 | #5e | roomMemberRepository (pg) + integration test | Complete | `roomMemberRepository.ts` and integration tests exist. |
 | #6 | User Service + auth flows | Partial | `userService.ts`, `userSchemas.ts`, and service tests exist for register/login. Planned `getById`, `list`, `update`, and `delete` service methods are still missing. |
 | #7 | Room Service | Complete | Implemented in this branch: `roomService.ts`, `roomSchemas.ts`, and mocked service tests. |
-| #8 | Message Service | Complete | Implemented in this branch: `messageService.ts`, `messageSchemas.ts`, and mocked service tests for send/list/recall with room-membership checks. Sender enrichment currently returns `sender: null` because the current repository contract returns plain `Message`. |
+| #8 | Message Service | Complete | Implemented in this branch: `messageService.ts`, `messageSchemas.ts`, and mocked service tests for send/list/recall with room-membership checks. Sender enrichment now comes from `IMessageRepository`, keeping SQL and joins below the service layer. |
 | #9 | User Controller + Routes (+ auth routes) | Not started | No dedicated controller or route files found yet; `index.ts` still owns active auth route wiring. |
 | #10 | Room Controller + Routes | Not started | No dedicated room controller/route files found yet; `index.ts` still owns active room route wiring. |
 | #11 | Message Controller + Routes | Not started | No dedicated message controller/route files found yet; `index.ts` still owns active message route wiring. |

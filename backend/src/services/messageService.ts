@@ -1,4 +1,4 @@
-import type { Message, MessageWithSender } from '@shared/types';
+import type { MessageWithSender } from '@shared/types';
 import type { IMessageRepository } from '../repositories/IMessageRepository';
 import type { IRoomMemberRepository } from '../repositories/IRoomMemberRepository';
 import type { IRoomRepository } from '../repositories/IRoomRepository';
@@ -11,11 +11,6 @@ import {
 
 const validationMessage = (issues: { message: string }[]) =>
   issues[0]?.message ?? 'Invalid message payload';
-
-const withSenderPlaceholder = (message: Message): MessageWithSender => ({
-  ...message,
-  sender: null,
-});
 
 export const makeMessageService = (
   messageRepo: IMessageRepository,
@@ -52,7 +47,7 @@ export const makeMessageService = (
 
       await assertRoomMembership(userId, parsed.data.roomId);
 
-      const messageData: Pick<Message, 'roomId' | 'senderId' | 'content' | 'replyToId'> = {
+      const messageData: Parameters<IMessageRepository['create']>[0] = {
         roomId: parsed.data.roomId,
         senderId: userId,
         content: parsed.data.content,
@@ -61,8 +56,7 @@ export const makeMessageService = (
         messageData.replyToId = parsed.data.replyToId;
       }
 
-      const message = await messageRepo.create(messageData);
-      return withSenderPlaceholder(message);
+      return messageRepo.create(messageData);
     },
 
     async listForRoom(
@@ -81,11 +75,10 @@ export const makeMessageService = (
 
       await assertRoomMembership(userId, parsed.data.roomId);
 
-      const messages = await messageRepo.findByRoom(parsed.data.roomId, {
+      return messageRepo.findByRoom(parsed.data.roomId, {
         beforeId: parsed.data.beforeId,
         limit: parsed.data.limit,
       });
-      return messages.map(withSenderPlaceholder);
     },
 
     async recallMessage(
@@ -105,8 +98,7 @@ export const makeMessageService = (
         throw new NotFoundError('message', parsed.data.messageId);
       }
 
-      const recalled = await messageRepo.markRecalled(parsed.data.messageId);
-      return withSenderPlaceholder(recalled);
+      return messageRepo.markRecalled(parsed.data.messageId);
     },
   };
 };

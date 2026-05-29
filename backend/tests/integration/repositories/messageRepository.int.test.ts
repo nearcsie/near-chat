@@ -45,12 +45,22 @@ describe('MessageRepository (pg)', () => {
     expect(first.messageId).toBeDefined();
     expect(first.roomId).toBe(roomId);
     expect(first.senderId).toBe(userId);
+    expect(first.sender).toEqual({
+      userId,
+      name: 'Message Tester',
+      avatarUrl: undefined,
+    });
     expect(first.replyToId).toBeUndefined();
     expect(first.isRecalled).toBe(false);
     expect(first.sentAt).toBeInstanceOf(Date);
 
     const fetched = await repo.findById(second.messageId);
-    expect(fetched).toEqual(second);
+    expect(fetched).toMatchObject({
+      messageId: second.messageId,
+      roomId,
+      senderId: userId,
+      content: 'second message',
+    });
     expect(fetched?.replyToId).toBe(first.messageId);
 
     const messages = await repo.findByRoom(roomId, { limit: 10 });
@@ -58,6 +68,11 @@ describe('MessageRepository (pg)', () => {
       first.messageId,
       second.messageId,
     ]);
+    expect(messages[1].sender).toEqual({
+      userId,
+      name: 'Message Tester',
+      avatarUrl: undefined,
+    });
   });
 
   it('findByRoom respects beforeId and limit', async () => {
@@ -89,6 +104,11 @@ describe('MessageRepository (pg)', () => {
 
     expect(recalled.messageId).toBe(message.messageId);
     expect(recalled.isRecalled).toBe(true);
+    expect(recalled.sender).toEqual({
+      userId,
+      name: 'Message Tester',
+      avatarUrl: undefined,
+    });
     await expect(repo.markRecalled('00000000-0000-0000-0000-000000000000')).rejects.toThrow(
       'Message not found',
     );

@@ -1,8 +1,8 @@
-import type { Message } from '@shared/types';
+import type { Message, MessageWithSender } from '@shared/types';
 
 export interface IMessageRepository {
   findById(messageId: string): Promise<Message | null>;
-  findByRoom(roomId: string, opts: { beforeId?: string; limit: number }): Promise<Message[]>;
-  create(data: Pick<Message, 'roomId' | 'senderId' | 'content' | 'replyToId'>): Promise<Message>;
-  markRecalled(messageId: string): Promise<Message>;
+  findByRoom(roomId: string, opts: { beforeId?: string; limit: number }): Promise<MessageWithSender[]>;
+  create(data: Pick<Message, 'roomId' | 'senderId' | 'content' | 'replyToId'>): Promise<MessageWithSender>;
+  markRecalled(messageId: string): Promise<MessageWithSender>;
 }
