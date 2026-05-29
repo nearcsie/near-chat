@@ -66,7 +66,7 @@ app.post("/auth/login", async (req, res) => {
 
 app.get("/rooms", async (req, res) => {
   try {
-    const result = await pool.query("SELECT * FROM rooms");
+    const result = await pool.query("SELECT * FROM chat_rooms");
     res.json(result.rows);
   } catch (error) {
     res.status(500).json({ error: "Failed to fetch rooms" });
@@ -76,7 +76,7 @@ app.get("/rooms", async (req, res) => {
 app.post("/rooms", async (req, res) => {
   const { name } = req.body;
   try {
-    const result = await pool.query("INSERT INTO rooms (name) VALUES ($1) RETURNING *", [name]);
+    const result = await pool.query("INSERT INTO chat_rooms (type, name) VALUES ('group', $1) RETURNING *", [name]);
     res.json(result.rows[0]);
   } catch (error) {
     res.status(400).json({ error: "Room creation failed" });
@@ -87,11 +87,11 @@ app.get("/rooms/:id/messages", async (req, res) => {
   const roomId = req.params.id;
   try {
     const result = await pool.query(
-      `SELECT m.*, u.username 
-       FROM messages m 
-       JOIN users u ON m.userId = u.id 
-       WHERE m.roomId = $1 
-       ORDER BY m.createdAt ASC`,
+      `SELECT m.*, u.name
+       FROM messages m
+       JOIN users u ON m.sender_id = u.user_id
+       WHERE m.room_id = $1
+       ORDER BY m.sent_at ASC`,
       [roomId]
     );
     res.json(result.rows);
