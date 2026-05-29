@@ -5,6 +5,9 @@ import { Server } from "socket.io";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import pool from "./db";
+import { makeUserService } from "./services/userService";
+import { UserRepository } from "./repositories/userRepository";
+import { errorHandler } from "./middlewares/errorHandler";
 
 const app = express();
 const server = http.createServer(app);
@@ -22,45 +25,26 @@ app.use(express.json());
 
 // --- REST API ---
 
-app.post("/auth/register", async (req, res) => {
-  const { username, password } = req.body;
-  try {
-    const existing = await pool.query("SELECT * FROM users WHERE username = $1", [username]);
-    if (existing.rows.length > 0) {
-      return res.status(400).json({ error: "Username already exists" });
-    }
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const result = await pool.query(
-      "INSERT INTO users (username, password) VALUES ($1, $2) RETURNING id, username",
-      [username, hashedPassword]
-    );
-    const user = result.rows[0];
+const userRepository = new UserRepository(pool);
+const userService = makeUserService(userRepository, {
+  signToken: (payload) => jwt.sign(payload, JWT_SECRET)
+});
 
-    const token = jwt.sign({ userId: user.id, username: user.username }, JWT_SECRET);
-    res.json({ token, user });
+app.post("/auth/register", async (req, res, next) => {
+  try {
+    const result = await userService.register(req.body);
+    res.json(result);
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: "Register failed" });
+    next(error);
   }
 });
 
-app.post("/auth/login", async (req, res) => {
-  const { username, password } = req.body;
+app.post("/auth/login", async (req, res, next) => {
   try {
-    const result = await pool.query("SELECT * FROM users WHERE username = $1", [username]);
-    const user = result.rows[0];
-    if (!user) {
-      return res.status(400).json({ error: "Invalid credentials" });
-    }
-    const isValid = await bcrypt.compare(password, user.password);
-    if (!isValid) {
-      return res.status(400).json({ error: "Invalid credentials" });
-    }
-    const token = jwt.sign({ userId: user.id, username: user.username }, JWT_SECRET);
-    res.json({ token, user: { id: user.id, username: user.username } });
+    const result = await userService.login(req.body);
+    res.json(result);
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: "Login failed" });
+    next(error);
   }
 });
 
@@ -142,6 +126,8 @@ io.on("connection", (socket) => {
     console.log(`User disconnected: ${s.user.username}`);
   });
 });
+
+app.use(errorHandler);
 
 server.listen(PORT as number, "0.0.0.0", () => {
   console.log(`Backend server successfully listening on port ${PORT} (0.0.0.0)`);
