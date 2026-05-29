@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterAll } from 'vitest';
-import { RoomRepository } from '../../src/repositories/roomRepository';
-import { testPool } from '../helpers/testPool';
-import { resetDb } from '../helpers/resetDb';
+import { RoomRepository } from '../../../src/repositories/roomRepository';
+import { testPool } from '../../helpers/testPool';
+import { resetDb } from '../../helpers/resetDb';
 
 describe('RoomRepository (pg)', () => {
   const repo = new RoomRepository(testPool);
