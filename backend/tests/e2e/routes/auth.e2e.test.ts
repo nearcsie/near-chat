@@ -1,7 +1,13 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import request from 'supertest';
-import { app } from '../../../src/index';
+let app: any;
 import { resetDb } from '../../helpers/resetDb';
+
+beforeAll(async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL_TEST;
+  const indexModule = await import('../../../src/index');
+  app = indexModule.app;
+});
 
 describe('Auth E2E', () => {
   beforeEach(async () => {
@@ -14,7 +20,7 @@ describe('Auth E2E', () => {
       email: 'test@example.com',
       password: 'Password123!',
     });
-    expect(res.status).toBe(201);
+    if (res.status !== 201) throw new Error("RES: " + JSON.stringify(res.body));
     expect(res.body.token).toBeDefined();
     expect(res.body.user).toBeDefined();
     expect(res.body.user.name).toBe('Test User');

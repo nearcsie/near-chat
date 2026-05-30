@@ -4,6 +4,7 @@ const connectionString = process.env.NODE_ENV === "test"
   ? process.env.DATABASE_URL_TEST
   : process.env.DATABASE_URL;
 
+console.log("DB INIT ENV:", process.env.NODE_ENV, "URL:", connectionString);
 const pool = new Pool({
   connectionString,
 });

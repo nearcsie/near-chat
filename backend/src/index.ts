@@ -9,6 +9,10 @@ import { UserRepository } from "./repositories/userRepository";
 import { RoomRepository } from "./repositories/roomRepository";
 import { RoomMemberRepository } from "./repositories/roomMemberRepository";
 import { MessageRepository } from "./repositories/messageRepository";
+import { AttachmentRepository } from "./repositories/attachmentRepository";
+import { makeAttachmentService } from "./services/attachmentService";
+import { makeAttachmentController } from "./controllers/attachmentController";
+import { makeAttachmentRoutes } from "./routes/attachmentRoutes";
 import { makeUserService } from "./services/userService";
 import { makeRoomService } from "./services/roomService";
 import { makeMessageService } from "./services/messageService";
@@ -39,20 +43,24 @@ const userRepo = new UserRepository(pool);
 const roomRepo = new RoomRepository(pool);
 const roomMemberRepo = new RoomMemberRepository(pool);
 const messageRepo = new MessageRepository(pool);
+const attachmentRepo = new AttachmentRepository(pool);
 
 const userService = makeUserService(userRepo, { signToken });
 const roomService = makeRoomService(roomRepo, roomMemberRepo);
 const messageService = makeMessageService(messageRepo, roomRepo, roomMemberRepo);
+const attachmentService = makeAttachmentService(attachmentRepo);
 
 const authController = makeAuthController(userService);
 const userController = makeUserController(userService);
 const roomController = makeRoomController(roomService);
 const messageController = makeMessageController(messageService);
+const attachmentController = makeAttachmentController(attachmentService);
 
 app.use("/api/v1/auth", makeAuthRoutes(authController));
 app.use("/api/v1/users", makeUserRoutes(userController));
 app.use("/api/v1/rooms", makeRoomRoutes(roomController));
 app.use("/api/v1/rooms", makeMessageRoutes(messageController));
+app.use("/api/v1/attachments", makeAttachmentRoutes(attachmentController));
 app.use(errorHandler);
 
 attachSocketAuth(io);

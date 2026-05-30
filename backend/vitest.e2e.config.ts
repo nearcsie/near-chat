@@ -13,5 +13,6 @@ export default defineConfig({
     environment: 'node',
     env: loadEnv('test', path.resolve(__dirname), ''),
     fileParallelism: false,
+    setupFiles: ["tests/helpers/setup.ts"],
   },
 });

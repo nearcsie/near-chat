@@ -17,6 +17,7 @@ export function errorHandler(
     return;
   }
 
+  console.error("APP ERROR:", err);
   // Unknown / unexpected errors — never leak stack traces in production
   res.status(500).json({
     statusCode: 500,
