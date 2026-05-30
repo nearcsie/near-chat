@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { makeUserService } from '../../src/services/userService';
-import { ConflictError, ValidationError } from '../../src/errors/AppError';
-import { registerSchema, loginSchema } from '../../src/validators/userSchemas';
-import type { IUserRepository } from '../../src/repositories/IUserRepository';
-import type { User } from '../../../shared/types';
+import { makeUserService } from '../../../src/services/userService';
+import { ConflictError, ValidationError } from '../../../src/errors/AppError';
+import { registerSchema, loginSchema } from '../../../src/validators/userSchemas';
+import type { IUserRepository } from '../../../src/repositories/IUserRepository';
+import type { User } from '../../../../shared/types';
 import bcrypt from 'bcryptjs';
 
 describe('userService', () => {

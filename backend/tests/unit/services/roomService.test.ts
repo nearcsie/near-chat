@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach, type Mocked } from 'vitest';
-import { makeRoomService } from '../../src/services/roomService';
-import { NotFoundError, ValidationError } from '../../src/errors/AppError';
-import type { IRoomRepository } from '../../src/repositories/IRoomRepository';
-import type { Room } from '../../../shared/types';
+import { makeRoomService } from '../../../src/services/roomService';
+import { NotFoundError, ValidationError } from '../../../src/errors/AppError';
+import type { IRoomRepository } from '../../../src/repositories/IRoomRepository';
+import type { Room } from '../../../../shared/types';
 
 describe('roomService', () => {
   let mockRepo: Mocked<IRoomRepository>;

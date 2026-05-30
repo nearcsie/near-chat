@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach, type Mocked } from 'vitest';
-import { makeMessageService } from '../../src/services/messageService';
-import { ForbiddenError, NotFoundError, ValidationError } from '../../src/errors/AppError';
-import type { IMessageRepository } from '../../src/repositories/IMessageRepository';
-import type { IRoomMemberRepository } from '../../src/repositories/IRoomMemberRepository';
-import type { IRoomRepository } from '../../src/repositories/IRoomRepository';
-import type { Message, MessageWithSender, Room, RoomMember } from '../../../shared/types';
+import { makeMessageService } from '../../../src/services/messageService';
+import { ForbiddenError, NotFoundError, ValidationError } from '../../../src/errors/AppError';
+import type { IMessageRepository } from '../../../src/repositories/IMessageRepository';
+import type { IRoomMemberRepository } from '../../../src/repositories/IRoomMemberRepository';
+import type { IRoomRepository } from '../../../src/repositories/IRoomRepository';
+import type { Message, MessageWithSender, Room, RoomMember } from '../../../../shared/types';
 
 describe('messageService', () => {
   let messageRepo: Mocked<IMessageRepository>;

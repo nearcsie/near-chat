@@ -1,13 +1,13 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { Request, Response, NextFunction } from 'express';
-import { errorHandler } from '../../src/middlewares/errorHandler';
+import { errorHandler } from '../../../src/middlewares/errorHandler';
 import {
   AppError,
   NotFoundError,
   ForbiddenError,
   ValidationError,
   ConflictError,
-} from '../../src/errors/AppError';
+} from '../../../src/errors/AppError';
 
 function makeRes() {
   const res = {
