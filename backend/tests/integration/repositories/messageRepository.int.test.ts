@@ -26,7 +26,7 @@ describe('MessageRepository (pg)', () => {
     return res.rows[0].room_id as string;
   }
 
-  it('create -> findById -> findByRoom returns camelCase messages in chronological order', async () => {
+  it('create -> findById -> findByRoom returns camelCase messages in reverse-chronological order', async () => {
     const userId = await createUser('message-user@test.com');
     const roomId = await createRoom();
 
@@ -65,10 +65,10 @@ describe('MessageRepository (pg)', () => {
 
     const messages = await repo.findByRoom(roomId, { limit: 10 });
     expect(messages.map((message) => message.messageId)).toEqual([
-      first.messageId,
       second.messageId,
+      first.messageId,
     ]);
-    expect(messages[1].sender).toEqual({
+    expect(messages[0].sender).toEqual({
       userId,
       name: 'Message Tester',
       avatarUrl: undefined,
@@ -91,7 +91,7 @@ describe('MessageRepository (pg)', () => {
 
     const limited = await repo.findByRoom(roomId, { limit: 2 });
     expect(limited).toHaveLength(2);
-    expect(limited[0].content).toBe('one');
+    expect(limited[0].content).toBe('three');
     expect(limited[1].content).toBe('two');
   });
 

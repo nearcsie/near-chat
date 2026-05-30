@@ -56,7 +56,7 @@ export class MessageRepository implements IMessageRepository {
              FROM messages
              WHERE message_id = $2 AND room_id = $1
            )
-         ORDER BY m.sent_at ASC
+         ORDER BY m.sent_at DESC
          LIMIT $3`,
         [roomId, opts.beforeId, limit],
       );
@@ -72,7 +72,7 @@ export class MessageRepository implements IMessageRepository {
        FROM messages m
        LEFT JOIN users u ON u.user_id = m.sender_id
        WHERE m.room_id = $1
-       ORDER BY m.sent_at ASC
+       ORDER BY m.sent_at DESC
        LIMIT $2`,
       [roomId, limit],
     );
