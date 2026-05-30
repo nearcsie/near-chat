@@ -3,26 +3,37 @@ import { makeUserService } from '../../../src/services/userService';
 import { ConflictError, ValidationError } from '../../../src/errors/AppError';
 import { registerSchema, loginSchema } from '../../../src/validators/userSchemas';
 import type { IUserRepository } from '../../../src/repositories/IUserRepository';
+import type { IEmergencyContactRepository } from '../../../src/repositories/IEmergencyContactRepository';
 import type { User } from '../../../../shared/types';
 import bcrypt from 'bcryptjs';
 
 describe('userService', () => {
   let mockRepo: import('vitest').Mocked<IUserRepository>;
+  let emergencyContactRepo: import('vitest').Mocked<IEmergencyContactRepository>;
   let mockJwt: { signToken: import('vitest').Mock };
+  let notifyEmergencyContact: import('vitest').Mock;
   let userService: ReturnType<typeof makeUserService>;
 
   beforeEach(() => {
     mockRepo = {
       findById: vi.fn(),
       findByEmail: vi.fn(),
+      search: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
       delete: vi.fn(),
     };
+    emergencyContactRepo = {
+      findByUserId: vi.fn(),
+      upsert: vi.fn(),
+      delete: vi.fn(),
+      recordAlertIfNew: vi.fn(),
+    };
     mockJwt = {
       signToken: vi.fn(),
     };
-    userService = makeUserService(mockRepo, {} as any, mockJwt);
+    notifyEmergencyContact = vi.fn();
+    userService = makeUserService(mockRepo, emergencyContactRepo, mockJwt, notifyEmergencyContact);
   });
 
   describe('register', () => {
@@ -106,6 +117,7 @@ describe('userService', () => {
       });
 
       expect(mockRepo.findByEmail).toHaveBeenCalledWith('test@example.com');
+      expect(mockRepo.update).toHaveBeenCalledWith('u1', { lastActivity: expect.any(Date) });
       expect(mockJwt.signToken).toHaveBeenCalledWith({ userId: 'u1', name: 'Test' });
       expect(result.token).toBe('fake-jwt-token');
       expect(result.user).toEqual({
@@ -149,6 +161,69 @@ describe('userService', () => {
       expect(loginSchema.safeParse({ email: 'valid@example.com', password: 'password123' }).success).toBe(true);
       expect(loginSchema.safeParse({ email: 'invalid', password: 'password123' }).success).toBe(false);
       expect(loginSchema.safeParse({ email: 'valid@example.com', password: '' }).success).toBe(false);
+    });
+  });
+
+  describe('emergency alerts', () => {
+    const inactiveUser: User = {
+      userId: 'u1',
+      name: 'Test',
+      email: 'test@example.com',
+      passwordHash: 'hash',
+      warningEnabled: true,
+      warningDays: 2,
+      lastActivity: new Date('2026-01-01T00:00:00.000Z'),
+      createdAt: new Date('2026-01-01T00:00:00.000Z'),
+    };
+
+    it('notifies emergency contacts for manual alerts', async () => {
+      mockRepo.findById.mockResolvedValue(inactiveUser);
+      emergencyContactRepo.findByUserId.mockResolvedValue([
+        {
+          userId: 'u1',
+          contactId: 'u2',
+          message: 'please check on me',
+          createdAt: new Date(),
+        },
+      ]);
+
+      const result = await userService.triggerEmergencyAlert('u1');
+
+      expect(result).toEqual({ alerted: true, recipients: ['u2'] });
+      expect(notifyEmergencyContact).toHaveBeenCalledWith('u2', {
+        userId: 'u1',
+        message: 'please check on me',
+      });
+    });
+
+    it('checks inactivity threshold and suppresses duplicate alerts', async () => {
+      mockRepo.findById.mockResolvedValue(inactiveUser);
+      emergencyContactRepo.recordAlertIfNew.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+      emergencyContactRepo.findByUserId.mockResolvedValue([
+        {
+          userId: 'u1',
+          contactId: 'u2',
+          message: 'inactive',
+          createdAt: new Date(),
+        },
+      ]);
+
+      const first = await userService.checkInactivity('u1', new Date('2026-01-04T00:00:00.000Z'));
+      const second = await userService.checkInactivity('u1', new Date('2026-01-04T00:00:00.000Z'));
+
+      expect(first.alerted).toBe(true);
+      expect(second).toEqual({ alerted: false, recipients: [], reason: 'ALREADY_ALERTED' });
+      expect(notifyEmergencyContact).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not alert below the inactivity threshold', async () => {
+      mockRepo.findById.mockResolvedValue(inactiveUser);
+
+      const result = await userService.checkInactivity('u1', new Date('2026-01-02T00:00:00.000Z'));
+
+      expect(result).toEqual({ alerted: false, recipients: [], reason: 'BELOW_THRESHOLD' });
+      expect(emergencyContactRepo.recordAlertIfNew).not.toHaveBeenCalled();
+      expect(notifyEmergencyContact).not.toHaveBeenCalled();
     });
   });
 });

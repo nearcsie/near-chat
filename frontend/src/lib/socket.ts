@@ -76,6 +76,14 @@ export const onReadUpdate = (
   return () => socket.off('read_update', handler);
 };
 
+export const onEmergencyAlert = (
+  socket: ChatSocket,
+  handler: ServerToClientEvents['emergency_alert'],
+): (() => void) => {
+  socket.on('emergency_alert', handler);
+  return () => socket.off('emergency_alert', handler);
+};
+
 export const onSocketError = (
   socket: ChatSocket,
   handler: ServerToClientEvents['error'],

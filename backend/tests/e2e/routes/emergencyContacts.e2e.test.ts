@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import request from 'supertest';
 import { app } from '../../../src/index';
 import { resetDb } from '../../helpers/resetDb';
+import { testPool } from '../../helpers/testPool';
 
 describe('Emergency Contacts E2E', () => {
   let token1: string;
@@ -105,5 +106,68 @@ describe('Emergency Contacts E2E', () => {
       .set('Authorization', `Bearer ${token1}`);
     
     expect(getRes.body).toHaveLength(0);
+  });
+
+  it('should trigger a manual emergency alert for the authenticated user only', async () => {
+    await request(app)
+      .post('/api/v1/users/me/emergency-contacts')
+      .set('Authorization', `Bearer ${token1}`)
+      .send({
+        contactId: user2Id,
+        message: 'Help me!',
+      });
+
+    const res = await request(app)
+      .post('/api/v1/users/me/emergency-alert')
+      .set('Authorization', `Bearer ${token1}`)
+      .send({ message: 'Manual alert' });
+
+    expect(res.status).toBe(202);
+    expect(res.body).toEqual({ alerted: true, recipients: [user2Id] });
+
+    const unauthenticated = await request(app)
+      .post('/api/v1/users/me/emergency-alert')
+      .send({ message: 'Should not send' });
+    expect(unauthenticated.status).toBe(401);
+  });
+
+  it('should check inactivity threshold and suppress duplicate alerts', async () => {
+    await request(app)
+      .post('/api/v1/users/me/emergency-contacts')
+      .set('Authorization', `Bearer ${token1}`)
+      .send({
+        contactId: user2Id,
+        message: 'Legacy check message',
+      });
+
+    await testPool.query(
+      `UPDATE users
+       SET warning_enabled = true,
+           warning_days = 2,
+           last_activity = '2026-01-01T00:00:00.000Z'
+       WHERE user_id = $1`,
+      [user1Id],
+    );
+
+    const belowThreshold = await request(app)
+      .post('/api/v1/users/me/emergency-alert/check-inactivity')
+      .set('Authorization', `Bearer ${token1}`)
+      .send({ now: '2026-01-02T00:00:00.000Z' });
+    expect(belowThreshold.status).toBe(200);
+    expect(belowThreshold.body).toMatchObject({ alerted: false, reason: 'BELOW_THRESHOLD' });
+
+    const firstAlert = await request(app)
+      .post('/api/v1/users/me/emergency-alert/check-inactivity')
+      .set('Authorization', `Bearer ${token1}`)
+      .send({ now: '2026-01-04T00:00:00.000Z' });
+    expect(firstAlert.status).toBe(200);
+    expect(firstAlert.body).toEqual({ alerted: true, recipients: [user2Id] });
+
+    const duplicate = await request(app)
+      .post('/api/v1/users/me/emergency-alert/check-inactivity')
+      .set('Authorization', `Bearer ${token1}`)
+      .send({ now: '2026-01-04T00:00:00.000Z' });
+    expect(duplicate.status).toBe(200);
+    expect(duplicate.body).toMatchObject({ alerted: false, reason: 'ALREADY_ALERTED' });
   });
 });
