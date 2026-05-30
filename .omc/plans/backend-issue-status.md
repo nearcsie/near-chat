@@ -32,7 +32,15 @@ Status legend:
 | #11 | Message Controller + Routes | Complete | `messageController.ts` and `messageRoutes.ts` exist for `/rooms/:roomId/messages` and are mounted under `/api/v1`. |
 | #12 | Socket.IO extraction to messageService | Complete | `realtime/authSocket.ts` reuses `verifyToken`; `realtime/socketServer.ts` handles all six typed client events and emits typed `ApiError` payloads. |
 | #13 | Cutover: rewire `index.ts` | Complete | `index.ts` is a composition root with repo/service/controller/router wiring, `/api/v1` route mounts, error middleware, and `attachSockets`. No inline REST handlers or direct JWT verification remain. |
-| #14 | Frontend consumes `@shared/types` | Not started | No `frontend/lib/api.ts` typed wrapper found yet. |
+| #14 | Frontend consumes `@shared/types` | Complete | `frontend/src/lib/api.ts` exports typed REST wrappers and `frontend/src/lib/socket.ts` exports typed Socket.IO helpers consuming `@shared/types`. |
+
+## GitHub Follow-up Issues
+
+| GitHub Issue | Title | Status | Evidence / Notes |
+| --- | --- | --- | --- |
+| #33 | Add E2E test coverage for API routes | Complete | `backend/tests/e2e/routes/apiRoutes.e2e.test.ts` uses `supertest` against the exported Express app and covers auth, user, room, and message route wiring. |
+| #34 | Add test coverage for Socket.IO real-time events | Not started | Planned for a separate branch with socket.io-client E2E coverage. |
+| #35 | Add unit tests for Zod validation schemas | Not started | Planned for a separate branch under `backend/tests/unit/validators/`. |
 
 Recommended next issues after this branch:
 - Finish #6 CRUD service methods so #9 has a complete user service to call.
