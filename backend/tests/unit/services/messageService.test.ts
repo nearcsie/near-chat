@@ -68,6 +68,7 @@ describe('messageService', () => {
       add: vi.fn(),
       update: vi.fn(),
       remove: vi.fn(),
+      resolveMentions: vi.fn(),
     };
     messageService = makeMessageService(messageRepo, roomRepo, roomMemberRepo);
   });
@@ -87,6 +88,24 @@ describe('messageService', () => {
       content: 'hello',
     });
     expect(result).toBe(messageWithSender);
+  });
+
+  it('sendMessage resolves unique @mentions and passes mentioned user ids to the repository', async () => {
+    roomRepo.findById.mockResolvedValue(room);
+    roomMemberRepo.findMember.mockResolvedValue(member);
+    roomMemberRepo.resolveMentions.mockResolvedValue(['user-2']);
+    messageRepo.create.mockResolvedValue({ ...messageWithSender, content: 'hello @Bob @Bob', mentions: ['user-2'] });
+
+    const result = await messageService.sendMessage('user-1', 'room-1', 'hello @Bob @Bob');
+
+    expect(roomMemberRepo.resolveMentions).toHaveBeenCalledWith('room-1', ['Bob']);
+    expect(messageRepo.create).toHaveBeenCalledWith({
+      roomId: 'room-1',
+      senderId: 'user-1',
+      content: 'hello @Bob @Bob',
+      mentions: ['user-2'],
+    });
+    expect(result.mentions).toEqual(['user-2']);
   });
 
   it('sendMessage rejects empty content before touching repositories', async () => {

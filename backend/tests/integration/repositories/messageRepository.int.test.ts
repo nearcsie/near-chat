@@ -95,6 +95,24 @@ describe('MessageRepository (pg)', () => {
     expect(limited[1].content).toBe('two');
   });
 
+  it('create stores mentions and reads them back with messages', async () => {
+    const senderId = await createUser('mention-sender@test.com');
+    const mentionedId = await createUser('mentioned-user@test.com');
+    const roomId = await createRoom();
+
+    const created = await repo.create({
+      roomId,
+      senderId,
+      content: 'hello @Message Tester',
+      mentions: [mentionedId],
+    });
+
+    expect(created.mentions).toEqual([mentionedId]);
+
+    const messages = await repo.findByRoom(roomId, { limit: 10 });
+    expect(messages[0].mentions).toEqual([mentionedId]);
+  });
+
   it('markRecalled sets isRecalled and findById returns null for missing messages', async () => {
     const userId = await createUser('recall-user@test.com');
     const roomId = await createRoom();

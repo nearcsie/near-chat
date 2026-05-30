@@ -39,7 +39,7 @@ export const makeFriendController = (
         res.status(201).json(request);
       } catch (err) {
         if (err instanceof z.ZodError) {
-          return next(new ValidationError(err.errors[0].message));
+          return next(new ValidationError(err.issues[0]?.message ?? 'Invalid request'));
         }
         if ((err as any).code === '23505') { // Unique violation
            return res.status(409).json({ message: 'Request already exists' });
@@ -58,7 +58,7 @@ export const makeFriendController = (
       }
     },
 
-    async respondRequest(req: Request, res: Response, next: NextFunction) {
+    async respondRequest(req: Request<{ id: string }>, res: Response, next: NextFunction) {
       try {
         const userId = req.user!.userId;
         const requesterId = req.params.id;
@@ -76,7 +76,7 @@ export const makeFriendController = (
         }
       } catch (err) {
         if (err instanceof z.ZodError) {
-          return next(new ValidationError(err.errors[0].message));
+          return next(new ValidationError(err.issues[0]?.message ?? 'Invalid request'));
         }
         next(err);
       }
@@ -92,7 +92,7 @@ export const makeFriendController = (
       }
     },
 
-    async removeFriend(req: Request, res: Response, next: NextFunction) {
+    async removeFriend(req: Request<{ id: string }>, res: Response, next: NextFunction) {
       try {
         const userId = req.user!.userId;
         const friendId = req.params.id;
@@ -114,13 +114,13 @@ export const makeFriendController = (
         res.status(201).json({ status: 'blocked' });
       } catch (err) {
         if (err instanceof z.ZodError) {
-          return next(new ValidationError(err.errors[0].message));
+          return next(new ValidationError(err.issues[0]?.message ?? 'Invalid request'));
         }
         next(err);
       }
     },
 
-    async unblockUser(req: Request, res: Response, next: NextFunction) {
+    async unblockUser(req: Request<{ id: string }>, res: Response, next: NextFunction) {
       try {
         const userId = req.user!.userId;
         const blockedId = req.params.id;

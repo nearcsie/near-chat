@@ -38,9 +38,7 @@ import type { ClientToServerEvents, ServerToClientEvents } from "../../shared/ty
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server<ClientToServerEvents, ServerToClientEvents>(server, {
-  cors: { origin: "*" },
-});
+const io = new Server<ClientToServerEvents, ServerToClientEvents>(server, { cors: { origin: "*" } });
 
 const PORT = process.env.PORT || 4000;
 
@@ -57,29 +55,23 @@ const attachmentRepo = new AttachmentRepository(pool);
 const friendRepo = makeFriendRepository(pool);
 
 const userService = makeUserService(userRepo, emergencyContactRepo, { signToken });
-const roomService = makeRoomService(roomRepo, roomMemberRepo, (roomId, eventName, payload) => {
-  io.to(`room_${roomId}`).emit(eventName as any, payload);
-});
+const roomService = makeRoomService(roomRepo, roomMemberRepo, (roomId, eventName, payload) =>
+  io.to(`room_${roomId}`).emit(eventName as any, payload),
+);
 const messageService = makeMessageService(messageRepo, roomRepo, roomMemberRepo);
 const folderService = makeFolderService(folderRepo);
 const attachmentService = makeAttachmentService(attachmentRepo);
 
-const authController = makeAuthController(userService);
-const userController = makeUserController(userService);
-const roomController = makeRoomController(roomService);
-const messageController = makeMessageController(messageService);
-const folderController = makeFolderController(folderService);
-const attachmentController = makeAttachmentController(attachmentService);
-const friendController = makeFriendController(friendRepo, (userId, eventName, payload) => {
-  io.to(`user_${userId}`).emit(eventName as any, payload);
-});
+const friendController = makeFriendController(friendRepo, (userId, eventName, payload) =>
+  io.to(`user_${userId}`).emit(eventName as any, payload),
+);
 
-app.use("/api/v1/auth", makeAuthRoutes(authController));
-app.use("/api/v1/users", makeUserRoutes(userController));
-app.use("/api/v1/rooms", makeRoomRoutes(roomController));
-app.use("/api/v1/rooms", makeMessageRoutes(messageController));
-app.use("/api/v1/folders", makeFolderRoutes(folderController));
-app.use("/api/v1/attachments", makeAttachmentRoutes(attachmentController));
+app.use("/api/v1/auth", makeAuthRoutes(makeAuthController(userService)));
+app.use("/api/v1/users", makeUserRoutes(makeUserController(userService)));
+app.use("/api/v1/rooms", makeRoomRoutes(makeRoomController(roomService)));
+app.use("/api/v1/rooms", makeMessageRoutes(makeMessageController(messageService)));
+app.use("/api/v1/folders", makeFolderRoutes(makeFolderController(folderService)));
+app.use("/api/v1/attachments", makeAttachmentRoutes(makeAttachmentController(attachmentService)));
 app.use("/api/v1/friends", makeFriendRoutes(friendController));
 app.use("/api/v1/blocks", makeBlockRoutes(friendController));
 app.use(errorHandler);
@@ -88,9 +80,9 @@ attachSocketAuth(io);
 attachSockets(io, { messageService, messageRepository: messageRepo, roomMemberRepository: roomMemberRepo });
 
 if (require.main === module) {
-  server.listen(PORT as number, "0.0.0.0", () => {
-    console.log(`Backend server successfully listening on port ${PORT} (0.0.0.0)`);
-  });
+  server.listen(PORT as number, "0.0.0.0", () =>
+    console.log(`Backend server successfully listening on port ${PORT} (0.0.0.0)`),
+  );
 }
 
 export { app, server, io };

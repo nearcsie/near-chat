@@ -18,13 +18,13 @@ export const makeFolderController = (service: FolderService) => ({
       res.status(200).json(folders);
     } catch (err) { next(err); }
   },
-  async remove(req: Request, res: Response, next: NextFunction): Promise<void> {
+  async remove(req: Request<{ id: string }>, res: Response, next: NextFunction): Promise<void> {
     try {
       await service.deleteFolder(req.params.id, req.user!.userId);
       res.status(204).send();
     } catch (err) { next(err); }
   },
-  async updateRooms(req: Request, res: Response, next: NextFunction): Promise<void> {
+  async updateRooms(req: Request<{ id: string }>, res: Response, next: NextFunction): Promise<void> {
     try {
       const parsed = updateFolderRoomsSchema.safeParse(req.body);
       if (!parsed.success) return next(new ValidationError('Invalid roomIds'));

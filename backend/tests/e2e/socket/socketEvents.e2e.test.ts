@@ -127,6 +127,29 @@ describe('Socket.IO chat events E2E', () => {
     });
   });
 
+  it('broadcasts new_message payloads with resolved mentions', async () => {
+    const sender = await connectClient('user-1');
+    const receiver = await connectClient('user-2');
+    messageService.sendMessage.mockResolvedValue({
+      ...message,
+      content: 'hello @Bob',
+      mentions: ['user-2'],
+    });
+
+    receiver.emit('join_room', { roomId: 'room-1' });
+    await vi.waitFor(() => {
+      expect(ioServer.sockets.adapter.rooms.get('room_room-1')?.has(receiver.id!)).toBe(true);
+    });
+
+    const received = waitFor<MessageWithSender>(receiver, 'new_message');
+    sender.emit('send_message', { roomId: 'room-1', content: 'hello @Bob' });
+
+    await expect(received).resolves.toMatchObject({
+      content: 'hello @Bob',
+      mentions: ['user-2'],
+    });
+  });
+
   it('broadcasts typing indicators', async () => {
     const sender = await connectClient('user-1');
     const receiver = await connectClient('user-2');

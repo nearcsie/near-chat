@@ -7,7 +7,7 @@ interface UserService {
   getMe(userId: string): Promise<PublicUser>;
   updateMe(userId: string, data: unknown): Promise<PublicUser>;
   search(query: string): Promise<PublicUser[]>;
-  getEmergencyContacts(userId: string): Promise<any>;
+  getEmergencyContacts(userId: string): Promise<Array<{ contactId: string }>>;
   upsertEmergencyContact(userId: string, contactId: string, message: string): Promise<any>;
   deleteEmergencyContact(userId: string, contactId: string): Promise<void>;
 }
@@ -56,7 +56,7 @@ export const makeUserController = (service: UserService) => ({
       }
       const userId = req.user!.userId;
       const existing = await service.getEmergencyContacts(userId);
-      const isUpdate = existing.some(c => c.contactId === parsed.data.contactId);
+      const isUpdate = existing.some((c) => c.contactId === parsed.data.contactId);
       const contact = await service.upsertEmergencyContact(userId, parsed.data.contactId, parsed.data.message);
       res.status(isUpdate ? 200 : 201).json(contact);
     } catch (err) {
@@ -64,7 +64,7 @@ export const makeUserController = (service: UserService) => ({
     }
   },
 
-  async deleteEmergencyContact(req: Request, res: Response, next: NextFunction): Promise<void> {
+  async deleteEmergencyContact(req: Request<{ contactId: string }>, res: Response, next: NextFunction): Promise<void> {
     try {
       const userId = req.user!.userId;
       const contactId = req.params.contactId;

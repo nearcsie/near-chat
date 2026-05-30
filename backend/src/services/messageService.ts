@@ -50,12 +50,9 @@ export const makeMessageService = (
       const mentionMatches = [...parsed.data.content.matchAll(/@([^\s@]+)/g)];
       const mentionNames = Array.from(new Set(mentionMatches.map(m => m[1])));
       
-      let mentionedUserIds: string[] = [];
-      if (mentionNames.length > 0) {
-        if ('resolveMentions' in roomMemberRepo) {
-          mentionedUserIds = await (roomMemberRepo as any).resolveMentions(parsed.data.roomId, mentionNames);
-        }
-      }
+      const mentionedUserIds = mentionNames.length > 0
+        ? await roomMemberRepo.resolveMentions(parsed.data.roomId, mentionNames)
+        : [];
 
       const messageData: Parameters<IMessageRepository['create']>[0] = {
         roomId: parsed.data.roomId,

@@ -20,4 +20,4 @@ services:
 networks:
   app_network:
     external: true
-    name: subagent-attachment-api-developer-self-02c74ea4_default
+    name: 1142-ntnu-db-app_default
