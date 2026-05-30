@@ -32,6 +32,14 @@ export class UserRepository implements IUserRepository {
     return mapRowToUser(res.rows[0]);
   }
 
+  async search(query: string): Promise<User[]> {
+    const res = await this.db.query(
+      `SELECT * FROM users WHERE name ILIKE $1 OR user_id::text = $2 LIMIT 20`,
+      [`%${query}%`, query]
+    );
+    return res.rows.map(mapRowToUser);
+  }
+
   async create(data: { name: string; email: string; passwordHash: string }): Promise<User> {
     const res = await this.db.query(
       `INSERT INTO users (name, email, password_hash)

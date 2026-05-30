@@ -11,5 +11,23 @@ export const loginSchema = z.object({
   password: z.string().min(1, 'Password cannot be empty'),
 });
 
+export const updateMeSchema = z
+  .object({
+    name: z.string().trim().min(1, 'Name cannot be empty').optional(),
+    bio: z.string().trim().optional(),
+    avatarUrl: z.string().url('Invalid avatar URL').optional(),
+    warningEnabled: z.boolean().optional(),
+    warningDays: z.number().int().min(1).optional(),
+  })
+  .refine((v) => Object.keys(v).length > 0, {
+    message: 'At least one field must be provided',
+  });
+
+export const searchQuerySchema = z.object({
+  query: z.string().trim().min(1, 'Search query cannot be empty'),
+});
+
 export type RegisterSchema = z.infer<typeof registerSchema>;
 export type LoginSchema = z.infer<typeof loginSchema>;
+export type UpdateMeInput = z.input<typeof updateMeSchema>;
+export type SearchQueryInput = z.input<typeof searchQuerySchema>;

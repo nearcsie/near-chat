@@ -1,7 +1,8 @@
 import bcrypt from 'bcryptjs';
 import type { IUserRepository } from '../repositories/IUserRepository';
 import type { RegisterRequest, LoginRequest, AuthResponse, PublicUser, JwtPayload } from '../../../shared/types';
-import { ConflictError, ValidationError } from '../errors/AppError';
+import { ConflictError, NotFoundError, ValidationError } from '../errors/AppError';
+import { updateMeSchema, searchQuerySchema, type UpdateMeInput } from '../validators/userSchemas';
 
 export interface JwtHelper {
   signToken(payload: JwtPayload): string;
@@ -67,6 +68,30 @@ export const makeUserService = (repo: IUserRepository, jwt: JwtHelper) => {
         token,
         user: publicUser
       };
-    }
+    },
+
+    async getMe(userId: string): Promise<PublicUser> {
+      const user = await repo.findById(userId);
+      if (!user) throw new NotFoundError('user', userId);
+      return { userId: user.userId, name: user.name, avatarUrl: user.avatarUrl };
+    },
+
+    async updateMe(userId: string, data: UpdateMeInput): Promise<PublicUser> {
+      const parsed = updateMeSchema.safeParse(data);
+      if (!parsed.success) {
+        throw new ValidationError(parsed.error.issues[0]?.message ?? 'Invalid payload');
+      }
+      const updated = await repo.update(userId, parsed.data);
+      return { userId: updated.userId, name: updated.name, avatarUrl: updated.avatarUrl };
+    },
+
+    async search(query: string): Promise<PublicUser[]> {
+      const parsed = searchQuerySchema.safeParse({ query });
+      if (!parsed.success) {
+        throw new ValidationError(parsed.error.issues[0]?.message ?? 'Invalid query');
+      }
+      const users = await repo.search(parsed.data.query);
+      return users.map((u) => ({ userId: u.userId, name: u.name, avatarUrl: u.avatarUrl }));
+    },
   };
 };

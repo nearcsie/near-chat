@@ -27,6 +27,14 @@ export class RoomRepository implements IRoomRepository {
     return res.rows.length === 0 ? null : mapRowToRoom(res.rows[0]);
   }
 
+  async findByInviteCode(code: string): Promise<Room | null> {
+    const res = await this.db.query(
+      'SELECT * FROM chat_rooms WHERE invite_code = $1',
+      [code]
+    );
+    return res.rows.length === 0 ? null : mapRowToRoom(res.rows[0]);
+  }
+
   async findByMember(userId: string): Promise<Room[]> {
     const res = await this.db.query(
       `SELECT cr.* FROM chat_rooms cr
