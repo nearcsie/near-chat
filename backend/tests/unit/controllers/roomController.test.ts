@@ -32,9 +32,13 @@ describe('roomController', () => {
     list: vi.fn(),
     create: vi.fn(),
     getById: vi.fn(),
+    listMembers: vi.fn(),
     update: vi.fn(),
     joinByCode: vi.fn(),
     leave: vi.fn(),
+    approveMember: vi.fn(),
+    updateMember: vi.fn(),
+    kickMember: vi.fn(),
   };
   const ctrl = makeRoomController(service);
 
@@ -72,7 +76,13 @@ describe('roomController', () => {
 
       await ctrl.createGroup(authedReq({ body: { name: 'Study Room' } }), res, next);
 
-      expect(service.create).toHaveBeenCalledWith('user-1', { type: 'group', name: 'Study Room' });
+      expect(service.create).toHaveBeenCalledWith('user-1', {
+        type: 'group',
+        name: 'Study Room',
+        avatarUrl: undefined,
+        requireApproval: undefined,
+        viewHistory: undefined,
+      });
       expect(res.status).toHaveBeenCalledWith(201);
       expect(res.json).toHaveBeenCalledWith(room);
     });

@@ -43,6 +43,7 @@ describe('roomService', () => {
       add: vi.fn(),
       update: vi.fn(),
       remove: vi.fn(),
+      resolveMentions: vi.fn(),
     };
     roomService = makeRoomService(mockRepo, mockMemberRepo);
   });
@@ -56,6 +57,7 @@ describe('roomService', () => {
     expect(mockRepo.create).toHaveBeenCalledWith({
       type: 'group',
       name: 'Study Room',
+      inviteCode: expect.any(String),
       requireApproval: false,
       viewHistory: true,
     });

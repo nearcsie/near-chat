@@ -4,6 +4,7 @@ import { Server } from 'socket.io';
 import { io as createClient, type Socket as ClientSocket } from 'socket.io-client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { signToken } from '../../../src/auth/jwt';
+import { ForbiddenError } from '../../../src/errors/AppError';
 import { attachSocketAuth, type ChatServer } from '../../../src/realtime/authSocket';
 import { attachSockets } from '../../../src/realtime/socketServer';
 import type { ClientToServerEvents, MessageWithSender, ServerToClientEvents } from '../../../../shared/types';
@@ -149,6 +150,21 @@ describe('Socket.IO chat events E2E', () => {
       mentions: ['user-2'],
     });
   });
+
+  it('emits typed error when send_message is denied', async () => {
+    const sender = await connectClient('user-1');
+    messageService.sendMessage.mockRejectedValue(new ForbiddenError('Muted members cannot send messages'));
+
+    const errorPayload = waitFor<Parameters<ServerToClientEvents['error']>[0]>(sender, 'error');
+    sender.emit('send_message', { roomId: 'room-1', content: 'hello' });
+
+    await expect(errorPayload).resolves.toMatchObject({
+      statusCode: 403,
+      code: 'FORBIDDEN',
+      message: 'Muted members cannot send messages',
+    });
+  });
+
 
   it('broadcasts typing indicators', async () => {
     const sender = await connectClient('user-1');

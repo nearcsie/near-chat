@@ -11,6 +11,7 @@ beforeAll(async () => {
 
 describe('Room E2E', () => {
   let token: string;
+  let otherToken: string;
 
   beforeEach(async () => {
     await resetDb();
@@ -20,6 +21,13 @@ describe('Room E2E', () => {
       password: 'Password123!',
     });
     token = res.body.token;
+
+    const otherRes = await request(app).post('/api/v1/auth/register').send({
+      name: 'Other User',
+      email: 'other@example.com',
+      password: 'Password123!',
+    });
+    otherToken = otherRes.body.token;
   });
 
   it('should create a room', async () => {
@@ -52,5 +60,27 @@ describe('Room E2E', () => {
     expect(Array.isArray(res.body)).toBe(true);
     expect(res.body.length).toBe(1);
     expect(res.body[0].name).toBe('Test Room 1');
+    expect(res.body[0].unreadCount).toBeDefined();
+  });
+
+  it('should create a group with avatar and generated invite code, then join by code', async () => {
+    const createRes = await request(app)
+      .post('/api/v1/rooms/group')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        name: 'Invite Room',
+        avatarUrl: 'https://example.com/group.png',
+      });
+
+    expect(createRes.status).toBe(201);
+    expect(createRes.body.avatarUrl).toBe('https://example.com/group.png');
+    expect(createRes.body.inviteCode).toEqual(expect.any(String));
+
+    const joinRes = await request(app)
+      .post(`/api/v1/rooms/join/${createRes.body.inviteCode}`)
+      .set('Authorization', `Bearer ${otherToken}`);
+
+    expect(joinRes.status).toBe(200);
+    expect(joinRes.body.roomId).toBe(createRes.body.roomId);
   });
 });

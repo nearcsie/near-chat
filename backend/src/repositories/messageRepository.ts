@@ -42,7 +42,7 @@ export class MessageRepository implements IMessageRepository {
     return res.rows.length === 0 ? null : mapRowToMessage(res.rows[0]);
   }
 
-  async findByRoom(roomId: string, opts: { beforeId?: string; limit: number }): Promise<MessageWithSender[]> {
+  async findByRoom(roomId: string, opts: { beforeId?: string; limit: number; after?: Date }): Promise<MessageWithSender[]> {
     const limit = Math.max(1, opts.limit);
 
     if (opts.beforeId) {
@@ -56,6 +56,7 @@ export class MessageRepository implements IMessageRepository {
          FROM messages m
          LEFT JOIN users u ON u.user_id = m.sender_id
          WHERE m.room_id = $1
+           AND ($4::timestamptz IS NULL OR m.sent_at >= $4)
            AND m.sent_at < (
              SELECT sent_at
              FROM messages
@@ -63,7 +64,7 @@ export class MessageRepository implements IMessageRepository {
            )
          ORDER BY m.sent_at DESC
          LIMIT $3`,
-        [roomId, opts.beforeId, limit],
+        [roomId, opts.beforeId, limit, opts.after ?? null],
       );
       return res.rows.map(mapRowToMessageWithSender);
     }
@@ -78,9 +79,10 @@ export class MessageRepository implements IMessageRepository {
        FROM messages m
        LEFT JOIN users u ON u.user_id = m.sender_id
        WHERE m.room_id = $1
+         AND ($3::timestamptz IS NULL OR m.sent_at >= $3)
        ORDER BY m.sent_at DESC
        LIMIT $2`,
-      [roomId, limit],
+      [roomId, limit, opts.after ?? null],
     );
     return res.rows.map(mapRowToMessageWithSender);
   }

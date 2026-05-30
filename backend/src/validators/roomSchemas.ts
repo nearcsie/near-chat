@@ -5,6 +5,7 @@ export const roomTypeSchema = z.enum(['private', 'group']);
 export const createRoomSchema = z.object({
   type: roomTypeSchema.default('group'),
   name: z.string().trim().min(1, 'Room name cannot be empty'),
+  avatarUrl: z.string().url('Invalid avatar URL').optional(),
   requireApproval: z.boolean().default(false),
   viewHistory: z.boolean().default(true),
 });
