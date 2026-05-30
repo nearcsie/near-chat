@@ -1,0 +1,45 @@
+{
+  "capturedFrom": "pre-cutover inline/index routes documented in GitHub issue #18",
+  "intentionalShapeChanges": [
+    "REST routes are mounted under /api/v1 after cutover.",
+    "Auth responses return { token, user } with PublicUser only; passwordHash is never echoed.",
+    "Message responses use MessageWithSender with sender public profile and camelCase fields.",
+    "Room responses use camelCase fields mapped by repositories."
+  ],
+  "endpoints": {
+    "POST /auth/register": {
+      "status": 201,
+      "body": {
+        "token": "string",
+        "user": {
+          "userId": "string",
+          "name": "string",
+          "avatarUrl": "string | undefined"
+        }
+      }
+    },
+    "POST /auth/login": {
+      "status": 200,
+      "body": {
+        "token": "string",
+        "user": {
+          "userId": "string",
+          "name": "string",
+          "avatarUrl": "string | undefined"
+        }
+      }
+    },
+    "GET /rooms": {
+      "status": 200,
+      "body": "Room[]"
+    },
+    "POST /rooms/group": {
+      "status": 201,
+      "body": "Room"
+    },
+    "GET /rooms/:roomId/messages": {
+      "status": 200,
+      "body": "MessageWithSender[]"
+    }
+  }
+}
