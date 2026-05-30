@@ -1,8 +1,14 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import request from 'supertest';
-import { app } from '../../../src/index';
+let app: any;
 import { resetDb } from '../../helpers/resetDb';
 import { testPool } from '../../helpers/testPool';
+
+beforeAll(async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL_TEST;
+  const indexModule = await import('../../../src/index');
+  app = indexModule.app;
+});
 
 describe('Message E2E', () => {
   let token: string;

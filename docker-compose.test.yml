@@ -2,7 +2,7 @@ services:
   db-test:
     image: postgres:16
     ports:
-      - "5433:5432"
+      - "5436:5432"
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -20,4 +20,4 @@ services:
 networks:
   app_network:
     external: true
-    name: 1142-ntnu-db-app_default
+    name: subagent-attachment-api-developer-self-02c74ea4_default
