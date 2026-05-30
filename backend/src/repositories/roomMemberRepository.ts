@@ -75,6 +75,19 @@ export class RoomMemberRepository implements IRoomMemberRepository {
     return mapRowToRoomMember(res.rows[0]);
   }
 
+  async resolveMentions(roomId: string, names: string[]): Promise<string[]> {
+    if (names.length === 0) return [];
+    const res = await this.db.query(
+      `SELECT u.user_id 
+       FROM room_members rm 
+       JOIN users u ON rm.user_id = u.user_id 
+       WHERE rm.room_id = $1 
+         AND (u.name = ANY($2) OR rm.nickname = ANY($2))`,
+      [roomId, names]
+    );
+    return res.rows.map(r => r.user_id);
+  }
+
   async remove(roomId: string, userId: string): Promise<void> {
     await this.db.query(
       'DELETE FROM room_members WHERE room_id = $1 AND user_id = $2',

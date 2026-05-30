@@ -75,6 +75,7 @@ export interface Message {
 /** Message enriched with the sender's public profile (via JOIN). */
 export interface MessageWithSender extends Message {
   sender: PublicUser | null;
+  mentions?: string[]; // Array of mentioned user IDs
 }
 
 // ---------------------------------------------------------------------------

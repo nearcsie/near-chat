@@ -83,7 +83,7 @@ app.use("/api/v1/blocks", makeBlockRoutes(friendController));
 app.use(errorHandler);
 
 attachSocketAuth(io);
-attachSockets(io, { messageService, messageRepository: messageRepo });
+attachSockets(io, { messageService, messageRepository: messageRepo, roomMemberRepository: roomMemberRepo });
 
 if (require.main === module) {
   server.listen(PORT as number, "0.0.0.0", () => {

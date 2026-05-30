@@ -15,7 +15,7 @@ function mapRowToMessage(row: any): Message {
 }
 
 function mapRowToMessageWithSender(row: any): MessageWithSender {
-  return {
+  const msg: MessageWithSender = {
     ...mapRowToMessage(row),
     sender: row.sender_user_id
       ? {
@@ -25,6 +25,10 @@ function mapRowToMessageWithSender(row: any): MessageWithSender {
         }
       : null,
   };
+  if (row.mentions) {
+    msg.mentions = row.mentions;
+  }
+  return msg;
 }
 
 export class MessageRepository implements IMessageRepository {
@@ -47,7 +51,8 @@ export class MessageRepository implements IMessageRepository {
            m.*,
            u.user_id AS sender_user_id,
            u.name AS sender_name,
-           u.avatar_url AS sender_avatar_url
+           u.avatar_url AS sender_avatar_url,
+           (SELECT array_agg(user_id) FROM message_mentions WHERE message_id = m.message_id) AS mentions
          FROM messages m
          LEFT JOIN users u ON u.user_id = m.sender_id
          WHERE m.room_id = $1
@@ -68,7 +73,8 @@ export class MessageRepository implements IMessageRepository {
          m.*,
          u.user_id AS sender_user_id,
          u.name AS sender_name,
-         u.avatar_url AS sender_avatar_url
+         u.avatar_url AS sender_avatar_url,
+         (SELECT array_agg(user_id) FROM message_mentions WHERE message_id = m.message_id) AS mentions
        FROM messages m
        LEFT JOIN users u ON u.user_id = m.sender_id
        WHERE m.room_id = $1
@@ -79,23 +85,43 @@ export class MessageRepository implements IMessageRepository {
     return res.rows.map(mapRowToMessageWithSender);
   }
 
-  async create(data: Pick<Message, 'roomId' | 'senderId' | 'content' | 'replyToId'>): Promise<MessageWithSender> {
-    const res = await this.db.query(
-      `WITH inserted AS (
-         INSERT INTO messages (room_id, sender_id, content, reply_to_id)
-         VALUES ($1, $2, $3, $4)
-         RETURNING *
-       )
-       SELECT
-         inserted.*,
-         u.user_id AS sender_user_id,
-         u.name AS sender_name,
-         u.avatar_url AS sender_avatar_url
-       FROM inserted
-       LEFT JOIN users u ON u.user_id = inserted.sender_id`,
-      [data.roomId, data.senderId, data.content, data.replyToId ?? null],
-    );
-    return mapRowToMessageWithSender(res.rows[0]);
+  async create(data: Pick<Message, 'roomId' | 'senderId' | 'content' | 'replyToId'> & { mentions?: string[] }): Promise<MessageWithSender> {
+    const client = await this.db.connect();
+    try {
+      await client.query('BEGIN');
+      const res = await client.query(
+        `WITH inserted AS (
+           INSERT INTO messages (room_id, sender_id, content, reply_to_id)
+           VALUES ($1, $2, $3, $4)
+           RETURNING *
+         )
+         SELECT
+           inserted.*,
+           u.user_id AS sender_user_id,
+           u.name AS sender_name,
+           u.avatar_url AS sender_avatar_url
+         FROM inserted
+         LEFT JOIN users u ON u.user_id = inserted.sender_id`,
+        [data.roomId, data.senderId, data.content, data.replyToId ?? null],
+      );
+      
+      const msg = mapRowToMessageWithSender(res.rows[0]);
+      
+      if (data.mentions && data.mentions.length > 0) {
+        for (const userId of data.mentions) {
+          await client.query('INSERT INTO message_mentions (message_id, user_id) VALUES ($1, $2)', [msg.messageId, userId]);
+        }
+        msg.mentions = data.mentions;
+      }
+      
+      await client.query('COMMIT');
+      return msg;
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
   }
 
   async markRecalled(messageId: string): Promise<MessageWithSender> {
@@ -110,7 +136,8 @@ export class MessageRepository implements IMessageRepository {
          updated.*,
          u.user_id AS sender_user_id,
          u.name AS sender_name,
-         u.avatar_url AS sender_avatar_url
+         u.avatar_url AS sender_avatar_url,
+         (SELECT array_agg(user_id) FROM message_mentions WHERE message_id = updated.message_id) AS mentions
        FROM updated
        LEFT JOIN users u ON u.user_id = updated.sender_id`,
       [messageId],

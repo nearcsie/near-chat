@@ -1,6 +1,7 @@
 import type { ApiError, MessageWithSender } from '@shared/types';
 import { AppError, ForbiddenError, NotFoundError } from '../errors/AppError';
 import type { IMessageRepository } from '../repositories/IMessageRepository';
+import type { IRoomMemberRepository } from '../repositories/IRoomMemberRepository';
 import type { ChatServer } from './authSocket';
 
 interface MessageService {
@@ -16,6 +17,7 @@ interface MessageService {
 interface SocketDeps {
   messageService: MessageService;
   messageRepository: Pick<IMessageRepository, 'findById'>;
+  roomMemberRepository: Pick<IRoomMemberRepository, 'update'>;
 }
 
 const toApiError = (err: unknown): ApiError => {
@@ -73,8 +75,13 @@ export const attachSockets = (io: ChatServer, deps: SocketDeps): void => {
       socket.to(`room_${roomId}`).emit('user_typing', { roomId, userId, isTyping });
     });
 
-    socket.on('read_receipt', ({ roomId, messageId }) => {
-      socket.to(`room_${roomId}`).emit('read_update', { roomId, userId, messageId });
+    socket.on('read_receipt', async ({ roomId, messageId }) => {
+      try {
+        await deps.roomMemberRepository.update(roomId, userId, { lastReadId: messageId });
+        socket.to(`room_${roomId}`).emit('read_update', { roomId, userId, messageId });
+      } catch (err) {
+        socket.emit('error', toApiError(err));
+      }
     });
   });
 };

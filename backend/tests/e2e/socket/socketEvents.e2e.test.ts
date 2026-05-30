@@ -37,6 +37,9 @@ describe('Socket.IO chat events E2E', () => {
   let messageRepository: {
     findById: ReturnType<typeof vi.fn>;
   };
+  let roomMemberRepository: {
+    update: ReturnType<typeof vi.fn>;
+  };
 
   const connectClient = (userId: string, token = signToken({ userId, name: userId })): Promise<TestClient> =>
     new Promise((resolve, reject) => {
@@ -62,10 +65,13 @@ describe('Socket.IO chat events E2E', () => {
     messageRepository = {
       findById: vi.fn(),
     };
+    roomMemberRepository = {
+      update: vi.fn(),
+    };
     clients = [];
 
     attachSocketAuth(ioServer);
-    attachSockets(ioServer, { messageService, messageRepository });
+    attachSockets(ioServer, { messageService, messageRepository, roomMemberRepository });
 
     await new Promise<void>((resolve) => {
       httpServer.listen(0, '127.0.0.1', () => resolve());
@@ -173,5 +179,25 @@ describe('Socket.IO chat events E2E', () => {
       code: 'FORBIDDEN',
     });
     expect(messageService.recallMessage).not.toHaveBeenCalled();
+  });
+
+  it('broadcasts read receipts and updates database', async () => {
+    const sender = await connectClient('user-1');
+    const receiver = await connectClient('user-2');
+
+    receiver.emit('join_room', { roomId: 'room-1' });
+    await vi.waitFor(() => {
+      expect(ioServer.sockets.adapter.rooms.get('room_room-1')?.has(receiver.id!)).toBe(true);
+    });
+
+    const received = waitFor<Parameters<ServerToClientEvents['read_update']>[0]>(receiver, 'read_update');
+    sender.emit('read_receipt', { roomId: 'room-1', messageId: 'msg-1' });
+
+    await expect(received).resolves.toEqual({
+      roomId: 'room-1',
+      userId: 'user-1',
+      messageId: 'msg-1',
+    });
+    expect(roomMemberRepository.update).toHaveBeenCalledWith('room-1', 'user-1', { lastReadId: 'msg-1' });
   });
 });

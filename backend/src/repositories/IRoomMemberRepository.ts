@@ -6,4 +6,5 @@ export interface IRoomMemberRepository {
   add(data: Pick<RoomMember, 'roomId' | 'userId' | 'role'>): Promise<RoomMember>;
   update(roomId: string, userId: string, data: Partial<Pick<RoomMember, 'role' | 'nickname' | 'isMuted' | 'lastReadId'>>): Promise<RoomMember>;
   remove(roomId: string, userId: string): Promise<void>;
+  resolveMentions(roomId: string, names: string[]): Promise<string[]>;
 }
