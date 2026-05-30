@@ -90,4 +90,29 @@ describe('Folder E2E', () => {
       .set('Authorization', `Bearer ${token}`);
     expect(getRes.body[0].roomIds).toContain(roomId);
   });
+
+  it('should reject moving rooms the user does not belong to into a folder', async () => {
+    const otherUser = await request(app).post('/api/v1/auth/register').send({
+      name: 'Other User',
+      email: 'other@example.com',
+      password: 'Password123!',
+    });
+
+    const otherRoom = await request(app)
+      .post('/api/v1/rooms/group')
+      .set('Authorization', `Bearer ${otherUser.body.token}`)
+      .send({ name: 'Other Room' });
+
+    const createRes = await request(app)
+      .post('/api/v1/folders')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Secure Folder' });
+
+    const moveRes = await request(app)
+      .put(`/api/v1/folders/${createRes.body.folderId}/rooms`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ roomIds: [otherRoom.body.roomId] });
+
+    expect(moveRes.status).toBe(403);
+  });
 });
