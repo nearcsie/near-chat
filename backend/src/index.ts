@@ -118,6 +118,10 @@ io.on("connection", (socket) => {
   });
 });
 
-server.listen(PORT as number, "0.0.0.0", () => {
-  console.log(`Backend server successfully listening on port ${PORT} (0.0.0.0)`);
-});
+if (process.env.NODE_ENV !== "test") {
+  server.listen(PORT as number, "0.0.0.0", () => {
+    console.log(`Backend server successfully listening on port ${PORT} (0.0.0.0)`);
+  });
+}
+
+export { app, io, server };
