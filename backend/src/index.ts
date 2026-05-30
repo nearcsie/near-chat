@@ -57,7 +57,9 @@ const attachmentRepo = new AttachmentRepository(pool);
 const friendRepo = makeFriendRepository(pool);
 
 const userService = makeUserService(userRepo, emergencyContactRepo, { signToken });
-const roomService = makeRoomService(roomRepo, roomMemberRepo);
+const roomService = makeRoomService(roomRepo, roomMemberRepo, (roomId, eventName, payload) => {
+  io.to(`room_${roomId}`).emit(eventName as any, payload);
+});
 const messageService = makeMessageService(messageRepo, roomRepo, roomMemberRepo);
 const folderService = makeFolderService(folderRepo);
 const attachmentService = makeAttachmentService(attachmentRepo);

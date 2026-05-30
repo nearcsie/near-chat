@@ -10,6 +10,9 @@ interface RoomService {
   update(roomId: string, callerId: string, data: UpdateRoomInput): Promise<Room>;
   joinByCode(userId: string, inviteCode: string): Promise<Room>;
   leave(userId: string, roomId: string): Promise<void>;
+  approveMember(roomId: string, callerId: string, targetUserId: string): Promise<void>;
+  updateMember(roomId: string, callerId: string, targetUserId: string, data: { role?: string; nickname?: string; isMuted?: boolean }): Promise<void>;
+  kickMember(roomId: string, callerId: string, targetUserId: string): Promise<void>;
 }
 
 export const makeRoomController = (service: RoomService) => ({
@@ -24,11 +27,11 @@ export const makeRoomController = (service: RoomService) => ({
 
   async createGroup(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const { name, avatarUrl } = req.body as { name?: string; avatarUrl?: string };
+      const { name, avatarUrl, requireApproval, viewHistory } = req.body;
       if (!name || !name.trim()) {
         return next(new ValidationError('Room name cannot be empty'));
       }
-      const room = await service.create(req.user!.userId, { type: 'group', name });
+      const room = await service.create(req.user!.userId, { type: 'group', name, requireApproval, viewHistory });
       res.status(201).json(room);
     } catch (err) {
       next(err);
@@ -70,4 +73,31 @@ export const makeRoomController = (service: RoomService) => ({
       next(err);
     }
   },
+
+  async approveMember(req: Request<{ id: string; userId: string }>, res: Response, next: NextFunction): Promise<void> {
+    try {
+      await service.approveMember(req.params.id, req.user!.userId, req.params.userId);
+      res.status(200).json({ message: 'Member approved' });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async updateMember(req: Request<{ id: string; userId: string }>, res: Response, next: NextFunction): Promise<void> {
+    try {
+      await service.updateMember(req.params.id, req.user!.userId, req.params.userId, req.body);
+      res.status(200).json({ message: 'Member updated' });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async kickMember(req: Request<{ id: string; userId: string }>, res: Response, next: NextFunction): Promise<void> {
+    try {
+      await service.kickMember(req.params.id, req.user!.userId, req.params.userId);
+      res.status(204).send();
+    } catch (err) {
+      next(err);
+    }
+  }
 });

@@ -12,6 +12,9 @@ export const makeRoomRoutes = (ctrl: ReturnType<typeof makeRoomController>): Rou
   router.post('/join/:code', ctrl.joinByCode.bind(ctrl));
   router.get('/:id', ctrl.getById.bind(ctrl));
   router.patch('/:id', ctrl.update.bind(ctrl));
+  router.patch('/:id/members/:userId/approve', ctrl.approveMember.bind(ctrl));
+  router.patch('/:id/members/:userId', ctrl.updateMember.bind(ctrl));
+  router.delete('/:id/members/:userId', ctrl.kickMember.bind(ctrl));
   router.delete('/:id/leave', ctrl.leave.bind(ctrl));
 
   return router;
