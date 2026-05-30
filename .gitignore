@@ -38,4 +38,9 @@ yarn-error.log*
 *.swp
 *.swo
 *~
+
+# AI Agent Worktrees
 .antigravitycli
+.claude/
+.claire/
+.omc/
