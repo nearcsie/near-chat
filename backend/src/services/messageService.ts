@@ -61,9 +61,13 @@ export const makeMessageService = (
         roomId: parsed.data.roomId,
         senderId: userId,
         content: parsed.data.content,
-        replyToId: parsed.data.replyToId,
-        mentions: mentionedUserIds,
       };
+      if (parsed.data.replyToId) {
+        messageData.replyToId = parsed.data.replyToId;
+      }
+      if (mentionedUserIds.length > 0) {
+        messageData.mentions = mentionedUserIds;
+      }
 
       return messageRepo.create(messageData);
     },

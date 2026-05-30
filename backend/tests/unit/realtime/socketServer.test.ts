@@ -24,6 +24,7 @@ describe('attachSockets', () => {
     recallMessage: ReturnType<typeof vi.fn>;
   };
   let repo: { findById: ReturnType<typeof vi.fn> };
+  let roomMemberRepo: { update: ReturnType<typeof vi.fn> };
 
   beforeEach(() => {
     handlers = {};
@@ -33,7 +34,7 @@ describe('attachSockets', () => {
       join: vi.fn(),
       leave: vi.fn(),
       emit: vi.fn(),
-      to: vi.fn(() => ({ emit: vi.fn() })),
+      to: vi.fn(() => ({ emit: roomEmit })),
       on: vi.fn((event, handler) => {
         handlers[event] = handler;
       }),
@@ -43,6 +44,7 @@ describe('attachSockets', () => {
       recallMessage: vi.fn(),
     };
     repo = { findById: vi.fn() };
+    roomMemberRepo = { update: vi.fn() };
 
     const io = {
       on: vi.fn((event, handler) => {
@@ -51,7 +53,7 @@ describe('attachSockets', () => {
       to: vi.fn(() => ({ emit: roomEmit })),
     } as unknown as ChatServer;
 
-    attachSockets(io, { messageService: service, messageRepository: repo });
+    attachSockets(io, { messageService: service, messageRepository: repo, roomMemberRepository: roomMemberRepo });
     connectionHandler(socket);
   });
 
@@ -109,18 +111,19 @@ describe('attachSockets', () => {
     });
   });
 
-  it('broadcasts typing and read receipts', () => {
+  it('broadcasts typing and read receipts', async () => {
     const socketRoomEmit = vi.fn();
     socket.to.mockReturnValue({ emit: socketRoomEmit });
 
     handlers.typing({ roomId: 'room-1', isTyping: true });
-    handlers.read_receipt({ roomId: 'room-1', messageId: 'msg-1' });
+    await handlers.read_receipt({ roomId: 'room-1', messageId: 'msg-1' });
 
     expect(socketRoomEmit).toHaveBeenCalledWith('user_typing', {
       roomId: 'room-1',
       userId: 'user-1',
       isTyping: true,
     });
+    expect(roomMemberRepo.update).toHaveBeenCalledWith('room-1', 'user-1', { lastReadId: 'msg-1' });
     expect(socketRoomEmit).toHaveBeenCalledWith('read_update', {
       roomId: 'room-1',
       userId: 'user-1',
