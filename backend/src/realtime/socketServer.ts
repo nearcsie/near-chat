@@ -29,6 +29,8 @@ export const attachSockets = (io: ChatServer, deps: SocketDeps): void => {
   io.on('connection', (socket) => {
     const userId = socket.data.user.userId;
 
+    socket.join(`user_${userId}`);
+
     socket.on('join_room', ({ roomId }) => {
       socket.join(`room_${roomId}`);
     });
