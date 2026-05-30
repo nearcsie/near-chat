@@ -94,6 +94,35 @@ describe('Room Members E2E', () => {
     });
   });
 
+  describe('GET /rooms/:id/members', () => {
+    it('should list room members for an existing member', async () => {
+      const res = await request(app)
+        .get(`/api/v1/rooms/${roomId}/members`)
+        .set('Authorization', `Bearer ${memberToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.map((member: { userId: string; role: string }) => [member.userId, member.role]))
+        .toEqual(expect.arrayContaining([
+          [ownerId, 'owner'],
+          [adminId, 'admin'],
+          [memberId, 'member'],
+          [pendingId, 'pending'],
+        ]));
+    });
+
+    it('should reject non-members', async () => {
+      const outsider = await request(app).post('/api/v1/auth/register').send({
+        name: 'Outsider', email: 'outsider@example.com', password: 'Password123!',
+      });
+
+      const res = await request(app)
+        .get(`/api/v1/rooms/${roomId}/members`)
+        .set('Authorization', `Bearer ${outsider.body.token}`);
+
+      expect(res.status).toBe(403);
+    });
+  });
+
   describe('PATCH /rooms/:id/members/:userId', () => {
     it('should allow owner to change role of member', async () => {
       const res = await request(app)

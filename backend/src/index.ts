@@ -59,7 +59,7 @@ const roomService = makeRoomService(roomRepo, roomMemberRepo, (roomId, eventName
   io.to(`room_${roomId}`).emit(eventName as any, payload),
 );
 const messageService = makeMessageService(messageRepo, roomRepo, roomMemberRepo);
-const folderService = makeFolderService(folderRepo);
+const folderService = makeFolderService(folderRepo, roomMemberRepo);
 const attachmentService = makeAttachmentService(attachmentRepo);
 
 const friendController = makeFriendController(friendRepo, (userId, eventName, payload) =>

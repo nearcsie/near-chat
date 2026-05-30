@@ -36,6 +36,14 @@ export const makeRoomService = (repo: IRoomRepository, roomMemberRepo: IRoomMemb
       return repo.findByMember(userId);
     },
 
+    async listMembers(roomId: string, callerId: string) {
+      const room = await repo.findById(roomId);
+      if (!room) throw new NotFoundError('room', roomId);
+      const caller = await roomMemberRepo.findMember(roomId, callerId);
+      if (!caller) throw new ForbiddenError('User is not a member of this room');
+      return roomMemberRepo.findByRoom(roomId);
+    },
+
     async update(roomId: string, callerId: string, data: UpdateRoomInput): Promise<Room> {
       const parsed = updateRoomSchema.safeParse(data);
       if (!parsed.success) {

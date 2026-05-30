@@ -1,12 +1,13 @@
 import { Request, Response, NextFunction } from 'express';
 import { ValidationError } from '../errors/AppError';
-import type { Room } from '../../../shared/types';
+import type { Room, RoomMember } from '../../../shared/types';
 import type { UpdateRoomInput } from '../validators/roomSchemas';
 
 interface RoomService {
   list(userId: string): Promise<Room[]>;
   create(creatorId: string, data: { type: 'group'; name: string; requireApproval?: boolean; viewHistory?: boolean }): Promise<Room>;
   getById(roomId: string, callerId: string): Promise<Room>;
+  listMembers(roomId: string, callerId: string): Promise<RoomMember[]>;
   update(roomId: string, callerId: string, data: UpdateRoomInput): Promise<Room>;
   joinByCode(userId: string, inviteCode: string): Promise<Room>;
   leave(userId: string, roomId: string): Promise<void>;
@@ -42,6 +43,15 @@ export const makeRoomController = (service: RoomService) => ({
     try {
       const room = await service.getById(req.params.id, req.user!.userId);
       res.status(200).json(room);
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async listMembers(req: Request<{ id: string }>, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const members = await service.listMembers(req.params.id, req.user!.userId);
+      res.status(200).json(members);
     } catch (err) {
       next(err);
     }

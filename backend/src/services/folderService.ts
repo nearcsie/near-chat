@@ -1,6 +1,7 @@
 import { IFolderRepository } from '../repositories/folderRepository';
+import type { IRoomMemberRepository } from '../repositories/IRoomMemberRepository';
 import type { Folder } from '../../../shared/types';
-import { NotFoundError } from '../errors/AppError';
+import { ForbiddenError } from '../errors/AppError';
 
 export interface FolderService {
   createFolder(userId: string, name: string): Promise<Folder>;
@@ -9,9 +10,17 @@ export interface FolderService {
   updateFolderRooms(folderId: string, userId: string, roomIds: string[]): Promise<void>;
 }
 
-export const makeFolderService = (folderRepo: IFolderRepository): FolderService => ({
+export const makeFolderService = (folderRepo: IFolderRepository, roomMemberRepo: IRoomMemberRepository): FolderService => ({
   createFolder: (userId, name) => folderRepo.create(userId, name),
   getFolders: (userId) => folderRepo.findByUserId(userId),
   deleteFolder: (folderId, userId) => folderRepo.delete(folderId, userId),
-  updateFolderRooms: (folderId, userId, roomIds) => folderRepo.updateRooms(folderId, userId, roomIds),
+  async updateFolderRooms(folderId, userId, roomIds) {
+    for (const roomId of [...new Set(roomIds)]) {
+      const membership = await roomMemberRepo.findMember(roomId, userId);
+      if (!membership) {
+        throw new ForbiddenError('Cannot categorize rooms the user is not a member of');
+      }
+    }
+    await folderRepo.updateRooms(folderId, userId, roomIds);
+  },
 });
