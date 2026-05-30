@@ -22,7 +22,7 @@ describe('userService', () => {
     mockJwt = {
       signToken: vi.fn(),
     };
-    userService = makeUserService(mockRepo, mockJwt);
+    userService = makeUserService(mockRepo, {} as any, mockJwt);
   });
 
   describe('register', () => {

@@ -1,5 +1,6 @@
 import bcrypt from 'bcryptjs';
 import type { IUserRepository } from '../repositories/IUserRepository';
+import type { IEmergencyContactRepository, EmergencyContact } from '../repositories/IEmergencyContactRepository';
 import type { RegisterRequest, LoginRequest, AuthResponse, PublicUser, JwtPayload } from '../../../shared/types';
 import { ConflictError, NotFoundError, ValidationError } from '../errors/AppError';
 import { updateMeSchema, searchQuerySchema, type UpdateMeInput } from '../validators/userSchemas';
@@ -8,7 +9,7 @@ export interface JwtHelper {
   signToken(payload: JwtPayload): string;
 }
 
-export const makeUserService = (repo: IUserRepository, jwt: JwtHelper) => {
+export const makeUserService = (repo: IUserRepository, emergencyContactRepo: IEmergencyContactRepository, jwt: JwtHelper) => {
   return {
     async register(data: RegisterRequest): Promise<AuthResponse> {
       const existingUser = await repo.findByEmail(data.email);
@@ -83,6 +84,21 @@ export const makeUserService = (repo: IUserRepository, jwt: JwtHelper) => {
       }
       const updated = await repo.update(userId, parsed.data);
       return { userId: updated.userId, name: updated.name, avatarUrl: updated.avatarUrl };
+    },
+
+    
+    async getEmergencyContacts(userId: string): Promise<EmergencyContact[]> {
+      return await emergencyContactRepo.findByUserId(userId);
+    },
+
+    async upsertEmergencyContact(userId: string, contactId: string, message: string): Promise<EmergencyContact> {
+      const contact = await repo.findById(contactId);
+      if (!contact) throw new NotFoundError('user', contactId);
+      return await emergencyContactRepo.upsert(userId, contactId, message);
+    },
+
+    async deleteEmergencyContact(userId: string, contactId: string): Promise<void> {
+      await emergencyContactRepo.delete(userId, contactId);
     },
 
     async search(query: string): Promise<PublicUser[]> {
