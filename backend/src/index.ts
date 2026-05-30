@@ -58,6 +58,10 @@ app.use(errorHandler);
 attachSocketAuth(io);
 attachSockets(io, { messageService, messageRepository: messageRepo });
 
-server.listen(PORT as number, "0.0.0.0", () => {
-  console.log(`Backend server successfully listening on port ${PORT} (0.0.0.0)`);
-});
+if (require.main === module) {
+  server.listen(PORT as number, "0.0.0.0", () => {
+    console.log(`Backend server successfully listening on port ${PORT} (0.0.0.0)`);
+  });
+}
+
+export { app, server, io };
