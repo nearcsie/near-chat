@@ -2,10 +2,12 @@ import { describe, it, expect, vi, beforeEach, type Mocked } from 'vitest';
 import { makeRoomService } from '../../../src/services/roomService';
 import { NotFoundError, ValidationError } from '../../../src/errors/AppError';
 import type { IRoomRepository } from '../../../src/repositories/IRoomRepository';
-import type { Room } from '../../../../shared/types';
+import type { IRoomMemberRepository } from '../../../src/repositories/IRoomMemberRepository';
+import type { Room, RoomMember } from '../../../../shared/types';
 
 describe('roomService', () => {
   let mockRepo: Mocked<IRoomRepository>;
+  let mockMemberRepo: Mocked<IRoomMemberRepository>;
   let roomService: ReturnType<typeof makeRoomService>;
 
   const room: Room = {
@@ -18,21 +20,38 @@ describe('roomService', () => {
     createdAt: new Date('2026-01-01T00:00:00.000Z'),
   };
 
+  const ownerMember: RoomMember = {
+    roomId: 'room-1',
+    userId: 'user-1',
+    role: 'owner',
+    isMuted: false,
+    joinTime: new Date('2026-01-01T00:00:00.000Z'),
+  };
+
   beforeEach(() => {
     mockRepo = {
       findById: vi.fn(),
+      findByInviteCode: vi.fn(),
       findByMember: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
       delete: vi.fn(),
     };
-    roomService = makeRoomService(mockRepo);
+    mockMemberRepo = {
+      findMember: vi.fn(),
+      findByRoom: vi.fn(),
+      add: vi.fn(),
+      update: vi.fn(),
+      remove: vi.fn(),
+    };
+    roomService = makeRoomService(mockRepo, mockMemberRepo);
   });
 
   it('create validates input, trims name, and applies defaults', async () => {
     mockRepo.create.mockResolvedValue(room);
+    mockMemberRepo.add.mockResolvedValue(ownerMember);
 
-    const result = await roomService.create({ name: '  Study Room  ' });
+    const result = await roomService.create('user-1', { name: '  Study Room  ' });
 
     expect(mockRepo.create).toHaveBeenCalledWith({
       type: 'group',
@@ -40,20 +59,22 @@ describe('roomService', () => {
       requireApproval: false,
       viewHistory: true,
     });
+    expect(mockMemberRepo.add).toHaveBeenCalledWith({ roomId: room.roomId, userId: 'user-1', role: 'owner' });
     expect(result).toBe(room);
   });
 
   it('create rejects empty room names', async () => {
-    await expect(roomService.create({ name: '   ' })).rejects.toThrow(ValidationError);
+    await expect(roomService.create('user-1', { name: '   ' })).rejects.toThrow(ValidationError);
     expect(mockRepo.create).not.toHaveBeenCalled();
   });
 
   it('getById returns the room or throws NotFoundError', async () => {
     mockRepo.findById.mockResolvedValueOnce(room);
-    await expect(roomService.getById('room-1')).resolves.toBe(room);
+    mockMemberRepo.findMember.mockResolvedValueOnce(ownerMember);
+    await expect(roomService.getById('room-1', 'user-1')).resolves.toBe(room);
 
     mockRepo.findById.mockResolvedValueOnce(null);
-    await expect(roomService.getById('missing-room')).rejects.toThrow(NotFoundError);
+    await expect(roomService.getById('missing-room', 'user-1')).rejects.toThrow(NotFoundError);
   });
 
   it('list returns rooms for a member', async () => {
@@ -68,15 +89,16 @@ describe('roomService', () => {
   it('update validates payload and throws NotFoundError for missing rooms', async () => {
     const updated = { ...room, name: 'Updated Room' };
     mockRepo.findById.mockResolvedValueOnce(room);
+    mockMemberRepo.findMember.mockResolvedValueOnce(ownerMember);
     mockRepo.update.mockResolvedValue(updated);
 
-    await expect(roomService.update('room-1', { name: ' Updated Room ' })).resolves.toBe(updated);
+    await expect(roomService.update('room-1', 'user-1', { name: ' Updated Room ' })).resolves.toBe(updated);
     expect(mockRepo.update).toHaveBeenCalledWith('room-1', { name: 'Updated Room' });
 
-    await expect(roomService.update('room-1', {})).rejects.toThrow(ValidationError);
+    await expect(roomService.update('room-1', 'user-1', {})).rejects.toThrow(ValidationError);
 
     mockRepo.findById.mockResolvedValueOnce(null);
-    await expect(roomService.update('missing-room', { name: 'Nope' })).rejects.toThrow(NotFoundError);
+    await expect(roomService.update('missing-room', 'user-1', { name: 'Nope' })).rejects.toThrow(NotFoundError);
   });
 
   it('delete throws NotFoundError when the room does not exist', async () => {
