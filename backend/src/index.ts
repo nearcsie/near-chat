@@ -9,17 +9,21 @@ import { UserRepository } from "./repositories/userRepository";
 import { RoomRepository } from "./repositories/roomRepository";
 import { RoomMemberRepository } from "./repositories/roomMemberRepository";
 import { MessageRepository } from "./repositories/messageRepository";
+import { FolderRepository } from "./repositories/folderRepository";
 import { makeUserService } from "./services/userService";
 import { makeRoomService } from "./services/roomService";
 import { makeMessageService } from "./services/messageService";
+import { makeFolderService } from "./services/folderService";
 import { makeAuthController } from "./controllers/authController";
 import { makeUserController } from "./controllers/userController";
 import { makeRoomController } from "./controllers/roomController";
 import { makeMessageController } from "./controllers/messageController";
+import { makeFolderController } from "./controllers/folderController";
 import { makeAuthRoutes } from "./routes/authRoutes";
 import { makeUserRoutes } from "./routes/userRoutes";
 import { makeRoomRoutes } from "./routes/roomRoutes";
 import { makeMessageRoutes } from "./routes/messageRoutes";
+import { makeFolderRoutes } from "./routes/folderRoutes";
 import { attachSocketAuth } from "./realtime/authSocket";
 import { attachSockets } from "./realtime/socketServer";
 import type { ClientToServerEvents, ServerToClientEvents } from "../../shared/types";
@@ -39,20 +43,24 @@ const userRepo = new UserRepository(pool);
 const roomRepo = new RoomRepository(pool);
 const roomMemberRepo = new RoomMemberRepository(pool);
 const messageRepo = new MessageRepository(pool);
+const folderRepo = new FolderRepository(pool);
 
 const userService = makeUserService(userRepo, { signToken });
 const roomService = makeRoomService(roomRepo, roomMemberRepo);
 const messageService = makeMessageService(messageRepo, roomRepo, roomMemberRepo);
+const folderService = makeFolderService(folderRepo);
 
 const authController = makeAuthController(userService);
 const userController = makeUserController(userService);
 const roomController = makeRoomController(roomService);
 const messageController = makeMessageController(messageService);
+const folderController = makeFolderController(folderService);
 
 app.use("/api/v1/auth", makeAuthRoutes(authController));
 app.use("/api/v1/users", makeUserRoutes(userController));
 app.use("/api/v1/rooms", makeRoomRoutes(roomController));
 app.use("/api/v1/rooms", makeMessageRoutes(messageController));
+app.use("/api/v1/folders", makeFolderRoutes(folderController));
 app.use(errorHandler);
 
 attachSocketAuth(io);
