@@ -1,0 +1,426 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1780061827669,
+  "projectRoot": "/home/ray0520/Projects/DB/1142-ntnu-db-app",
+  "techStack": {
+    "languages": [],
+    "frameworks": [],
+    "packageManager": null,
+    "runtime": null
+  },
+  "build": {
+    "buildCommand": "gh pr comment 23 --body \"$(cat <<'EOF'\n## 📋 dev 分支進度更新（2026-05-30）\n\n### ✅ 十四、Controller + Route 層完成（Issue #14 #15 #16）\n\n**`e0802ac` — feat(controllers): implement auth, user, room, and message controllers (#14 #15 #16)**\n\n#### 新增檔案\n\n| 檔案 | 說明 |\n|------|------|\n| `src/controllers/authController.ts` | `register` / `login` / `logout` |\n| `src/controllers/userController.ts` | `getMe` / `updateMe` / `search` |\n| `src/controllers/roomController.ts` | `list` / `createGroup` / `getById` / `update` / `joinByCode` / `leave` |\n| `src/controllers/messageController.ts` | `listForRoom`（cursor pagination） |\n| `src/routes/authRoutes.ts` | `POST /auth/register`, `POST /auth/login`, `POST /auth/logout` |\n| `src/routes/userRoutes.ts` | `GET /users/me`, `PATCH /users/me`, `GET /users/search` |\n| `src/routes/roomRoutes.ts` | `GET /rooms`, `POST /rooms/group`, `GET/PATCH /rooms/:id`, `POST /rooms/join/:code`, `DELETE /rooms/:id/leave` |\n| `src/routes/messageRoutes.ts` | `GET /rooms/:roomId/messages` |\n\n#### 修改檔案\n\n- **`index.ts`**：完全移除 inline SQL handler；改用工廠函式 DI，統一掛載 4 組 Router\n- **`roomService.ts`**：接受 `IRoomMemberRepository`；`create` 自動加入 creator 為 owner；`getById`/`update` 加入 membership/role 檢查；新增 `joinByCode`、`leave`\n- **`userService.ts`**：新增 `getMe`、`updateMe`、`search`\n- **`IUserRepository` + `UserRepository`**：新增 `search(query)` — ILIKE 姓名或精確比對 userId\n- **`IRoomRepository` + `RoomRepository`**：新增 `findByInviteCode(code)`\n- **`userSchemas.ts`**：新增 `updateMeSchema`、`searchQuerySchema`\n\n#### API 端點完整清單\n\n| Method | Path | Auth | Status |\n|--------|------|------|--------|\n| POST | `/auth/register` | — | 201 |\n| POST | `/auth/login` | — | 200 |\n| POST | `/auth/logout` | JWT | 204 |\n| GET | `/users/me` | JWT | 200 |\n| PATCH | `/users/me` | JWT | 200 |\n| GET | `/users/search?query=` | JWT | 200 |\n| GET | `/rooms` | JWT | 200 |\n| POST | `/rooms/group` | JWT | 201 |\n| GET | `/rooms/:id` | JWT | 200 |\n| PATCH | `/rooms/:id` | JWT (owner/admin) | 200 |\n| POST | `/rooms/join/:code` | JWT | 200 |\n| DELETE | `/rooms/:id/leave` | JWT | 204 |\n| GET | `/rooms/:roomId/messages` | JWT | 200 |\n\n`tsc --noEmit` 通過，無型別錯誤。\n同步更新 `docs/frontend_integration_guide.md`。\nEOF\n)\"",
+    "testCommand": "rtk ls /home/ray0520/Projects/DB/1142-ntnu-db-app/backend/tests/e2e/routes/ && rtk read /home/ray0520/Projects/DB/1142-ntnu-db-app/backend/vitest.e2e.config.ts 2>/dev/null || echo \"NO vitest.e2e.config.ts\"",
+    "lintCommand": null,
+    "devCommand": null,
+    "scripts": {}
+  },
+  "conventions": {
+    "namingStyle": null,
+    "importStyle": null,
+    "testPattern": null,
+    "fileOrganization": null
+  },
+  "structure": {
+    "isMonorepo": false,
+    "workspaces": [],
+    "mainDirectories": [
+      "docs"
+    ],
+    "gitBranches": {
+      "defaultBranch": "main",
+      "branchingStrategy": null
+    }
+  },
+  "customNotes": [],
+  "directoryMap": {
+    "backend": {
+      "path": "backend",
+      "purpose": null,
+      "fileCount": 10,
+      "lastAccessed": 1780061827663,
+      "keyFiles": [
+        "AGENTS.md",
+        "Dockerfile",
+        "package-lock.json",
+        "package.json",
+        "pnpm-lock.yaml"
+      ]
+    },
+    "docs": {
+      "path": "docs",
+      "purpose": "Documentation",
+      "fileCount": 10,
+      "lastAccessed": 1780061827663,
+      "keyFiles": [
+        "AGENTS.md",
+        "DESIGN.md",
+        "DEVELOPMENT.md",
+        "TESTING.md",
+        "api-documentation.md"
+      ]
+    },
+    "frontend": {
+      "path": "frontend",
+      "purpose": null,
+      "fileCount": 12,
+      "lastAccessed": 1780061827665,
+      "keyFiles": [
+        "AGENTS.md",
+        "Dockerfile",
+        "eslint.config.mjs",
+        "next-env.d.ts",
+        "next.config.ts"
+      ]
+    },
+    "reference": {
+      "path": "reference",
+      "purpose": null,
+      "fileCount": 3,
+      "lastAccessed": 1780061827665,
+      "keyFiles": [
+        "ER_diagram for University.jpg",
+        "ER_diagram for University.jpg:Zone.Identifier",
+        "Report1_Team9.pdf"
+      ]
+    },
+    "shared": {
+      "path": "shared",
+      "purpose": null,
+      "fileCount": 2,
+      "lastAccessed": 1780061827666,
+      "keyFiles": [
+        "types.assert.ts",
+        "types.ts"
+      ]
+    },
+    "backend/migrations": {
+      "path": "backend/migrations",
+      "purpose": "Database migrations",
+      "fileCount": 1,
+      "lastAccessed": 1780061827666,
+      "keyFiles": [
+        "20260529000000_init.sql"
+      ]
+    },
+    "backend/node_modules": {
+      "path": "backend/node_modules",
+      "purpose": "Dependencies",
+      "fileCount": 2,
+      "lastAccessed": 1780061827667,
+      "keyFiles": []
+    },
+    "frontend/components": {
+      "path": "frontend/components",
+      "purpose": "UI components",
+      "fileCount": 1,
+      "lastAccessed": 1780061827668,
+      "keyFiles": [
+        "AGENTS.md"
+      ]
+    }
+  },
+  "hotPaths": [
+    {
+      "path": "backend/src/index.ts",
+      "accessCount": 26,
+      "lastAccessed": 1780146147559,
+      "type": "file"
+    },
+    {
+      "path": "backend/package.json",
+      "accessCount": 16,
+      "lastAccessed": 1780146264210,
+      "type": "file"
+    },
+    {
+      "path": "backend/src/services/userService.ts",
+      "accessCount": 15,
+      "lastAccessed": 1780145935333,
+      "type": "file"
+    },
+    {
+      "path": "backend/src/services/roomService.ts",
+      "accessCount": 13,
+      "lastAccessed": 1780145935982,
+      "type": "file"
+    },
+    {
+      "path": "backend/src/routes/messageRoutes.ts",
+      "accessCount": 13,
+      "lastAccessed": 1780145939080,
+      "type": "file"
+    },
+    {
+      "path": "backend/src/routes/roomRoutes.ts",
+      "accessCount": 12,
+      "lastAccessed": 1780145928252,
+      "type": "file"
+    },
+    {
+      "path": "backend/src/db.ts",
+      "accessCount": 12,
+      "lastAccessed": 1780146238051,
+      "type": "file"
+    },
+    {
+      "path": "backend/src/services/messageService.ts",
+      "accessCount": 11,
+      "lastAccessed": 1780131152342,
+      "type": "file"
+    },
+    {
+      "path": "backend/src/routes/userRoutes.ts",
+      "accessCount": 11,
+      "lastAccessed": 1780131397653,
+      "type": "file"
+    },
+    {
+      "path": "backend/src/AGENTS.md",
+      "accessCount": 9,
+      "lastAccessed": 1779972363852,
+      "type": "file"
+    },
+    {
+      "path": "frontend/AGENTS.md",
+      "accessCount": 8,
+      "lastAccessed": 1779628629791,
+      "type": "file"
+    },
+    {
+      "path": "frontend/app/AGENTS.md",
+      "accessCount": 8,
+      "lastAccessed": 1779628630816,
+      "type": "file"
+    },
+    {
+      "path": "AGENTS.md",
+      "accessCount": 8,
+      "lastAccessed": 1779972357142,
+      "type": "file"
+    },
+    {
+      "path": "frontend/app/page.tsx",
+      "accessCount": 7,
+      "lastAccessed": 1779628439635,
+      "type": "file"
+    },
+    {
+      "path": "backend/AGENTS.md",
+      "accessCount": 7,
+      "lastAccessed": 1779628624392,
+      "type": "file"
+    },
+    {
+      "path": "frontend/components/AGENTS.md",
+      "accessCount": 7,
+      "lastAccessed": 1779628632255,
+      "type": "file"
+    },
+    {
+      "path": "backend/tests/user.test.ts",
+      "accessCount": 7,
+      "lastAccessed": 1779630756856,
+      "type": "file"
+    },
+    {
+      "path": "backend/src/services/AGENTS.md",
+      "accessCount": 7,
+      "lastAccessed": 1779690115002,
+      "type": "file"
+    },
+    {
+      "path": "backend/tests/room.test.ts",
+      "accessCount": 6,
+      "lastAccessed": 1779630757396,
+      "type": "file"
+    },
+    {
+      "path": "backend/src/routes/AGENTS.md",
+      "accessCount": 6,
+      "lastAccessed": 1779690124716,
+      "type": "file"
+    },
+    {
+      "path": "backend/tests/AGENTS.md",
+      "accessCount": 6,
+      "lastAccessed": 1779690148702,
+      "type": "file"
+    },
+    {
+      "path": "shared/types.ts",
+      "accessCount": 6,
+      "lastAccessed": 1780131159339,
+      "type": "file"
+    },
+    {
+      "path": "docs/AGENTS.md",
+      "accessCount": 4,
+      "lastAccessed": 1779628476371,
+      "type": "file"
+    },
+    {
+      "path": "frontend/components/ui/AGENTS.md",
+      "accessCount": 4,
+      "lastAccessed": 1779628633403,
+      "type": "file"
+    },
+    {
+      "path": "PLAN.md",
+      "accessCount": 4,
+      "lastAccessed": 1779972356659,
+      "type": "file"
+    },
+    {
+      "path": "backend/tsconfig.json",
+      "accessCount": 4,
+      "lastAccessed": 1779989211270,
+      "type": "file"
+    },
+    {
+      "path": "backend/src/repositories/IRoomRepository.ts",
+      "accessCount": 4,
+      "lastAccessed": 1780140872311,
+      "type": "file"
+    },
+    {
+      "path": "backend/tests/helpers/resetDb.ts",
+      "accessCount": 4,
+      "lastAccessed": 1780146140954,
+      "type": "file"
+    },
+    {
+      "path": "frontend/app/login/page.tsx",
+      "accessCount": 3,
+      "lastAccessed": 1779441766513,
+      "type": "file"
+    },
+    {
+      "path": "docs/er_diagram.md",
+      "accessCount": 3,
+      "lastAccessed": 1779630757934,
+      "type": "file"
+    },
+    {
+      "path": "docker-compose.yml",
+      "accessCount": 3,
+      "lastAccessed": 1779707802995,
+      "type": "file"
+    },
+    {
+      "path": "docs/DEVELOPMENT.md",
+      "accessCount": 3,
+      "lastAccessed": 1779972364322,
+      "type": "file"
+    },
+    {
+      "path": "backend/src/repositories/IUserRepository.ts",
+      "accessCount": 3,
+      "lastAccessed": 1780131318775,
+      "type": "file"
+    },
+    {
+      "path": "backend/tests/helpers/testPool.ts",
+      "accessCount": 3,
+      "lastAccessed": 1780146148146,
+      "type": "file"
+    },
+    {
+      "path": "frontend/app/layout.tsx",
+      "accessCount": 2,
+      "lastAccessed": 1779628381168,
+      "type": "file"
+    },
+    {
+      "path": "frontend/package.json",
+      "accessCount": 2,
+      "lastAccessed": 1779630765646,
+      "type": "file"
+    },
+    {
+      "path": "frontend/tsconfig.json",
+      "accessCount": 2,
+      "lastAccessed": 1779693062797,
+      "type": "file"
+    },
+    {
+      "path": "backend/Dockerfile",
+      "accessCount": 2,
+      "lastAccessed": 1779707771735,
+      "type": "file"
+    },
+    {
+      "path": "frontend/Dockerfile",
+      "accessCount": 2,
+      "lastAccessed": 1779707780143,
+      "type": "file"
+    },
+    {
+      "path": "docker-compose.test.yml",
+      "accessCount": 2,
+      "lastAccessed": 1779710490389,
+      "type": "file"
+    },
+    {
+      "path": "shared/types.assert.ts",
+      "accessCount": 2,
+      "lastAccessed": 1779972592894,
+      "type": "file"
+    },
+    {
+      "path": "tsconfig.base.json",
+      "accessCount": 2,
+      "lastAccessed": 1779989103420,
+      "type": "file"
+    },
+    {
+      "path": "backend/vitest.config.ts",
+      "accessCount": 2,
+      "lastAccessed": 1780142141705,
+      "type": "file"
+    },
+    {
+      "path": "backend/prisma/schema.prisma",
+      "accessCount": 1,
+      "lastAccessed": 1779440284367,
+      "type": "file"
+    },
+    {
+      "path": "docs/env.md",
+      "accessCount": 1,
+      "lastAccessed": 1779440295705,
+      "type": "file"
+    },
+    {
+      "path": "backend/prisma/AGENTS.md",
+      "accessCount": 1,
+      "lastAccessed": 1779440384342,
+      "type": "file"
+    },
+    {
+      "path": "frontend/components/ui/ChatBubble.tsx",
+      "accessCount": 1,
+      "lastAccessed": 1779440811449,
+      "type": "file"
+    },
+    {
+      "path": "frontend/pnpm-workspace.yaml",
+      "accessCount": 1,
+      "lastAccessed": 1779630766139,
+      "type": "file"
+    },
+    {
+      "path": "backend/.env.test.example",
+      "accessCount": 1,
+      "lastAccessed": 1779710483568,
+      "type": "file"
+    },
+    {
+      "path": "docs/DESIGN.md",
+      "accessCount": 1,
+      "lastAccessed": 1779972357493,
+      "type": "file"
+    }
+  ],
+  "userDirectives": []
+}

@@ -4,7 +4,8 @@ Last updated: 2026-05-30
 
 Source of truth reviewed:
 - `.omc/plans/tdd-api-first-issue-breakdown.md`
-- current backend source tree on branch `feat/issues-7-8-room-message-services-status-plan`
+- GitHub issues #17 and #18
+- current backend source tree on branch `feat/issues-17-18-realtime-cutover`
 
 Status legend:
 - Complete: implemented and has a reasonable local verification path.
@@ -26,12 +27,20 @@ Status legend:
 | #6 | User Service + auth flows | Partial | `userService.ts`, `userSchemas.ts`, and service tests exist for register/login. Planned `getById`, `list`, `update`, and `delete` service methods are still missing. |
 | #7 | Room Service | Complete | Implemented in this branch: `roomService.ts`, `roomSchemas.ts`, and mocked service tests. |
 | #8 | Message Service | Complete | Implemented in this branch: `messageService.ts`, `messageSchemas.ts`, and mocked service tests for send/list/recall with room-membership checks. Sender enrichment now comes from `IMessageRepository`, keeping SQL and joins below the service layer. |
-| #9 | User Controller + Routes (+ auth routes) | Not started | No dedicated controller or route files found yet; `index.ts` still owns active auth route wiring. |
-| #10 | Room Controller + Routes | Not started | No dedicated room controller/route files found yet; `index.ts` still owns active room route wiring. |
-| #11 | Message Controller + Routes | Not started | No dedicated message controller/route files found yet; `index.ts` still owns active message route wiring. |
-| #12 | Socket.IO extraction to messageService | Not started | Socket.IO handlers still live in `index.ts` and still contain direct persistence logic. |
-| #13 | Cutover: rewire `index.ts` | Not started | `index.ts` is still the composition root plus legacy inline handlers. |
-| #14 | Frontend consumes `@shared/types` | Not started | No `frontend/lib/api.ts` typed wrapper found yet. |
+| #9 | User Controller + Routes (+ auth routes) | Complete | `authController.ts`, `userController.ts`, `authRoutes.ts`, and `userRoutes.ts` exist and are mounted under `/api/v1`. |
+| #10 | Room Controller + Routes | Complete | `roomController.ts` and `roomRoutes.ts` exist and are mounted under `/api/v1`. |
+| #11 | Message Controller + Routes | Complete | `messageController.ts` and `messageRoutes.ts` exist for `/rooms/:roomId/messages` and are mounted under `/api/v1`. |
+| #12 | Socket.IO extraction to messageService | Complete | `realtime/authSocket.ts` reuses `verifyToken`; `realtime/socketServer.ts` handles all six typed client events and emits typed `ApiError` payloads. |
+| #13 | Cutover: rewire `index.ts` | Complete | `index.ts` is a composition root with repo/service/controller/router wiring, `/api/v1` route mounts, error middleware, and `attachSockets`. No inline REST handlers or direct JWT verification remain. |
+| #14 | Frontend consumes `@shared/types` | Complete | `frontend/src/lib/api.ts` exports typed REST wrappers and `frontend/src/lib/socket.ts` exports typed Socket.IO helpers consuming `@shared/types`. |
+
+## GitHub Follow-up Issues
+
+| GitHub Issue | Title | Status | Evidence / Notes |
+| --- | --- | --- | --- |
+| #33 | Add E2E test coverage for API routes | Complete | `backend/tests/e2e/routes/apiRoutes.e2e.test.ts` uses `supertest` against the exported Express app and covers auth, user, room, and message route wiring. |
+| #34 | Add test coverage for Socket.IO real-time events | Complete | `backend/tests/e2e/socket/socketEvents.e2e.test.ts` uses `socket.io-client` against an in-memory Socket.IO server and covers auth, join/leave, send, typing, recall, and error events. |
+| #35 | Add unit tests for Zod validation schemas | Complete | `backend/tests/unit/validators/` covers user, room, and message schema boundary cases. |
 
 Recommended next issues after this branch:
 - Finish #6 CRUD service methods so #9 has a complete user service to call.

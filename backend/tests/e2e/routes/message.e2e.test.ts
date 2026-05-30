@@ -11,7 +11,7 @@ describe('Message E2E', () => {
 
   beforeEach(async () => {
     await resetDb();
-    const authRes = await request(app).post('/auth/register').send({
+    const authRes = await request(app).post('/api/v1/auth/register').send({
       name: 'User',
       email: 'user@example.com',
       password: 'Password123!',
@@ -20,7 +20,7 @@ describe('Message E2E', () => {
     userId = authRes.body.user.userId;
 
     const roomRes = await request(app)
-      .post('/rooms/group')
+      .post('/api/v1/rooms/group')
       .set('Authorization', `Bearer ${token}`)
       .send({
         type: 'group',
@@ -38,7 +38,7 @@ describe('Message E2E', () => {
     );
 
     const res = await request(app)
-      .get(`/rooms/${roomId}/messages`)
+      .get(`/api/v1/rooms/${roomId}/messages`)
       .set('Authorization', `Bearer ${token}`);
     
     expect(res.status).toBe(200);

@@ -9,7 +9,7 @@ describe('User E2E', () => {
 
   beforeEach(async () => {
     await resetDb();
-    const res = await request(app).post('/auth/register').send({
+    const res = await request(app).post('/api/v1/auth/register').send({
       name: 'User',
       email: 'user@example.com',
       password: 'Password123!',
@@ -20,7 +20,7 @@ describe('User E2E', () => {
 
   it('should get current user profile', async () => {
     const res = await request(app)
-      .get('/users/me')
+      .get('/api/v1/users/me')
       .set('Authorization', `Bearer ${token}`);
     expect(res.status).toBe(200);
     expect(res.body.userId).toBe(userId);
@@ -28,13 +28,13 @@ describe('User E2E', () => {
   });
 
   it('should fail without token', async () => {
-    const res = await request(app).get('/users/me');
+    const res = await request(app).get('/api/v1/users/me');
     expect(res.status).toBe(401);
   });
 
   it('should fail with invalid token', async () => {
     const res = await request(app)
-      .get('/users/me')
+      .get('/api/v1/users/me')
       .set('Authorization', `Bearer invalid_token`);
     expect(res.status).toBe(401);
   });

@@ -149,4 +149,13 @@ describe('messageService', () => {
     await expect(messageService.recallMessage('user-1', 'room-1', 'message-1')).rejects.toThrow(NotFoundError);
     expect(messageRepo.markRecalled).not.toHaveBeenCalled();
   });
+
+  it('recallMessage rejects callers who are not the original sender', async () => {
+    roomRepo.findById.mockResolvedValue(room);
+    roomMemberRepo.findMember.mockResolvedValue(member);
+    messageRepo.findById.mockResolvedValue({ ...message, senderId: 'user-2' });
+
+    await expect(messageService.recallMessage('user-1', 'room-1', 'message-1')).rejects.toThrow(ForbiddenError);
+    expect(messageRepo.markRecalled).not.toHaveBeenCalled();
+  });
 });

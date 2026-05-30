@@ -9,7 +9,7 @@ describe('Auth E2E', () => {
   });
 
   it('should register a new user successfully', async () => {
-    const res = await request(app).post('/auth/register').send({
+    const res = await request(app).post('/api/v1/auth/register').send({
       name: 'Test User',
       email: 'test@example.com',
       password: 'Password123!',
@@ -21,13 +21,13 @@ describe('Auth E2E', () => {
   });
 
   it('should fail registration if email is duplicate', async () => {
-    await request(app).post('/auth/register').send({
+    await request(app).post('/api/v1/auth/register').send({
       name: 'Test User',
       email: 'test@example.com',
       password: 'Password123!',
     });
     
-    const res = await request(app).post('/auth/register').send({
+    const res = await request(app).post('/api/v1/auth/register').send({
       name: 'Another User',
       email: 'test@example.com',
       password: 'Password123!',
@@ -37,13 +37,13 @@ describe('Auth E2E', () => {
   });
 
   it('should login an existing user', async () => {
-    await request(app).post('/auth/register').send({
+    await request(app).post('/api/v1/auth/register').send({
       name: 'Test User',
       email: 'test@example.com',
       password: 'Password123!',
     });
 
-    const res = await request(app).post('/auth/login').send({
+    const res = await request(app).post('/api/v1/auth/login').send({
       email: 'test@example.com',
       password: 'Password123!',
     });
@@ -52,13 +52,13 @@ describe('Auth E2E', () => {
   });
 
   it('should fail login with incorrect password', async () => {
-    await request(app).post('/auth/register').send({
+    await request(app).post('/api/v1/auth/register').send({
       name: 'Test User',
       email: 'test@example.com',
       password: 'Password123!',
     });
 
-    const res = await request(app).post('/auth/login').send({
+    const res = await request(app).post('/api/v1/auth/login').send({
       email: 'test@example.com',
       password: 'WrongPassword!',
     });

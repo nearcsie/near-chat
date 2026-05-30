@@ -8,7 +8,7 @@ describe('Room E2E', () => {
 
   beforeEach(async () => {
     await resetDb();
-    const res = await request(app).post('/auth/register').send({
+    const res = await request(app).post('/api/v1/auth/register').send({
       name: 'User',
       email: 'user@example.com',
       password: 'Password123!',
@@ -18,7 +18,7 @@ describe('Room E2E', () => {
 
   it('should create a room', async () => {
     const res = await request(app)
-      .post('/rooms/group')
+      .post('/api/v1/rooms/group')
       .set('Authorization', `Bearer ${token}`)
       .send({
         type: 'group',
@@ -32,7 +32,7 @@ describe('Room E2E', () => {
 
   it('should list rooms', async () => {
     await request(app)
-      .post('/rooms/group')
+      .post('/api/v1/rooms/group')
       .set('Authorization', `Bearer ${token}`)
       .send({
         type: 'group',
@@ -40,7 +40,7 @@ describe('Room E2E', () => {
       });
 
     const res = await request(app)
-      .get('/rooms')
+      .get('/api/v1/rooms')
       .set('Authorization', `Bearer ${token}`);
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);

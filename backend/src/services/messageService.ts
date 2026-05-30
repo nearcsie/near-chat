@@ -97,6 +97,9 @@ export const makeMessageService = (
       if (!existing || existing.roomId !== parsed.data.roomId) {
         throw new NotFoundError('message', parsed.data.messageId);
       }
+      if (existing.senderId !== userId) {
+        throw new ForbiddenError('Only the original sender can recall this message');
+      }
 
       return messageRepo.markRecalled(parsed.data.messageId);
     },

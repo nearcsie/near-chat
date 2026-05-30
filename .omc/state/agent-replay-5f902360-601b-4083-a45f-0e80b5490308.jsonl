@@ -1,0 +1,11 @@
+{"t":0,"agent":"affb004","agent_type":"unknown","event":"agent_stop","success":true}
+{"t":0,"agent":"system","event":"skill_invoked","skill_name":"code-review"}
+{"t":0,"agent":"a8f796b","agent_type":"general-purpose","event":"agent_start","parent_mode":"none"}
+{"t":0,"agent":"a8f932a","agent_type":"general-purpose","event":"agent_start","parent_mode":"none"}
+{"t":0,"agent":"a8f796b","agent_type":"general-purpose","event":"agent_stop","success":true,"duration_ms":45725}
+{"t":0,"agent":"a8f932a","agent_type":"general-purpose","event":"agent_stop","success":true,"duration_ms":48983}
+{"t":0,"agent":"ad4ba10","agent_type":"general-purpose","event":"agent_start","parent_mode":"none"}
+{"t":0,"agent":"ad4ba10","agent_type":"general-purpose","event":"agent_stop","success":true,"duration_ms":9344}
+{"t":0,"agent":"a164b52","agent_type":"general-purpose","event":"agent_start","parent_mode":"none"}
+{"t":0,"agent":"a164b52","agent_type":"general-purpose","event":"agent_stop","success":true,"duration_ms":10363}
+{"t":0,"agent":"af696be","agent_type":"general-purpose","event":"agent_start","parent_mode":"none"}
