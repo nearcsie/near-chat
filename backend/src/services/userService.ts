@@ -9,7 +9,39 @@ export interface JwtHelper {
   signToken(payload: JwtPayload): string;
 }
 
-export const makeUserService = (repo: IUserRepository, emergencyContactRepo: IEmergencyContactRepository, jwt: JwtHelper) => {
+export interface EmergencyAlertResult {
+  alerted: boolean;
+  recipients: string[];
+  reason?: string;
+}
+
+export const makeUserService = (
+  repo: IUserRepository,
+  emergencyContactRepo: IEmergencyContactRepository,
+  jwt: JwtHelper,
+  notifyEmergencyContact?: (contactId: string, payload: { userId: string; message: string }) => void,
+) => {
+  const notifyContacts = async (userId: string, fallbackMessage: string): Promise<EmergencyAlertResult> => {
+    const user = await repo.findById(userId);
+    if (!user) throw new NotFoundError('user', userId);
+
+    const contacts = await emergencyContactRepo.findByUserId(userId);
+    if (contacts.length === 0) {
+      return { alerted: false, recipients: [], reason: 'NO_CONTACTS' };
+    }
+
+    const recipients: string[] = [];
+    for (const contact of contacts) {
+      notifyEmergencyContact?.(contact.contactId, {
+        userId,
+        message: contact.message || fallbackMessage,
+      });
+      recipients.push(contact.contactId);
+    }
+
+    return { alerted: true, recipients };
+  };
+
   return {
     async register(data: RegisterRequest): Promise<AuthResponse> {
       const existingUser = await repo.findByEmail(data.email);
@@ -53,6 +85,8 @@ export const makeUserService = (repo: IUserRepository, emergencyContactRepo: IEm
       if (!isMatch) {
         throw new ValidationError('Invalid email or password');
       }
+
+      await repo.update(user.userId, { lastActivity: new Date() });
 
       const publicUser: PublicUser = {
         userId: user.userId,
@@ -99,6 +133,35 @@ export const makeUserService = (repo: IUserRepository, emergencyContactRepo: IEm
 
     async deleteEmergencyContact(userId: string, contactId: string): Promise<void> {
       await emergencyContactRepo.delete(userId, contactId);
+    },
+
+    async triggerEmergencyAlert(userId: string, message = 'Emergency alert triggered'): Promise<EmergencyAlertResult> {
+      return notifyContacts(userId, message);
+    },
+
+    async checkInactivity(userId: string, now = new Date()): Promise<EmergencyAlertResult> {
+      const user = await repo.findById(userId);
+      if (!user) throw new NotFoundError('user', userId);
+
+      if (!user.warningEnabled) {
+        return { alerted: false, recipients: [], reason: 'WARNING_DISABLED' };
+      }
+      if (user.warningDays < 1) {
+        return { alerted: false, recipients: [], reason: 'INVALID_THRESHOLD' };
+      }
+
+      const inactiveMs = now.getTime() - user.lastActivity.getTime();
+      const thresholdMs = user.warningDays * 24 * 60 * 60 * 1000;
+      if (inactiveMs < thresholdMs) {
+        return { alerted: false, recipients: [], reason: 'BELOW_THRESHOLD' };
+      }
+
+      const shouldAlert = await emergencyContactRepo.recordAlertIfNew(userId, user.lastActivity);
+      if (!shouldAlert) {
+        return { alerted: false, recipients: [], reason: 'ALREADY_ALERTED' };
+      }
+
+      return notifyContacts(userId, 'User has exceeded their inactivity warning threshold');
     },
 
     async search(query: string): Promise<PublicUser[]> {

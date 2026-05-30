@@ -10,6 +10,8 @@ interface UserService {
   getEmergencyContacts(userId: string): Promise<Array<{ contactId: string }>>;
   upsertEmergencyContact(userId: string, contactId: string, message: string): Promise<any>;
   deleteEmergencyContact(userId: string, contactId: string): Promise<void>;
+  triggerEmergencyAlert(userId: string, message?: string): Promise<any>;
+  checkInactivity(userId: string, now?: Date): Promise<any>;
 }
 
 export const makeUserController = (service: UserService) => ({
@@ -70,6 +72,33 @@ export const makeUserController = (service: UserService) => ({
       const contactId = req.params.contactId;
       await service.deleteEmergencyContact(userId, contactId);
       res.status(200).json({ success: true });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async triggerEmergencyAlert(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const userId = req.user!.userId;
+      const message = typeof req.body?.message === 'string' && req.body.message.trim()
+        ? req.body.message.trim()
+        : undefined;
+      const result = await service.triggerEmergencyAlert(userId, message);
+      res.status(202).json(result);
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async checkEmergencyInactivity(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const userId = req.user!.userId;
+      const now = typeof req.body?.now === 'string' ? new Date(req.body.now) : undefined;
+      if (now && Number.isNaN(now.getTime())) {
+        return next(new ValidationError('now must be a valid ISO datetime'));
+      }
+      const result = await service.checkInactivity(userId, now);
+      res.status(200).json(result);
     } catch (err) {
       next(err);
     }

@@ -30,6 +30,12 @@ type ListMessagesRequest = {
   limit?: number;
 };
 
+type EmergencyAlertResult = {
+  alerted: boolean;
+  recipients: string[];
+  reason?: string;
+};
+
 type RequestOptions = {
   token?: string;
 };
@@ -139,3 +145,26 @@ export const listMessages = (
 
   return requestJson<MessageWithSender[]>(`/rooms/${roomId}/messages${suffix}`, {}, { token });
 };
+
+export const triggerEmergencyAlert = (token: string, message?: string): Promise<EmergencyAlertResult> =>
+  requestJson<EmergencyAlertResult>(
+    '/users/me/emergency-alert',
+    {
+      method: 'POST',
+      ...withJsonBody(message ? { message } : {}),
+    },
+    { token },
+  );
+
+export const checkEmergencyInactivity = (
+  token: string,
+  now?: string,
+): Promise<EmergencyAlertResult> =>
+  requestJson<EmergencyAlertResult>(
+    '/users/me/emergency-alert/check-inactivity',
+    {
+      method: 'POST',
+      ...withJsonBody(now ? { now } : {}),
+    },
+    { token },
+  );

@@ -47,4 +47,15 @@ export class EmergencyContactRepository implements IEmergencyContactRepository {
       [userId, contactId]
     );
   }
+
+  async recordAlertIfNew(userId: string, lastActivity: Date): Promise<boolean> {
+    const res = await this.db.query(
+      `INSERT INTO emergency_alert_logs (user_id, last_activity_at)
+       VALUES ($1, $2)
+       ON CONFLICT DO NOTHING
+       RETURNING user_id`,
+      [userId, lastActivity]
+    );
+    return (res.rowCount ?? 0) > 0;
+  }
 }
