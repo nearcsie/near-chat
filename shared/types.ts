@@ -51,9 +51,11 @@ export interface Room {
   name?: string;
   avatarUrl?: string;
   inviteCode?: string;
+  roomHash?: string;
   requireApproval: boolean;
   viewHistory: boolean;
   isArchived: boolean;
+  isReadonly?: boolean;
   createdAt: Date;
 }
 

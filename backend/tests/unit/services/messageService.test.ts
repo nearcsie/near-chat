@@ -58,6 +58,7 @@ describe('messageService', () => {
     roomRepo = {
       findById: vi.fn(),
       findByInviteCode: vi.fn(),
+      findByRoomHash: vi.fn(),
       findByMember: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
@@ -160,6 +161,14 @@ describe('messageService', () => {
   it('sendMessage rejects muted members', async () => {
     roomRepo.findById.mockResolvedValue(room);
     roomMemberRepo.findMember.mockResolvedValue({ ...member, isMuted: true });
+
+    await expect(messageService.sendMessage('user-1', 'room-1', 'hello')).rejects.toThrow(ForbiddenError);
+    expect(messageRepo.create).not.toHaveBeenCalled();
+  });
+
+  it('sendMessage rejects read-only rooms', async () => {
+    roomRepo.findById.mockResolvedValue({ ...room, isReadonly: true });
+    roomMemberRepo.findMember.mockResolvedValue(member);
 
     await expect(messageService.sendMessage('user-1', 'room-1', 'hello')).rejects.toThrow(ForbiddenError);
     expect(messageRepo.create).not.toHaveBeenCalled();

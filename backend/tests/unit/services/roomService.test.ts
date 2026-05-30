@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, type Mocked } from 'vitest';
 import { makeRoomService } from '../../../src/services/roomService';
-import { NotFoundError, ValidationError } from '../../../src/errors/AppError';
+import { ForbiddenError, NotFoundError, ValidationError } from '../../../src/errors/AppError';
 import type { IRoomRepository } from '../../../src/repositories/IRoomRepository';
 import type { IRoomMemberRepository } from '../../../src/repositories/IRoomMemberRepository';
 import type { Room, RoomMember } from '../../../../shared/types';
@@ -32,6 +32,7 @@ describe('roomService', () => {
     mockRepo = {
       findById: vi.fn(),
       findByInviteCode: vi.fn(),
+      findByRoomHash: vi.fn(),
       findByMember: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
@@ -110,5 +111,31 @@ describe('roomService', () => {
 
     mockRepo.findById.mockResolvedValueOnce(null);
     await expect(roomService.delete('missing-room')).rejects.toThrow(NotFoundError);
+  });
+
+  it('createPrivate returns an existing private room for accepted friends', async () => {
+    const socialRepo = {
+      isBlocked: vi.fn().mockResolvedValue(false),
+      areFriends: vi.fn().mockResolvedValue(true),
+    };
+    const privateRoom = { ...room, type: 'private' as const, roomHash: 'hash' };
+    mockRepo.findByRoomHash.mockResolvedValue(privateRoom);
+    roomService = makeRoomService(mockRepo, mockMemberRepo, undefined, socialRepo);
+
+    const result = await roomService.createPrivate('user-1', 'user-2');
+
+    expect(result).toBe(privateRoom);
+    expect(mockRepo.create).not.toHaveBeenCalled();
+  });
+
+  it('createPrivate rejects non-friends', async () => {
+    const socialRepo = {
+      isBlocked: vi.fn().mockResolvedValue(false),
+      areFriends: vi.fn().mockResolvedValue(false),
+    };
+    roomService = makeRoomService(mockRepo, mockMemberRepo, undefined, socialRepo);
+
+    await expect(roomService.createPrivate('user-1', 'user-2')).rejects.toThrow(ForbiddenError);
+    expect(mockRepo.create).not.toHaveBeenCalled();
   });
 });

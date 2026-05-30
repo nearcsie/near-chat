@@ -97,6 +97,17 @@ export const makeFriendRepository = (db: Pool) => {
         [user1, user2]
       );
       return (res.rowCount ?? 0) > 0;
+    },
+
+    async areFriends(user1: string, user2: string): Promise<boolean> {
+      const res = await db.query(
+        `SELECT 1 FROM friendships
+         WHERE status = 'accepted'
+           AND ((requester_id = $1 AND addressee_id = $2)
+             OR (requester_id = $2 AND addressee_id = $1))`,
+        [user1, user2]
+      );
+      return (res.rowCount ?? 0) > 0;
     }
   };
 };

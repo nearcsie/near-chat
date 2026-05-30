@@ -13,7 +13,11 @@ export const friendResponseSchema = z.object({
 
 export const makeFriendController = (
   repo: ReturnType<typeof makeFriendRepository>,
-  notifyUser?: (userId: string, eventName: string, payload: any) => void
+  notifyUser?: (userId: string, eventName: string, payload: any) => void,
+  privateRooms?: {
+    createPrivate(creatorId: string, targetUserId: string): Promise<unknown>;
+    markPrivateReadOnly(userA: string, userB: string): Promise<void>;
+  }
 ) => {
   return {
     async sendRequest(req: Request, res: Response, next: NextFunction) {
@@ -65,10 +69,15 @@ export const makeFriendController = (
         const body = friendResponseSchema.parse(req.body);
 
         if (body.status === 'accepted') {
+          const isBlocked = await repo.isBlocked(requesterId, userId);
+          if (isBlocked) {
+            throw new AppError(403, 'Cannot interact with this user', 'FORBIDDEN');
+          }
           const accepted = await repo.acceptFriendRequest(requesterId, userId);
           if (!accepted) {
             throw new AppError(404, 'Friend request not found', 'NOT_FOUND');
           }
+          await privateRooms?.createPrivate(requesterId, userId);
           res.status(200).json(accepted);
         } else {
           await repo.deleteFriendship(requesterId, userId);
@@ -97,6 +106,7 @@ export const makeFriendController = (
         const userId = req.user!.userId;
         const friendId = req.params.id;
         await repo.deleteFriendship(userId, friendId);
+        await privateRooms?.markPrivateReadOnly(userId, friendId);
         res.status(204).send();
       } catch (err) {
         next(err);
@@ -110,6 +120,7 @@ export const makeFriendController = (
 
         await repo.blockUser(userId, body.target_user_id);
         await repo.deleteFriendship(userId, body.target_user_id);
+        await privateRooms?.markPrivateReadOnly(userId, body.target_user_id);
         
         res.status(201).json({ status: 'blocked' });
       } catch (err) {

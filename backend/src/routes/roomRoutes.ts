@@ -9,6 +9,7 @@ export const makeRoomRoutes = (ctrl: ReturnType<typeof makeRoomController>): Rou
 
   router.get('/', ctrl.list.bind(ctrl));
   router.post('/group', ctrl.createGroup.bind(ctrl));
+  router.post('/private', ctrl.createPrivate.bind(ctrl));
   router.post('/join/:code', ctrl.joinByCode.bind(ctrl));
   router.get('/:id/members', ctrl.listMembers.bind(ctrl));
   router.get('/:id', ctrl.getById.bind(ctrl));

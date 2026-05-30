@@ -8,3 +8,7 @@ This file records the implemented backend contract for issues #54 and #59.
 - Pending room members cannot read or send messages.
 - Muted room members cannot send messages.
 - When `viewHistory` is `false`, message listing only returns messages sent after the member joined.
+- `POST /api/v1/rooms/private` accepts `target_user_id` or `targetUserId` and returns the existing two-user private room when one already exists.
+- Private rooms use a deterministic `roomHash` with a unique index to prevent duplicate DMs.
+- Private room creation requires an accepted friendship and is blocked when either user has blocked the other.
+- Accepting a friend request creates or restores the private room. Removing or blocking a friend marks the private room `isReadonly=true` to preserve history while preventing new sends.
