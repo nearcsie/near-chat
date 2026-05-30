@@ -39,8 +39,8 @@ Status legend:
 | GitHub Issue | Title | Status | Evidence / Notes |
 | --- | --- | --- | --- |
 | #33 | Add E2E test coverage for API routes | Complete | `backend/tests/e2e/routes/apiRoutes.e2e.test.ts` uses `supertest` against the exported Express app and covers auth, user, room, and message route wiring. |
-| #34 | Add test coverage for Socket.IO real-time events | Not started | Planned for a separate branch with socket.io-client E2E coverage. |
-| #35 | Add unit tests for Zod validation schemas | Not started | Planned for a separate branch under `backend/tests/unit/validators/`. |
+| #34 | Add test coverage for Socket.IO real-time events | Complete | `backend/tests/e2e/socket/socketEvents.e2e.test.ts` uses `socket.io-client` against an in-memory Socket.IO server and covers auth, join/leave, send, typing, recall, and error events. |
+| #35 | Add unit tests for Zod validation schemas | Complete | `backend/tests/unit/validators/` covers user, room, and message schema boundary cases. |
 
 Recommended next issues after this branch:
 - Finish #6 CRUD service methods so #9 has a complete user service to call.
