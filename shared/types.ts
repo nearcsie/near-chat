@@ -168,3 +168,11 @@ export interface FriendRequest {
   status: FriendshipStatus;
   createdAt: Date;
 }
+
+export interface Folder {
+  folderId: string;
+  userId: string;
+  name: string;
+  createdAt: Date;
+  roomIds: string[];
+}
