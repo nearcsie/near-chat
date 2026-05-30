@@ -12,7 +12,7 @@ import {
 const validationMessage = (issues: { message: string }[]) =>
   issues[0]?.message ?? 'Invalid room payload';
 
-export const makeRoomService = (repo: IRoomRepository, roomMemberRepo: IRoomMemberRepository) => {
+export const makeRoomService = (repo: IRoomRepository, roomMemberRepo: IRoomMemberRepository, emitRoomEvent?: (roomId: string, eventName: string, payload: any) => void) => {
   return {
     async create(creatorId: string, data: CreateRoomInput): Promise<Room> {
       const parsed = createRoomSchema.safeParse(data);
@@ -55,7 +55,8 @@ export const makeRoomService = (repo: IRoomRepository, roomMemberRepo: IRoomMemb
       if (!room) throw new NotFoundError('room', inviteCode);
       const existing = await roomMemberRepo.findMember(room.roomId, userId);
       if (existing) throw new ConflictError('User is already a member of this room');
-      await roomMemberRepo.add({ roomId: room.roomId, userId, role: 'member' });
+      const role = room.requireApproval ? 'pending' : 'member';
+      await roomMemberRepo.add({ roomId: room.roomId, userId, role });
       return room;
     },
 
@@ -74,6 +75,80 @@ export const makeRoomService = (repo: IRoomRepository, roomMemberRepo: IRoomMemb
       const existing = await repo.findById(roomId);
       if (!existing) throw new NotFoundError('room', roomId);
       await repo.delete(roomId);
+    },
+
+    async approveMember(roomId: string, callerId: string, targetUserId: string): Promise<void> {
+      const room = await repo.findById(roomId);
+      if (!room) throw new NotFoundError('room', roomId);
+      if (!room.requireApproval) throw new ValidationError('Room does not require approval');
+      const caller = await roomMemberRepo.findMember(roomId, callerId);
+      if (!caller || (caller.role !== 'owner' && caller.role !== 'admin')) {
+        throw new ForbiddenError('Only owner or admin can approve members');
+      }
+      const target = await roomMemberRepo.findMember(roomId, targetUserId);
+      if (!target) throw new NotFoundError('member', targetUserId);
+      if (target.role !== 'pending') throw new ValidationError('Member is not pending approval');
+
+      await roomMemberRepo.update(roomId, targetUserId, { role: 'member' });
+      if (emitRoomEvent) {
+        emitRoomEvent(roomId, 'room_update', { type: 'MEMBER_APPROVED', data: { userId: targetUserId } });
+      }
+    },
+
+    async updateMember(roomId: string, callerId: string, targetUserId: string, data: { role?: string; nickname?: string; isMuted?: boolean }): Promise<void> {
+      const room = await repo.findById(roomId);
+      if (!room) throw new NotFoundError('room', roomId);
+      const caller = await roomMemberRepo.findMember(roomId, callerId);
+      if (!caller) throw new ForbiddenError('Not a member');
+      
+      const target = await roomMemberRepo.findMember(roomId, targetUserId);
+      if (!target) throw new NotFoundError('member', targetUserId);
+
+      if (callerId !== targetUserId) {
+        if (caller.role !== 'owner' && caller.role !== 'admin') {
+          throw new ForbiddenError('Only owner or admin can update other members');
+        }
+        if (caller.role === 'admin' && (target.role === 'owner' || target.role === 'admin')) {
+          throw new ForbiddenError('Admin cannot update owner or other admins');
+        }
+        if (data.role && caller.role !== 'owner') {
+          throw new ForbiddenError('Only owner can change roles');
+        }
+      } else {
+        if (data.role || data.isMuted !== undefined) {
+          throw new ForbiddenError('Cannot update your own role or mute status');
+        }
+      }
+
+      await roomMemberRepo.update(roomId, targetUserId, data as any);
+      if (emitRoomEvent) {
+        emitRoomEvent(roomId, 'room_update', { type: 'MEMBER_UPDATED', data: { userId: targetUserId, ...data } });
+      }
+    },
+
+    async kickMember(roomId: string, callerId: string, targetUserId: string): Promise<void> {
+      const room = await repo.findById(roomId);
+      if (!room) throw new NotFoundError('room', roomId);
+      
+      const caller = await roomMemberRepo.findMember(roomId, callerId);
+      if (!caller || (caller.role !== 'owner' && caller.role !== 'admin')) {
+        throw new ForbiddenError('Only owner or admin can kick members');
+      }
+      
+      const target = await roomMemberRepo.findMember(roomId, targetUserId);
+      if (!target) throw new NotFoundError('member', targetUserId);
+      
+      if (caller.role === 'admin' && (target.role === 'owner' || target.role === 'admin')) {
+        throw new ForbiddenError('Admin cannot kick owner or other admins');
+      }
+      if (target.role === 'owner') {
+        throw new ForbiddenError('Owner cannot be kicked');
+      }
+
+      await roomMemberRepo.remove(roomId, targetUserId);
+      if (emitRoomEvent) {
+        emitRoomEvent(roomId, 'room_update', { type: 'MEMBER_KICKED', data: { userId: targetUserId } });
+      }
     },
   };
 };
