@@ -1,0 +1,7 @@
+{
+  "tool_name": "Bash",
+  "tool_input_preview": "{\"command\":\"git add docs/frontend_integration_guide.md && git commit -m \\\"$(cat <<'EOF'\\ndocs: update frontend integration guide to reflect completed controller layer (#14 #15 #16)\\n\\nCo-Authored-By: ...",
+  "error": "Exit code 128\nwarning: could not open directory 'backend/docs/': No such file or directory\nfatal: pathspec 'docs/frontend_integration_guide.md' did not match any files",
+  "timestamp": "2026-05-30T11:26:11.060Z",
+  "retry_count": 1
+}
