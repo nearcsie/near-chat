@@ -103,6 +103,35 @@ describe('Friendships & Blocks E2E', () => {
       expect(listRes.status).toBe(200);
       expect(listRes.body.length).toBe(1);
       expect(listRes.body[0].user_id).toBe(userA.userId);
+
+      const roomsA = await request(app).get('/api/v1/rooms').set('Authorization', `Bearer ${tokenA}`);
+      const roomsB = await request(app).get('/api/v1/rooms').set('Authorization', `Bearer ${tokenB}`);
+      const privateRoomA = roomsA.body.find((room: { type: string }) => room.type === 'private');
+      const privateRoomB = roomsB.body.find((room: { type: string }) => room.type === 'private');
+      expect(privateRoomA?.roomId).toBeDefined();
+      expect(privateRoomB?.roomId).toBe(privateRoomA.roomId);
+    });
+
+    it('should mark the private room read-only when friendship is removed', async () => {
+      await request(app)
+        .post('/api/v1/friends/requests')
+        .set('Authorization', `Bearer ${tokenA}`)
+        .send({ target_user_id: userB.userId });
+      await request(app)
+        .patch(`/api/v1/friends/requests/${userA.userId}`)
+        .set('Authorization', `Bearer ${tokenB}`)
+        .send({ status: 'accepted' });
+
+      const beforeDelete = await request(app).get('/api/v1/rooms').set('Authorization', `Bearer ${tokenA}`);
+      const privateRoom = beforeDelete.body.find((room: { type: string }) => room.type === 'private');
+
+      const deleteRes = await request(app)
+        .delete(`/api/v1/friends/${userB.userId}`)
+        .set('Authorization', `Bearer ${tokenA}`);
+      expect(deleteRes.status).toBe(204);
+
+      const row = await testPool.query('SELECT is_readonly FROM chat_rooms WHERE room_id = $1', [privateRoom.roomId]);
+      expect(row.rows[0].is_readonly).toBe(true);
     });
   });
 
@@ -130,6 +159,29 @@ describe('Friendships & Blocks E2E', () => {
         .send({ target_user_id: userA.userId });
 
       expect(res.status).toBe(403);
+    });
+
+    it('should mark existing private room read-only when blocking a friend', async () => {
+      await request(app)
+        .post('/api/v1/friends/requests')
+        .set('Authorization', `Bearer ${tokenA}`)
+        .send({ target_user_id: userB.userId });
+      await request(app)
+        .patch(`/api/v1/friends/requests/${userA.userId}`)
+        .set('Authorization', `Bearer ${tokenB}`)
+        .send({ status: 'accepted' });
+
+      const rooms = await request(app).get('/api/v1/rooms').set('Authorization', `Bearer ${tokenA}`);
+      const privateRoom = rooms.body.find((room: { type: string }) => room.type === 'private');
+
+      const blockRes = await request(app)
+        .post('/api/v1/blocks')
+        .set('Authorization', `Bearer ${tokenA}`)
+        .send({ target_user_id: userB.userId });
+
+      expect(blockRes.status).toBe(201);
+      const row = await testPool.query('SELECT is_readonly FROM chat_rooms WHERE room_id = $1', [privateRoom.roomId]);
+      expect(row.rows[0].is_readonly).toBe(true);
     });
   });
 });

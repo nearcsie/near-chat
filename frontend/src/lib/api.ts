@@ -5,6 +5,7 @@ import type {
   PublicUser,
   RegisterRequest,
   Room,
+  RoomSummary,
   User,
 } from '@shared/types';
 
@@ -18,6 +19,10 @@ type UpdateMeRequest = Partial<
 type CreateGroupRequest = {
   name: string;
   avatarUrl?: string;
+};
+
+type CreatePrivateRequest = {
+  targetUserId: string;
 };
 
 type ListMessagesRequest = {
@@ -99,12 +104,22 @@ export const searchUsers = (token: string, params: { query: string }): Promise<P
   return requestJson<PublicUser[]>(`/users/search?${query.toString()}`, {}, { token });
 };
 
-export const listRooms = (token: string): Promise<Room[]> =>
-  requestJson<Room[]>('/rooms', {}, { token });
+export const listRooms = (token: string): Promise<RoomSummary[]> =>
+  requestJson<RoomSummary[]>('/rooms', {}, { token });
 
 export const createGroup = (token: string, data: CreateGroupRequest): Promise<Room> =>
   requestJson<Room>(
     '/rooms/group',
+    {
+      method: 'POST',
+      ...withJsonBody(data),
+    },
+    { token },
+  );
+
+export const createPrivateRoom = (token: string, data: CreatePrivateRequest): Promise<Room> =>
+  requestJson<Room>(
+    '/rooms/private',
     {
       method: 'POST',
       ...withJsonBody(data),

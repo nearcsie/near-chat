@@ -31,6 +31,7 @@ describe('roomController', () => {
   const service = {
     list: vi.fn(),
     create: vi.fn(),
+    createPrivate: vi.fn(),
     getById: vi.fn(),
     listMembers: vi.fn(),
     update: vi.fn(),

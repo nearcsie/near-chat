@@ -50,7 +50,10 @@ export const makeMessageService = (
         throw new ValidationError(validationMessage(parsed.error.issues));
       }
 
-      const { member } = await assertRoomMembership(userId, parsed.data.roomId);
+      const { room, member } = await assertRoomMembership(userId, parsed.data.roomId);
+      if (room.isReadonly) {
+        throw new ForbiddenError('This room is read-only');
+      }
       if (member.isMuted) {
         throw new ForbiddenError('Muted members cannot send messages');
       }

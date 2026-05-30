@@ -57,6 +57,7 @@ const friendRepo = makeFriendRepository(pool);
 const userService = makeUserService(userRepo, emergencyContactRepo, { signToken });
 const roomService = makeRoomService(roomRepo, roomMemberRepo, (roomId, eventName, payload) =>
   io.to(`room_${roomId}`).emit(eventName as any, payload),
+  friendRepo,
 );
 const messageService = makeMessageService(messageRepo, roomRepo, roomMemberRepo);
 const folderService = makeFolderService(folderRepo, roomMemberRepo);
@@ -64,6 +65,10 @@ const attachmentService = makeAttachmentService(attachmentRepo);
 
 const friendController = makeFriendController(friendRepo, (userId, eventName, payload) =>
   io.to(`user_${userId}`).emit(eventName as any, payload),
+  {
+    createPrivate: roomService.createPrivate,
+    markPrivateReadOnly: roomService.markPrivateReadOnly,
+  },
 );
 
 app.use("/api/v1/auth", makeAuthRoutes(makeAuthController(userService)));

@@ -1,5 +1,5 @@
 import type { Room, RoomSummary } from '@shared/types';
-import { randomBytes } from 'crypto';
+import { createHash, randomBytes } from 'crypto';
 import type { IRoomRepository } from '../repositories/IRoomRepository';
 import type { IRoomMemberRepository } from '../repositories/IRoomMemberRepository';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../errors/AppError';
@@ -14,8 +14,22 @@ const validationMessage = (issues: { message: string }[]) =>
   issues[0]?.message ?? 'Invalid room payload';
 
 const generateInviteCode = () => randomBytes(6).toString('base64url').slice(0, 8).toUpperCase();
+const privateRoomHash = (userA: string, userB: string) =>
+  createHash('sha256').update([userA, userB].sort().join(':')).digest('hex');
 
-export const makeRoomService = (repo: IRoomRepository, roomMemberRepo: IRoomMemberRepository, emitRoomEvent?: (roomId: string, eventName: string, payload: any) => void) => {
+export const makeRoomService = (
+  repo: IRoomRepository,
+  roomMemberRepo: IRoomMemberRepository,
+  emitRoomEvent?: (roomId: string, eventName: string, payload: any) => void,
+  socialRepo?: { isBlocked(userA: string, userB: string): Promise<boolean>; areFriends(userA: string, userB: string): Promise<boolean> },
+) => {
+  const ensureMember = async (roomId: string, userId: string) => {
+    const existing = await roomMemberRepo.findMember(roomId, userId);
+    if (!existing) {
+      await roomMemberRepo.add({ roomId, userId, role: 'member' });
+    }
+  };
+
   return {
     async create(creatorId: string, data: CreateRoomInput): Promise<Room> {
       const parsed = createRoomSchema.safeParse(data);
@@ -44,6 +58,49 @@ export const makeRoomService = (repo: IRoomRepository, roomMemberRepo: IRoomMemb
 
     async list(userId: string): Promise<RoomSummary[]> {
       return repo.findByMember(userId);
+    },
+
+    async createPrivate(creatorId: string, targetUserId: string): Promise<Room> {
+      if (creatorId === targetUserId) {
+        throw new ValidationError('Cannot create a private room with yourself');
+      }
+      if (!socialRepo) {
+        throw new ForbiddenError('Private rooms require friendship validation');
+      }
+      if (await socialRepo.isBlocked(creatorId, targetUserId)) {
+        throw new ForbiddenError('Cannot create a private room with a blocked user');
+      }
+      if (!(await socialRepo.areFriends(creatorId, targetUserId))) {
+        throw new ForbiddenError('Private rooms require an accepted friendship');
+      }
+
+      const roomHash = privateRoomHash(creatorId, targetUserId);
+      const existing = await repo.findByRoomHash(roomHash);
+      if (existing) {
+        if (existing.isReadonly || existing.isArchived) {
+          return repo.update(existing.roomId, { isReadonly: false, isArchived: false });
+        }
+        return existing;
+      }
+
+      const room = await repo.create({
+        type: 'private',
+        name: undefined,
+        roomHash,
+        requireApproval: false,
+        viewHistory: true,
+        isReadonly: false,
+      });
+      await ensureMember(room.roomId, creatorId);
+      await ensureMember(room.roomId, targetUserId);
+      return room;
+    },
+
+    async markPrivateReadOnly(userA: string, userB: string): Promise<void> {
+      const existing = await repo.findByRoomHash(privateRoomHash(userA, userB));
+      if (existing) {
+        await repo.update(existing.roomId, { isReadonly: true });
+      }
     },
 
     async listMembers(roomId: string, callerId: string) {
