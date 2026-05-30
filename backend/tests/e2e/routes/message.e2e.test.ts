@@ -52,4 +52,61 @@ describe('Message E2E', () => {
     expect(res.body.length).toBe(1);
     expect(res.body[0].content).toBe('Hello E2E!');
   });
+
+  it('should reject pending members when listing messages', async () => {
+    const pendingRes = await request(app).post('/api/v1/auth/register').send({
+      name: 'Pending User',
+      email: 'pending@example.com',
+      password: 'Password123!',
+    });
+
+    await testPool.query(
+      "INSERT INTO room_members (room_id, user_id, role) VALUES ($1, $2, 'pending')",
+      [roomId, pendingRes.body.user.userId],
+    );
+
+    const res = await request(app)
+      .get(`/api/v1/rooms/${roomId}/messages`)
+      .set('Authorization', `Bearer ${pendingRes.body.token}`);
+
+    expect(res.status).toBe(403);
+  });
+
+  it('should hide pre-join messages when room viewHistory is false', async () => {
+    const hiddenRoomRes = await request(app)
+      .post('/api/v1/rooms/group')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        name: 'No History Room',
+        viewHistory: false,
+      });
+    const hiddenRoomId = hiddenRoomRes.body.roomId;
+
+    await testPool.query(
+      "INSERT INTO messages (room_id, sender_id, content, sent_at) VALUES ($1, $2, 'before join', '2026-01-01T00:00:00.000Z')",
+      [hiddenRoomId, userId],
+    );
+
+    const newUserRes = await request(app).post('/api/v1/auth/register').send({
+      name: 'New Member',
+      email: 'new-member@example.com',
+      password: 'Password123!',
+    });
+
+    await testPool.query(
+      "INSERT INTO room_members (room_id, user_id, role, join_time) VALUES ($1, $2, 'member', '2026-01-02T00:00:00.000Z')",
+      [hiddenRoomId, newUserRes.body.user.userId],
+    );
+    await testPool.query(
+      "INSERT INTO messages (room_id, sender_id, content, sent_at) VALUES ($1, $2, 'after join', '2026-01-03T00:00:00.000Z')",
+      [hiddenRoomId, userId],
+    );
+
+    const res = await request(app)
+      .get(`/api/v1/rooms/${hiddenRoomId}/messages`)
+      .set('Authorization', `Bearer ${newUserRes.body.token}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.map((message: { content: string }) => message.content)).toEqual(['after join']);
+  });
 });

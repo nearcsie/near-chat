@@ -1,11 +1,11 @@
 import { Request, Response, NextFunction } from 'express';
 import { ValidationError } from '../errors/AppError';
-import type { Room, RoomMember } from '../../../shared/types';
+import type { Room, RoomMember, RoomSummary } from '../../../shared/types';
 import type { UpdateRoomInput } from '../validators/roomSchemas';
 
 interface RoomService {
-  list(userId: string): Promise<Room[]>;
-  create(creatorId: string, data: { type: 'group'; name: string; requireApproval?: boolean; viewHistory?: boolean }): Promise<Room>;
+  list(userId: string): Promise<RoomSummary[]>;
+  create(creatorId: string, data: { type: 'group'; name: string; avatarUrl?: string; requireApproval?: boolean; viewHistory?: boolean }): Promise<Room>;
   getById(roomId: string, callerId: string): Promise<Room>;
   listMembers(roomId: string, callerId: string): Promise<RoomMember[]>;
   update(roomId: string, callerId: string, data: UpdateRoomInput): Promise<Room>;
@@ -32,7 +32,7 @@ export const makeRoomController = (service: RoomService) => ({
       if (!name || !name.trim()) {
         return next(new ValidationError('Room name cannot be empty'));
       }
-      const room = await service.create(req.user!.userId, { type: 'group', name, requireApproval, viewHistory });
+      const room = await service.create(req.user!.userId, { type: 'group', name, avatarUrl, requireApproval, viewHistory });
       res.status(201).json(room);
     } catch (err) {
       next(err);

@@ -57,6 +57,11 @@ export interface Room {
   createdAt: Date;
 }
 
+export interface RoomSummary extends Room {
+  latestMessage?: Pick<Message, 'messageId' | 'senderId' | 'content' | 'sentAt'>;
+  unreadCount: number;
+}
+
 // ---------------------------------------------------------------------------
 // Messages
 // ---------------------------------------------------------------------------

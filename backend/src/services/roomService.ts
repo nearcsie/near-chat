@@ -1,4 +1,5 @@
-import type { Room } from '@shared/types';
+import type { Room, RoomSummary } from '@shared/types';
+import { randomBytes } from 'crypto';
 import type { IRoomRepository } from '../repositories/IRoomRepository';
 import type { IRoomMemberRepository } from '../repositories/IRoomMemberRepository';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../errors/AppError';
@@ -12,6 +13,8 @@ import {
 const validationMessage = (issues: { message: string }[]) =>
   issues[0]?.message ?? 'Invalid room payload';
 
+const generateInviteCode = () => randomBytes(6).toString('base64url').slice(0, 8).toUpperCase();
+
 export const makeRoomService = (repo: IRoomRepository, roomMemberRepo: IRoomMemberRepository, emitRoomEvent?: (roomId: string, eventName: string, payload: any) => void) => {
   return {
     async create(creatorId: string, data: CreateRoomInput): Promise<Room> {
@@ -19,7 +22,14 @@ export const makeRoomService = (repo: IRoomRepository, roomMemberRepo: IRoomMemb
       if (!parsed.success) {
         throw new ValidationError(validationMessage(parsed.error.issues));
       }
-      const room = await repo.create(parsed.data);
+      let inviteCode: string | undefined;
+      if (parsed.data.type === 'group') {
+        do {
+          inviteCode = generateInviteCode();
+        } while (await repo.findByInviteCode(inviteCode));
+      }
+
+      const room = await repo.create({ ...parsed.data, inviteCode });
       await roomMemberRepo.add({ roomId: room.roomId, userId: creatorId, role: 'owner' });
       return room;
     },
@@ -32,7 +42,7 @@ export const makeRoomService = (repo: IRoomRepository, roomMemberRepo: IRoomMemb
       return room;
     },
 
-    async list(userId: string): Promise<Room[]> {
+    async list(userId: string): Promise<RoomSummary[]> {
       return repo.findByMember(userId);
     },
 

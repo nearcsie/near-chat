@@ -57,6 +57,7 @@ describe('messageService', () => {
     };
     roomRepo = {
       findById: vi.fn(),
+      findByInviteCode: vi.fn(),
       findByMember: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
@@ -143,8 +144,40 @@ describe('messageService', () => {
     expect(messageRepo.findByRoom).toHaveBeenCalledWith('room-1', {
       beforeId: 'message-0',
       limit: 10,
+      after: undefined,
     });
     expect(result).toEqual([messageWithSender]);
+  });
+
+  it('listForRoom rejects pending members', async () => {
+    roomRepo.findById.mockResolvedValue(room);
+    roomMemberRepo.findMember.mockResolvedValue({ ...member, role: 'pending' });
+
+    await expect(messageService.listForRoom('user-1', 'room-1')).rejects.toThrow(ForbiddenError);
+    expect(messageRepo.findByRoom).not.toHaveBeenCalled();
+  });
+
+  it('sendMessage rejects muted members', async () => {
+    roomRepo.findById.mockResolvedValue(room);
+    roomMemberRepo.findMember.mockResolvedValue({ ...member, isMuted: true });
+
+    await expect(messageService.sendMessage('user-1', 'room-1', 'hello')).rejects.toThrow(ForbiddenError);
+    expect(messageRepo.create).not.toHaveBeenCalled();
+  });
+
+  it('listForRoom applies join time when room history is hidden', async () => {
+    const hiddenHistoryRoom = { ...room, viewHistory: false };
+    roomRepo.findById.mockResolvedValue(hiddenHistoryRoom);
+    roomMemberRepo.findMember.mockResolvedValue(member);
+    messageRepo.findByRoom.mockResolvedValue([messageWithSender]);
+
+    await messageService.listForRoom('user-1', 'room-1');
+
+    expect(messageRepo.findByRoom).toHaveBeenCalledWith('room-1', {
+      beforeId: undefined,
+      limit: 50,
+      after: member.joinTime,
+    });
   });
 
   it('recallMessage checks membership and recalls messages that belong to the room', async () => {

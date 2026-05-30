@@ -1,5 +1,5 @@
 import { Pool } from 'pg';
-import type { Room } from '@shared/types';
+import type { Room, RoomSummary } from '@shared/types';
 import type { IRoomRepository } from './IRoomRepository';
 
 function mapRowToRoom(row: any): Room {
@@ -14,6 +14,24 @@ function mapRowToRoom(row: any): Room {
     isArchived:      row.is_archived,
     createdAt:       row.created_at,
   };
+}
+
+function mapRowToRoomSummary(row: any): RoomSummary {
+  const summary: RoomSummary = {
+    ...mapRowToRoom(row),
+    unreadCount: Number(row.unread_count ?? 0),
+  };
+
+  if (row.latest_message_id) {
+    summary.latestMessage = {
+      messageId: row.latest_message_id,
+      senderId: row.latest_sender_id ?? null,
+      content: row.latest_content,
+      sentAt: row.latest_sent_at,
+    };
+  }
+
+  return summary;
 }
 
 export class RoomRepository implements IRoomRepository {
@@ -35,22 +53,46 @@ export class RoomRepository implements IRoomRepository {
     return res.rows.length === 0 ? null : mapRowToRoom(res.rows[0]);
   }
 
-  async findByMember(userId: string): Promise<Room[]> {
+  async findByMember(userId: string): Promise<RoomSummary[]> {
     const res = await this.db.query(
-      `SELECT cr.* FROM chat_rooms cr
+      `SELECT
+         cr.*,
+         latest.message_id AS latest_message_id,
+         latest.sender_id AS latest_sender_id,
+         latest.content AS latest_content,
+         latest.sent_at AS latest_sent_at,
+         COALESCE(unread.unread_count, 0) AS unread_count
+       FROM chat_rooms cr
        JOIN room_members rm ON rm.room_id = cr.room_id
-       WHERE rm.user_id = $1`,
+       LEFT JOIN messages last_read ON last_read.message_id = rm.last_read_id
+       LEFT JOIN LATERAL (
+         SELECT m.message_id, m.sender_id, m.content, m.sent_at
+         FROM messages m
+         WHERE m.room_id = cr.room_id
+           AND (cr.view_history = true OR m.sent_at >= rm.join_time)
+         ORDER BY m.sent_at DESC
+         LIMIT 1
+       ) latest ON true
+       LEFT JOIN LATERAL (
+         SELECT COUNT(*)::int AS unread_count
+         FROM messages m
+         WHERE m.room_id = cr.room_id
+           AND (cr.view_history = true OR m.sent_at >= rm.join_time)
+           AND (last_read.sent_at IS NULL OR m.sent_at > last_read.sent_at)
+       ) unread ON true
+       WHERE rm.user_id = $1
+       ORDER BY COALESCE(latest.sent_at, cr.created_at) DESC`,
       [userId]
     );
-    return res.rows.map(mapRowToRoom);
+    return res.rows.map(mapRowToRoomSummary);
   }
 
-  async create(data: Pick<Room, 'type' | 'name' | 'requireApproval' | 'viewHistory'>): Promise<Room> {
+  async create(data: Pick<Room, 'type' | 'name' | 'avatarUrl' | 'inviteCode' | 'requireApproval' | 'viewHistory'>): Promise<Room> {
     const res = await this.db.query(
-      `INSERT INTO chat_rooms (type, name, require_approval, view_history)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO chat_rooms (type, name, avatar_url, invite_code, require_approval, view_history)
+       VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING *`,
-      [data.type, data.name ?? null, data.requireApproval, data.viewHistory]
+      [data.type, data.name ?? null, data.avatarUrl ?? null, data.inviteCode ?? null, data.requireApproval, data.viewHistory]
     );
     return mapRowToRoom(res.rows[0]);
   }

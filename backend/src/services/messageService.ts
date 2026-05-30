@@ -27,6 +27,11 @@ export const makeMessageService = (
     if (!member) {
       throw new ForbiddenError('User is not a member of this room');
     }
+    if (member.role === 'pending') {
+      throw new ForbiddenError('Pending members cannot access room messages');
+    }
+
+    return { room, member };
   };
 
   return {
@@ -45,7 +50,10 @@ export const makeMessageService = (
         throw new ValidationError(validationMessage(parsed.error.issues));
       }
 
-      await assertRoomMembership(userId, parsed.data.roomId);
+      const { member } = await assertRoomMembership(userId, parsed.data.roomId);
+      if (member.isMuted) {
+        throw new ForbiddenError('Muted members cannot send messages');
+      }
       
       const mentionMatches = [...parsed.data.content.matchAll(/@([^\s@]+)/g)];
       const mentionNames = Array.from(new Set(mentionMatches.map(m => m[1])));
@@ -83,11 +91,12 @@ export const makeMessageService = (
         throw new ValidationError(validationMessage(parsed.error.issues));
       }
 
-      await assertRoomMembership(userId, parsed.data.roomId);
+      const { room, member } = await assertRoomMembership(userId, parsed.data.roomId);
 
       return messageRepo.findByRoom(parsed.data.roomId, {
         beforeId: parsed.data.beforeId,
         limit: parsed.data.limit,
+        after: room.viewHistory ? undefined : member.joinTime,
       });
     },
 
