@@ -8,7 +8,7 @@ const getBearerToken = (authHeader: string | undefined): string | undefined => {
   return authHeader.split(' ')[1];
 };
 
-export const authMiddleware = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+export const authMiddleware = (req: Request, res: Response, next: NextFunction): void => {
   const token = readCookie(req.headers.cookie, AUTH_COOKIE_NAME) ?? getBearerToken(req.headers.authorization);
   if (!token) {
     return next(new AppError(401, 'Unauthorized: Missing authentication token'));
