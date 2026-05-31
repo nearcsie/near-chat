@@ -9,7 +9,7 @@ interface MessageService {
     userId: string,
     roomId: string,
     content: string,
-    opts?: { replyToId?: string },
+    opts?: { replyToId?: string; attachments?: string[] },
   ): Promise<MessageWithSender>;
   recallMessage(userId: string, roomId: string, messageId: string): Promise<MessageWithSender>;
 }
@@ -44,10 +44,11 @@ export const attachSockets = (io: ChatServer, deps: SocketDeps): void => {
       socket.leave(`room_${roomId}`);
     });
 
-    socket.on('send_message', async ({ roomId, content, replyTo }) => {
+    socket.on('send_message', async ({ roomId, content, replyTo, attachments }) => {
       try {
         const message = await deps.messageService.sendMessage(userId, roomId, content, {
           replyToId: replyTo,
+          attachments,
         });
         io.to(`room_${roomId}`).emit('new_message', message);
       } catch (err) {
