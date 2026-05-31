@@ -1,3 +1,4 @@
+--- Up migration
 -- v2 scope: folders, folder_rooms
 
 CREATE TABLE folders (
@@ -14,3 +15,7 @@ CREATE TABLE folder_rooms (
   PRIMARY KEY (folder_id, room_id),
   UNIQUE (user_id, room_id)
 );
+
+--- Down migration
+DROP TABLE IF EXISTS folder_rooms;
+DROP TABLE IF EXISTS folders;
