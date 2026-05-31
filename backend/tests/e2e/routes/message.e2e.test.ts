@@ -26,7 +26,7 @@ describe('Message E2E', () => {
     userId = authRes.body.user.userId;
 
     const roomRes = await request(app)
-      .post('/api/v1/rooms/group')
+      .post('/api/v1/rooms')
       .set('Authorization', `Bearer ${token}`)
       .send({
         type: 'group',
@@ -74,9 +74,10 @@ describe('Message E2E', () => {
 
   it('should hide pre-join messages when room viewHistory is false', async () => {
     const hiddenRoomRes = await request(app)
-      .post('/api/v1/rooms/group')
+      .post('/api/v1/rooms')
       .set('Authorization', `Bearer ${token}`)
       .send({
+        type: 'group',
         name: 'No History Room',
         viewHistory: false,
       });

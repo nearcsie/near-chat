@@ -108,7 +108,7 @@ describe('API routes E2E', () => {
       });
 
     await request(app)
-      .get('/api/v1/users/search?query=Updated')
+      .get('/api/v1/users?q=Updated')
       .set('Authorization', `Bearer ${user.token}`)
       .expect(200)
       .expect((response) => {
@@ -128,9 +128,9 @@ describe('API routes E2E', () => {
       });
 
     const roomResponse = await request(app)
-      .post('/api/v1/rooms/group')
+      .post('/api/v1/rooms')
       .set('Authorization', `Bearer ${user.token}`)
-      .send({ name: 'E2E Room' })
+      .send({ type: 'group', name: 'E2E Room' })
       .expect(201);
     const roomId = roomResponse.body.roomId as string;
 
@@ -160,12 +160,13 @@ describe('API routes E2E', () => {
       });
 
     await request(app)
-      .post('/api/v1/rooms/join/not-a-code')
+      .post('/api/v1/rooms/fake-id/members')
       .set('Authorization', `Bearer ${user.token}`)
+      .send({ inviteCode: 'not-a-code' })
       .expect(404);
 
     await request(app)
-      .delete(`/api/v1/rooms/${roomId}/leave`)
+      .delete(`/api/v1/rooms/${roomId}/members/me`)
       .set('Authorization', `Bearer ${user.token}`)
       .expect(403);
 

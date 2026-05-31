@@ -8,17 +8,14 @@ export const makeRoomRoutes = (ctrl: ReturnType<typeof makeRoomController>): Rou
   router.use(authMiddleware);
 
   router.get('/', ctrl.list.bind(ctrl));
-  router.post('/group', ctrl.createGroup.bind(ctrl));
-  router.post('/private', ctrl.createPrivate.bind(ctrl));
-  router.post('/join/:code', ctrl.joinByCode.bind(ctrl));
+  router.post('/', ctrl.create.bind(ctrl));
   router.get('/:id/members', ctrl.listMembers.bind(ctrl));
+  router.post('/:id/members', ctrl.join.bind(ctrl));
+  router.delete('/:id/members/me', ctrl.leave.bind(ctrl));
+  router.delete('/:id/members/:userId', ctrl.kickMember.bind(ctrl));
+  router.patch('/:id/members/:userId', ctrl.updateMember.bind(ctrl));
   router.get('/:id', ctrl.getById.bind(ctrl));
   router.patch('/:id', ctrl.update.bind(ctrl));
-  router.patch('/:id/transfer-owner', ctrl.transferOwnership.bind(ctrl));
-  router.patch('/:id/members/:userId/approve', ctrl.approveMember.bind(ctrl));
-  router.patch('/:id/members/:userId', ctrl.updateMember.bind(ctrl));
-  router.delete('/:id/members/:userId', ctrl.kickMember.bind(ctrl));
-  router.delete('/:id/leave', ctrl.leave.bind(ctrl));
   router.delete('/:id', ctrl.archiveGroup.bind(ctrl));
 
   return router;

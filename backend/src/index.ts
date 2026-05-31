@@ -33,7 +33,7 @@ import { makeUserRoutes } from "./routes/userRoutes";
 import { makeRoomRoutes } from "./routes/roomRoutes";
 import { makeMessageRoutes } from "./routes/messageRoutes";
 import { makeFolderRoutes } from "./routes/folderRoutes";
-import { makeFriendRoutes, makeBlockRoutes } from "./routes/friendRoutes";
+import { makeFriendRoutes, makeBlockRoutes, makeFriendRequestRoutes } from "./routes/friendRoutes";
 import { attachSocketAuth } from "./realtime/authSocket";
 import { attachSockets } from "./realtime/socketServer";
 import type { ClientToServerEvents, ServerToClientEvents } from "../../shared/types";
@@ -93,6 +93,7 @@ app.use("/api/v1/rooms", makeMessageRoutes(makeMessageController(messageService)
 app.use("/api/v1/folders", makeFolderRoutes(makeFolderController(folderService)));
 app.use("/api/v1/attachments", makeAttachmentRoutes(makeAttachmentController(attachmentService)));
 app.use("/api/v1/friends", makeFriendRoutes(friendController));
+app.use("/api/v1/friend-requests", makeFriendRequestRoutes(friendController));
 app.use("/api/v1/blocks", makeBlockRoutes(friendController));
 app.use(errorHandler);
 

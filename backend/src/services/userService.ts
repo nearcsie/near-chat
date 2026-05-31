@@ -169,11 +169,11 @@ export const makeUserService = (
     },
 
     async search(query: string): Promise<PublicUser[]> {
-      const parsed = searchQuerySchema.safeParse({ query });
+      const parsed = searchQuerySchema.safeParse({ q: query });
       if (!parsed.success) {
         throw new ValidationError(parsed.error.issues[0]?.message ?? 'Invalid query');
       }
-      const users = await repo.search(parsed.data.query);
+      const users = await repo.search(parsed.data.q);
       return users.map((u) => ({ userId: u.userId, name: u.name, avatarUrl: u.avatarUrl }));
     },
   };

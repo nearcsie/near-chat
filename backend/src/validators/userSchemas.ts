@@ -24,7 +24,7 @@ export const updateMeSchema = z
   });
 
 export const searchQuerySchema = z.object({
-  query: z.string().trim().min(1, 'Search query cannot be empty'),
+  q: z.string().trim().min(1, 'Search query cannot be empty'),
 });
 
 type RegisterSchema = z.infer<typeof registerSchema>;

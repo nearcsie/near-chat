@@ -22,9 +22,9 @@ describe('Folder E2E', () => {
 
     // Create room
     const roomRes = await request(app)
-      .post('/api/v1/rooms/group')
+      .post('/api/v1/rooms')
       .set('Authorization', `Bearer ${token}`)
-      .send({ name: 'Test Room' });
+      .send({ type: 'group', name: 'Test Room' });
     roomId = roomRes.body.roomId;
   });
 
@@ -99,9 +99,9 @@ describe('Folder E2E', () => {
     });
 
     const otherRoom = await request(app)
-      .post('/api/v1/rooms/group')
+      .post('/api/v1/rooms')
       .set('Authorization', `Bearer ${otherUser.body.token}`)
-      .send({ name: 'Other Room' });
+      .send({ type: 'group', name: 'Other Room' });
 
     const createRes = await request(app)
       .post('/api/v1/folders')

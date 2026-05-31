@@ -27,7 +27,7 @@ describe('Attachment E2E', () => {
     userId = authRes.body.user.userId;
 
     const roomRes = await request(app)
-      .post('/api/v1/rooms/group')
+      .post('/api/v1/rooms')
       .set('Authorization', `Bearer ${token}`)
       .send({
         type: 'group',
