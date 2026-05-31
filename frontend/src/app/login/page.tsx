@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { Checkbox } from "@/components/ui/Checkbox";
+import { login } from "@/lib/api";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -13,39 +14,44 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) {
-      setError("請填寫所有欄位");
+      setError("Please enter email and password.");
       return;
     }
     if (password.length < 8) {
-      setError("密碼長度至少需要 8 個字元");
+      setError("Password must be at least 8 characters.");
       return;
     }
 
-    // Save mock user session to localStorage
-    const username = email.split("@")[0];
-    localStorage.setItem(
-      "user",
-      JSON.stringify({
-        username: username,
-        email: email,
-        bio: "隨意聊天的地方",
-        avatar: "",
-      })
-    );
-    localStorage.setItem("token", "mock-jwt-token");
-
-    // Redirect to Main Page
-    router.push("/");
+    setIsSubmitting(true);
+    setError("");
+    try {
+      const result = await login({ email, password });
+      localStorage.setItem("token", result.token);
+      localStorage.setItem(
+        "user",
+        JSON.stringify({
+          userId: result.user.userId,
+          username: result.user.name,
+          email,
+          avatar: result.user.avatarUrl ?? "",
+        }),
+      );
+      router.push("/");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Login failed.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center p-4 bg-background transition-colors">
       <div className="w-full max-w-sm border border-border-primary rounded-sm bg-surface-card p-8 flex flex-col items-center">
-        {/* Minimal Blueprint Logo */}
         <div className="h-16 w-16 border border-border-primary bg-surface-muted rounded-sm flex items-center justify-center mb-6">
           <svg
             className="h-8 w-8 text-foreground"
@@ -60,13 +66,13 @@ export default function LoginPage() {
         </div>
 
         <h1 className="text-xl font-bold uppercase tracking-wider text-foreground mb-1 select-none font-sans">
-          歡迎回來！
+          DB-9CHAT
         </h1>
-        <p className="text-xs text-text-muted select-none font-sans mb-8">登入您的帳戶</p>
+        <p className="text-xs text-text-muted select-none font-sans mb-8">Sign in to chat</p>
 
         <form onSubmit={handleSubmit} className="w-full flex flex-col gap-5">
           <Input
-            label="電子郵件"
+            label="Email"
             type="email"
             placeholder="your@email.com"
             value={email}
@@ -78,9 +84,9 @@ export default function LoginPage() {
           />
 
           <Input
-            label="密碼"
+            label="Password"
             type="password"
-            placeholder="......"
+            placeholder="........"
             value={password}
             onChange={(e) => {
               setPassword(e.target.value);
@@ -91,30 +97,29 @@ export default function LoginPage() {
 
           <div className="flex items-center justify-between py-1">
             <Checkbox
-              label="記住我"
+              label="Remember me"
               checked={rememberMe}
               onChange={(e) => setRememberMe(e.target.checked)}
             />
           </div>
 
-          {error && (
-            <p className="text-xs text-red-600 font-sans text-center">{error}</p>
-          )}
+          {error && <p className="text-xs text-red-600 font-sans text-center">{error}</p>}
 
           <Button
             type="submit"
             variant="primary"
             className="w-full mt-2 py-3 select-none font-sans"
+            disabled={isSubmitting}
           >
-            登入
+            {isSubmitting ? "Signing in..." : "Sign in"}
           </Button>
         </form>
 
         <div className="w-full text-center mt-6 pt-6 border-t border-border-secondary">
           <p className="text-xs text-text-muted font-sans select-none">
-            還沒有帳號？{" "}
+            No account yet?{" "}
             <Link href="/register" className="text-primary font-semibold hover:underline">
-              立即註冊
+              Create one
             </Link>
           </p>
         </div>

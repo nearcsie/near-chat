@@ -40,12 +40,21 @@ import type { ClientToServerEvents, ServerToClientEvents } from "../../shared/ty
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server<ClientToServerEvents, ServerToClientEvents>(server, { cors: { origin: "*" } });
+
+const DEFAULT_CORS_ORIGINS = ['http://localhost:3000', 'http://localhost:3005', 'http://localhost:5173'];
+const allowedOrigins = (process.env.CORS_ORIGINS ?? DEFAULT_CORS_ORIGINS.join(','))
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+const io = new Server<ClientToServerEvents, ServerToClientEvents>(server, {
+  cors: { origin: allowedOrigins, credentials: true },
+});
 
 const PORT = process.env.PORT || 4000;
 
 app.use(securityHeaders);
-app.use(cors({ origin: true, credentials: true }));
+app.use(cors({ origin: allowedOrigins, credentials: true }));
 app.use(express.json());
 app.use("/api", makeGlobalRateLimiter());
 

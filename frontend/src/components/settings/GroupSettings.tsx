@@ -45,22 +45,27 @@ export default function GroupSettings({ roomId, onClose }: GroupSettingsProps) {
     );
   }
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    saveGroupSettings(roomId, {
-      name: groupSettingsName,
-      description: groupSettingsDesc,
-      isPublic: groupSettingsPublic,
-      allowInvite: groupSettingsInvite,
-      allowUpload: groupSettingsUpload,
-      members: groupSettingsMembers,
-    });
-    onClose();
+    try {
+      await saveGroupSettings(roomId, {
+        name: groupSettingsName,
+        description: groupSettingsDesc,
+        isPublic: groupSettingsPublic,
+        allowInvite: groupSettingsInvite,
+        allowUpload: groupSettingsUpload,
+        members: groupSettingsMembers,
+      });
+      onClose();
+    } catch (error) {
+      console.error(error);
+      alert(error instanceof Error ? error.message : "Failed to save group settings");
+    }
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (confirm("警告！刪除群組聊天室將無法復原，所有訊息及成員資料都將被永久刪除。確認刪除嗎？")) {
-      const nextActiveId = handleDeleteGroupRoom(roomId);
+      const nextActiveId = await handleDeleteGroupRoom(roomId);
       if (nextActiveId) {
         router.push(`/chat/${nextActiveId}`);
       } else {

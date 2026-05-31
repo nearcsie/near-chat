@@ -4,6 +4,8 @@
 
 ## 1. RESTful API (HTTP)
 
+> Authentication note: `POST /auth/register` and `POST /auth/login` return a JWT in the JSON body and set an `auth_token` HttpOnly cookie. The JWT default lifetime is `15m` via `JWT_EXPIRES_IN`; Bearer-token clients must re-authenticate after expiry or set `JWT_EXPIRES_IN` explicitly in deployment config if a longer lifetime is required.
+
 所有 API 路徑以 `/api/v1` 開頭。
 
 ### A. 認證與帳號 (Authentication & Profile)

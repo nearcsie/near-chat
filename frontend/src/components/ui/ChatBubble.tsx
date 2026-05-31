@@ -5,6 +5,7 @@ import { Avatar } from "./Avatar";
 export interface Attachment {
   filename: string;
   filetype: string;
+  url?: string;
 }
 
 export interface ChatBubbleProps {
@@ -108,43 +109,62 @@ export function ChatBubble({
             {/* Attachments Section */}
             {attachments.length > 0 && (
               <div className="flex flex-col gap-1.5 mt-1 border-t border-border-secondary/40 pt-2">
-                {attachments.map((file, idx) => (
-                  <div
-                    key={idx}
-                    className={cn(
-                      "flex items-center gap-2.5 p-2 border rounded-sm text-xs cursor-pointer select-none transition-colors",
-                      isOutgoing && isHighEmphasis
-                        ? "bg-white/10 border-white/20 hover:bg-white/20 text-white"
-                        : "bg-surface-card border-border-secondary hover:border-border-primary text-foreground"
-                    )}
-                  >
-                    {/* File Attachment Icon */}
-                    <svg
-                      className="h-4 w-4 shrink-0"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"
-                      />
-                    </svg>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium truncate leading-tight">{file.filename}</p>
-                      <p
-                        className={cn(
-                          "text-[9px] uppercase tracking-wider font-mono mt-0.5",
-                          isOutgoing && isHighEmphasis ? "text-white/60" : "text-text-muted"
-                        )}
+                {attachments.map((file, idx) => {
+                  const content = (
+                    <>
+                      <svg
+                        className="h-4 w-4 shrink-0"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                        strokeWidth="2"
                       >
-                        {file.filetype}
-                      </p>
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"
+                        />
+                      </svg>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium truncate leading-tight">{file.filename}</p>
+                        <p
+                          className={cn(
+                            "text-[9px] uppercase tracking-wider font-mono mt-0.5",
+                            isOutgoing && isHighEmphasis ? "text-white/60" : "text-text-muted"
+                          )}
+                        >
+                          {file.filetype}
+                        </p>
+                      </div>
+                    </>
+                  );
+
+                  const className = cn(
+                    "flex items-center gap-2.5 p-2 border rounded-sm text-xs cursor-pointer select-none transition-colors",
+                    isOutgoing && isHighEmphasis
+                      ? "bg-white/10 border-white/20 hover:bg-white/20 text-white"
+                      : "bg-surface-card border-border-secondary hover:border-border-primary text-foreground"
+                  );
+
+                  return file.url ? (
+                    <a
+                      key={idx}
+                      href={file.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className={className}
+                    >
+                      {content}
+                    </a>
+                  ) : (
+                    <div
+                    key={idx}
+                      className={className}
+                    >
+                      {content}
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>

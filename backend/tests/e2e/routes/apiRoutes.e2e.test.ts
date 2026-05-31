@@ -23,6 +23,7 @@ const registerUser = async (name = 'E2E User') => {
 describe('API routes E2E', () => {
   beforeAll(async () => {
     process.env.DATABASE_URL = process.env.DATABASE_URL_TEST;
+    process.env.CORS_ORIGINS = 'http://allowed.example,http://localhost:3005';
     const indexModule = await import('../../../src/index');
     const dbModule = await import('../../../src/db');
     app = indexModule.app;
@@ -63,6 +64,27 @@ describe('API routes E2E', () => {
       .post('/api/v1/auth/logout')
       .set('Authorization', `Bearer ${register.body.token}`)
       .expect(204);
+  });
+
+  it('only echoes credentialed CORS for configured origins', async () => {
+    await request(app)
+      .options('/api/v1/users/me')
+      .set('Origin', 'http://allowed.example')
+      .set('Access-Control-Request-Method', 'GET')
+      .expect(204)
+      .expect((response) => {
+        expect(response.headers['access-control-allow-origin']).toBe('http://allowed.example');
+        expect(response.headers['access-control-allow-credentials']).toBe('true');
+      });
+
+    await request(app)
+      .options('/api/v1/users/me')
+      .set('Origin', 'http://evil.example')
+      .set('Access-Control-Request-Method', 'GET')
+      .expect(204)
+      .expect((response) => {
+        expect(response.headers['access-control-allow-origin']).toBeUndefined();
+      });
   });
 
   it('covers authenticated user routes', async () => {

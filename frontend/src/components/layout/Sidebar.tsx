@@ -37,26 +37,37 @@ export default function Sidebar() {
   const [newRoomFolder, setNewRoomFolder] = useState<string>("");
   const [newFolderName, setNewFolderName] = useState("");
 
-  const handleCreateRoomSubmit = (e: React.FormEvent) => {
+  const handleCreateRoomSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newRoomName.trim()) return;
 
-    const newId = handleCreateRoom(newRoomName, newRoomType, newRoomFolder);
-    setNewRoomName("");
-    setNewRoomFolder("");
-    setIsCreateRoomOpen(false);
-    
-    // Redirect to the newly created room
-    router.push(`/chat/${newId}`);
+    try {
+      const newId = await handleCreateRoom(newRoomName, newRoomType, newRoomFolder);
+      setNewRoomName("");
+      setNewRoomFolder("");
+      setIsCreateRoomOpen(false);
+
+      if (newId) {
+        router.push(`/chat/${newId}`);
+      }
+    } catch (error) {
+      console.error(error);
+      alert(error instanceof Error ? error.message : "Failed to create room");
+    }
   };
 
-  const handleCreateFolderSubmit = (e: React.FormEvent) => {
+  const handleCreateFolderSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newFolderName.trim()) return;
 
-    handleCreateFolder(newFolderName);
-    setNewFolderName("");
-    setIsCreateFolderOpen(false);
+    try {
+      await handleCreateFolder(newFolderName);
+      setNewFolderName("");
+      setIsCreateFolderOpen(false);
+    } catch (error) {
+      console.error(error);
+      alert(error instanceof Error ? error.message : "Failed to create folder");
+    }
   };
 
   const selectRoom = (roomId: string) => {
