@@ -16,6 +16,7 @@
 | 登出 | POST | `/auth/logout` | 清除 Session/Token |
 | 取得個人資訊 | GET | `/users/me` | |
 | 更新個人資訊 | PATCH | `/users/me` | name, bio, avatar_url, warning_config |
+| 刪除個人帳號 | DELETE | `/users/me` | 標記帳號為已刪除 (軟刪除) |
 | 搜尋使用者 | GET | `/users/search` | query (by name or ID) |
 
 ### B. 好友與封鎖 (Friends & Blocks)
@@ -34,10 +35,13 @@
 | :--- | :--- | :--- | :--- |
 | 列出所有聊天室 | GET | `/rooms` | 包含最後一則訊息片段 |
 | 建立群組 | POST | `/rooms/group` | name, avatar_url |
+| 建立私聊 | POST | `/rooms/private` | target_user_id |
 | 取得聊天室詳情 | GET | `/rooms/:id` | |
 | 更新群組設定 | PATCH | `/rooms/:id` | name, avatar, settings (owner/admin) |
+| 轉讓擁有者 | PATCH | `/rooms/:id/transfer-owner` | new_owner_id |
 | 加入群組 (代碼) | POST | `/rooms/join/:code` | |
 | 退出聊天室 | DELETE | `/rooms/:id/leave` | |
+| 封存/刪除聊天室 | DELETE | `/rooms/:id` | 僅擁有者可操作 |
 
 ### D. 成員管理 (Member Management)
 | 功能 | 方法 | 路徑 | 說明 |

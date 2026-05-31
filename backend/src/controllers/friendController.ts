@@ -3,11 +3,11 @@ import { z } from 'zod';
 import { AppError, ValidationError } from '../errors/AppError';
 import type { makeFriendRepository } from '../repositories/friendRepository';
 
-export const friendRequestSchema = z.object({
+const friendRequestSchema = z.object({
   target_user_id: z.string().uuid(),
 });
 
-export const friendResponseSchema = z.object({
+const friendResponseSchema = z.object({
   status: z.enum(['accepted', 'rejected']),
 });
 

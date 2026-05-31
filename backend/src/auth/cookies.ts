@@ -3,10 +3,10 @@ import { parsePositiveInt } from '../utils/parsePositiveInt';
 
 export const AUTH_COOKIE_NAME = 'auth_token';
 
-export const getAuthCookieMaxAgeMs = (): number =>
+const getAuthCookieMaxAgeMs = (): number =>
   parsePositiveInt(process.env.AUTH_COOKIE_MAX_AGE_MS, 15 * 60 * 1000);
 
-export const authCookieOptions = () => ({
+const authCookieOptions = () => ({
   httpOnly: true,
   secure: process.env.NODE_ENV !== 'development' && process.env.NODE_ENV !== 'test',
   sameSite: 'strict' as const,

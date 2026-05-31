@@ -5,11 +5,11 @@ import type { RegisterRequest, LoginRequest, AuthResponse, PublicUser, JwtPayloa
 import { ConflictError, NotFoundError, ValidationError } from '../errors/AppError';
 import { updateMeSchema, searchQuerySchema, type UpdateMeInput } from '../validators/userSchemas';
 
-export interface JwtHelper {
+interface JwtHelper {
   signToken(payload: JwtPayload): string;
 }
 
-export interface EmergencyAlertResult {
+interface EmergencyAlertResult {
   alerted: boolean;
   recipients: string[];
   reason?: string;
