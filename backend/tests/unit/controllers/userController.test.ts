@@ -146,4 +146,80 @@ describe('userController', () => {
       expect(res.json).toHaveBeenCalledWith(contact);
     });
   });
+
+  describe('checkEmergencyInactivity', () => {
+    it('returns 200 with result', async () => {
+      service.checkInactivity = vi.fn().mockResolvedValue({ alerted: true });
+      const res = mockRes();
+      const next = vi.fn();
+
+      await ctrl.checkEmergencyInactivity(authedReq({ body: { now: new Date().toISOString() } }), res, next);
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith({ alerted: true });
+    });
+
+    it('returns ValidationError on invalid date', async () => {
+      const res = mockRes();
+      const next = vi.fn();
+
+      await ctrl.checkEmergencyInactivity(authedReq({ body: { now: 'not-a-date' } }), res, next);
+
+      expect(next).toHaveBeenCalledWith(expect.any(ValidationError));
+    });
+
+    it('passes error to next', async () => {
+      const err = new Error('fail');
+      service.checkInactivity = vi.fn().mockRejectedValue(err);
+      const res = mockRes();
+      const next = vi.fn();
+
+      await ctrl.checkEmergencyInactivity(authedReq({ body: { now: new Date().toISOString() } }), res, next);
+
+      expect(next).toHaveBeenCalledWith(err);
+    });
+  });
+
+  describe('deleteMe', () => {
+    it('returns 204 on success', async () => {
+      service.deleteMe = vi.fn().mockResolvedValue(undefined);
+      const res = mockRes();
+      const next = vi.fn();
+      await ctrl.deleteMe(authedReq(), res, next);
+      expect(res.status).toHaveBeenCalledWith(204);
+    });
+  });
+
+  describe('getEmergencyContacts', () => {
+    it('returns 200 with contacts', async () => {
+      service.getEmergencyContacts = vi.fn().mockResolvedValue([{ id: 'c1' }]);
+      const res = mockRes();
+      const next = vi.fn();
+      await ctrl.getEmergencyContacts(authedReq(), res, next);
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith([{ id: 'c1' }]);
+    });
+  });
+
+  describe('deleteEmergencyContact', () => {
+    it('returns 200 on success', async () => {
+      service.deleteEmergencyContact = vi.fn().mockResolvedValue(undefined);
+      const res = mockRes();
+      const next = vi.fn();
+      await ctrl.deleteEmergencyContact(authedReq({ params: { contactId: 'c1' } }), res, next);
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith({ success: true });
+    });
+  });
+
+  describe('triggerEmergencyAlert', () => {
+    it('returns 202 on success', async () => {
+      service.triggerEmergencyAlert = vi.fn().mockResolvedValue({ alerted: true });
+      const res = mockRes();
+      const next = vi.fn();
+      await ctrl.triggerEmergencyAlert(authedReq({ body: { message: 'help' } }), res, next);
+      expect(res.status).toHaveBeenCalledWith(202);
+      expect(res.json).toHaveBeenCalledWith({ alerted: true });
+    });
+  });
 });
