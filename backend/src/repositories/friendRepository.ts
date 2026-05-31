@@ -14,9 +14,12 @@ export interface Block {
 }
 
 export interface FriendRequestResult {
-  requester_id: string;
-  addressee_id: string;
-  status: string;
+  requesterId: string;
+  addresseeId: string;
+  status: 'pending' | 'accepted';
+  createdAt: Date;
+  requester?: { userId: string; name: string; avatarUrl?: string };
+  addressee?: { userId: string; name: string; avatarUrl?: string };
 }
 
 export const makeFriendRepository = (db: Pool) => {
@@ -25,20 +28,37 @@ export const makeFriendRepository = (db: Pool) => {
       const res = await db.query(
         `INSERT INTO friendships (requester_id, addressee_id, status)
          VALUES ($1, $2, 'pending')
-         RETURNING requester_id, addressee_id, status`,
+         RETURNING requester_id, addressee_id, status, created_at`,
         [requesterId, addresseeId]
       );
-      return res.rows[0];
+      return {
+        requesterId: res.rows[0].requester_id,
+        addresseeId: res.rows[0].addressee_id,
+        status: res.rows[0].status,
+        createdAt: res.rows[0].created_at
+      };
     },
 
     async getPendingRequests(userId: string): Promise<FriendRequestResult[]> {
       const res = await db.query(
-        `SELECT requester_id, addressee_id, status
-         FROM friendships
-         WHERE addressee_id = $1 AND status = 'pending'`,
+        `SELECT f.requester_id, f.addressee_id, f.status, f.created_at,
+                u.user_id, u.name, u.avatar_url
+         FROM friendships f
+         JOIN users u ON u.user_id = f.requester_id
+         WHERE f.addressee_id = $1 AND f.status = 'pending'`,
         [userId]
       );
-      return res.rows;
+      return res.rows.map(row => ({
+        requesterId: row.requester_id,
+        addresseeId: row.addressee_id,
+        status: row.status,
+        createdAt: row.created_at,
+        requester: {
+          userId: row.user_id,
+          name: row.name,
+          avatarUrl: row.avatar_url ?? undefined
+        }
+      }));
     },
 
     async acceptFriendRequest(requesterId: string, addresseeId: string): Promise<FriendRequestResult> {
@@ -46,10 +66,16 @@ export const makeFriendRepository = (db: Pool) => {
         `UPDATE friendships
          SET status = 'accepted'
          WHERE requester_id = $1 AND addressee_id = $2 AND status = 'pending'
-         RETURNING requester_id, addressee_id, status`,
+         RETURNING requester_id, addressee_id, status, created_at`,
         [requesterId, addresseeId]
       );
-      return res.rows[0];
+      if (res.rows.length === 0) throw new Error('Not found');
+      return {
+        requesterId: res.rows[0].requester_id,
+        addresseeId: res.rows[0].addressee_id,
+        status: res.rows[0].status,
+        createdAt: res.rows[0].created_at
+      };
     },
 
     async deleteFriendship(user1: string, user2: string): Promise<void> {
@@ -74,13 +100,22 @@ export const makeFriendRepository = (db: Pool) => {
 
     async getFriends(userId: string): Promise<any[]> {
       const res = await db.query(
-        `SELECT
-           CASE WHEN requester_id = $1 THEN addressee_id ELSE requester_id END as user_id
-         FROM friendships
-         WHERE (requester_id = $1 OR addressee_id = $1) AND status = 'accepted'`,
+        `SELECT 
+           f.created_at as friendship_created_at,
+           u.user_id, u.name, u.avatar_url
+         FROM friendships f
+         JOIN users u ON u.user_id = (CASE WHEN f.requester_id = $1 THEN f.addressee_id ELSE f.requester_id END)
+         WHERE (f.requester_id = $1 OR f.addressee_id = $1) AND f.status = 'accepted'`,
         [userId]
       );
-      return res.rows;
+      return res.rows.map(row => ({
+        friend: {
+          userId: row.user_id,
+          name: row.name,
+          avatarUrl: row.avatar_url ?? undefined
+        },
+        friendshipCreatedAt: row.friendship_created_at
+      }));
     },
 
     async blockUser(blockerId: string, blockedId: string): Promise<void> {

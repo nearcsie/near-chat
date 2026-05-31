@@ -14,6 +14,7 @@ function mapRowToUser(row: any): User {
     warningDays: row.warning_days,
     lastActivity: row.last_activity,
     createdAt: row.created_at,
+    deletedAt: row.deleted_at ?? null,
   };
 }
 
@@ -50,7 +51,7 @@ export class UserRepository implements IUserRepository {
     return mapRowToUser(res.rows[0]);
   }
 
-  async update(userId: string, data: Partial<Pick<User, "name" | "bio" | "avatarUrl" | "warningEnabled" | "warningDays" | "lastActivity">>): Promise<User> {
+  async update(userId: string, data: Partial<Pick<User, "name" | "bio" | "avatarUrl" | "warningEnabled" | "warningDays" | "lastActivity" | "deletedAt">>): Promise<User> {
     const fields: string[] = [];
     const values: any[] = [];
     let queryIdx = 1;
@@ -78,6 +79,10 @@ export class UserRepository implements IUserRepository {
     if (data.lastActivity !== undefined) {
       fields.push(`last_activity = $${queryIdx++}`);
       values.push(data.lastActivity);
+    }
+    if (data.deletedAt !== undefined) {
+      fields.push(`deleted_at = $${queryIdx++}`);
+      values.push(data.deletedAt);
     }
 
     if (fields.length === 0) {

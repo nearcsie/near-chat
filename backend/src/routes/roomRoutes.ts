@@ -14,10 +14,12 @@ export const makeRoomRoutes = (ctrl: ReturnType<typeof makeRoomController>): Rou
   router.get('/:id/members', ctrl.listMembers.bind(ctrl));
   router.get('/:id', ctrl.getById.bind(ctrl));
   router.patch('/:id', ctrl.update.bind(ctrl));
+  router.patch('/:id/transfer-owner', ctrl.transferOwnership.bind(ctrl));
   router.patch('/:id/members/:userId/approve', ctrl.approveMember.bind(ctrl));
   router.patch('/:id/members/:userId', ctrl.updateMember.bind(ctrl));
   router.delete('/:id/members/:userId', ctrl.kickMember.bind(ctrl));
   router.delete('/:id/leave', ctrl.leave.bind(ctrl));
+  router.delete('/:id', ctrl.archiveGroup.bind(ctrl));
 
   return router;
 };

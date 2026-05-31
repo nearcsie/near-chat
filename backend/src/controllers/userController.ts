@@ -6,6 +6,7 @@ import type { PublicUser } from '../../../shared/types';
 interface UserService {
   getMe(userId: string): Promise<PublicUser>;
   updateMe(userId: string, data: unknown): Promise<PublicUser>;
+  deleteMe(userId: string): Promise<void>;
   search(query: string): Promise<PublicUser[]>;
   getEmergencyContacts(userId: string): Promise<any>;
   upsertEmergencyContact(userId: string, contactId: string, message: string): Promise<{ contact: any, isUpdate: boolean }>;
@@ -39,6 +40,15 @@ export const makeUserController = (service: UserService) => ({
     }
   },
 
+  async deleteMe(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const userId = req.user!.userId;
+      await service.deleteMe(userId);
+      res.status(204).send();
+    } catch (err) {
+      next(err);
+    }
+  },
   
   async getEmergencyContacts(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {

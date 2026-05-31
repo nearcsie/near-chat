@@ -24,20 +24,24 @@ describe('AttachmentController', () => {
   });
 
   describe('upload', () => {
-    it('returns 400 if messageId is missing', async () => {
-      req.file = { path: '/tmp/file.png', mimetype: 'image/png', originalname: 'test.png' } as any;
-      await controller.upload(req, res, next);
-      expect(res.status).toHaveBeenCalledWith(400);
-      expect(res.json).toHaveBeenCalledWith({ error: 'messageId is required' });
-      expect(mockService.uploadAttachment).not.toHaveBeenCalled();
-    });
-
     it('returns 400 if file is missing', async () => {
-      req.body = { messageId: 'msg-123' };
+      req.user = { userId: 'user-1' };
       await controller.upload(req, res, next);
       expect(res.status).toHaveBeenCalledWith(400);
       expect(res.json).toHaveBeenCalledWith({ error: 'file is required' });
       expect(mockService.uploadAttachment).not.toHaveBeenCalled();
+    });
+
+    it('calls uploadAttachment and returns 201 on success', async () => {
+      req.user = { userId: 'user-1' };
+      req.file = { path: '/tmp/file.png', mimetype: 'image/png', originalname: 'test.png' } as any;
+      mockService.uploadAttachment.mockResolvedValue({ attachmentId: 'att-1', fileUrl: '/api/v1/attachments/att-1' });
+      
+      await controller.upload(req, res, next);
+      
+      expect(mockService.uploadAttachment).toHaveBeenCalledWith('user-1', req.file);
+      expect(res.status).toHaveBeenCalledWith(201);
+      expect(res.json).toHaveBeenCalledWith({ attachmentId: 'att-1', fileUrl: '/api/v1/attachments/att-1' });
     });
   });
 });

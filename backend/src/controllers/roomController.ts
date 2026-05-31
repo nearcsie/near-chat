@@ -10,6 +10,8 @@ interface RoomService {
   getById(roomId: string, callerId: string): Promise<Room>;
   listMembers(roomId: string, callerId: string): Promise<RoomMember[]>;
   update(roomId: string, callerId: string, data: UpdateRoomInput): Promise<Room>;
+  transferOwnership(roomId: string, callerId: string, targetUserId: string): Promise<void>;
+  archiveGroup(roomId: string, callerId: string): Promise<void>;
   joinByCode(userId: string, inviteCode: string): Promise<Room>;
   leave(userId: string, roomId: string): Promise<void>;
   approveMember(roomId: string, callerId: string, targetUserId: string): Promise<void>;
@@ -84,6 +86,28 @@ export const makeRoomController = (service: RoomService) => ({
     try {
       const room = await service.joinByCode(req.user!.userId, req.params.code);
       res.status(200).json(room);
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async transferOwnership(req: Request<{ id: string }>, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const targetUserId = req.body.targetUserId ?? req.body.target_user_id;
+      if (!targetUserId) {
+        return next(new ValidationError('targetUserId is required'));
+      }
+      await service.transferOwnership(req.params.id, req.user!.userId, targetUserId);
+      res.status(200).json({ message: 'Ownership transferred' });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async archiveGroup(req: Request<{ id: string }>, res: Response, next: NextFunction): Promise<void> {
+    try {
+      await service.archiveGroup(req.params.id, req.user!.userId);
+      res.status(204).send();
     } catch (err) {
       next(err);
     }

@@ -20,6 +20,22 @@ export function makeFriendService(
         throw new AppError(403, 'Cannot interact with this user', 'FORBIDDEN');
       }
 
+      const areFriends = await repo.areFriends(requesterId, targetUserId);
+      if (areFriends) {
+        throw new ValidationError('Already friends');
+      }
+
+      const pendingForMe = await repo.getPendingRequests(requesterId);
+      const reciprocal = pendingForMe.find(req => req.requesterId === targetUserId);
+      if (reciprocal) {
+        const accepted = await repo.acceptFriendRequest(targetUserId, requesterId);
+        await privateRooms?.createPrivate(targetUserId, requesterId);
+        if (notifyUser) {
+          notifyUser(targetUserId, 'friend_request', accepted);
+        }
+        return accepted;
+      }
+
       const request = await repo.sendFriendRequest(requesterId, targetUserId);
       
       if (notifyUser) {

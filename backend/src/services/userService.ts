@@ -120,6 +120,10 @@ export const makeUserService = (
       return { userId: updated.userId, name: updated.name, avatarUrl: updated.avatarUrl };
     },
 
+    async deleteMe(userId: string): Promise<void> {
+      await repo.update(userId, { deletedAt: new Date() } as any);
+    },
+
     
     async getEmergencyContacts(userId: string): Promise<EmergencyContact[]> {
       return await emergencyContactRepo.findByUserId(userId);

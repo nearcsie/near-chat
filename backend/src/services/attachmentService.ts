@@ -3,15 +3,15 @@ import { AttachmentRepository } from '../repositories/attachmentRepository';
 
 export function makeAttachmentService(attachmentRepo: AttachmentRepository) {
   return {
-    async uploadAttachment(messageId: string, file: Express.Multer.File) {
-      if (!messageId) {
-        throw new ValidationError('messageId is required');
+    async uploadAttachment(uploadedBy: string, file: Express.Multer.File) {
+      if (!uploadedBy) {
+        throw new ValidationError('uploadedBy is required');
       }
       if (!file) {
         throw new ValidationError('file is required');
       }
       const attachment = await attachmentRepo.create({
-        messageId,
+        uploadedBy,
         filePath: file.path,
         fileType: file.mimetype,
         originalName: file.originalname,

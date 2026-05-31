@@ -39,12 +39,13 @@ export const makeMessageService = (
       userId: string,
       roomId: string,
       content: string,
-      opts: { replyToId?: string } = {},
+      opts: { replyToId?: string; attachments?: string[] } = {},
     ): Promise<MessageWithSender> {
       const parsed = sendMessageSchema.safeParse({
         roomId,
         content,
         replyToId: opts.replyToId,
+        attachments: opts.attachments,
       });
       if (!parsed.success) {
         throw new ValidationError(validationMessage(parsed.error.issues));
@@ -53,6 +54,9 @@ export const makeMessageService = (
       const { room, member } = await assertRoomMembership(userId, parsed.data.roomId);
       if (room.isReadonly) {
         throw new ForbiddenError('This room is read-only');
+      }
+      if (room.isArchived) {
+        throw new ForbiddenError('This room is archived');
       }
       if (member.isMuted) {
         throw new ForbiddenError('Muted members cannot send messages');
@@ -75,6 +79,9 @@ export const makeMessageService = (
       }
       if (mentionedUserIds.length > 0) {
         messageData.mentions = mentionedUserIds;
+      }
+      if (parsed.data.attachments && parsed.data.attachments.length > 0) {
+        messageData.attachments = parsed.data.attachments;
       }
 
       return messageRepo.create(messageData);
