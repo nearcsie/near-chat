@@ -14,6 +14,7 @@ out/
 
 # production
 build/
+dist/
 
 # misc
 .DS_Store
@@ -44,3 +45,7 @@ yarn-error.log*
 .claude/
 .claire/
 .omc/
+.agents/
+
+# MCP server (local tool, not for repo)
+mcp/
