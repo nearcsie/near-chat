@@ -7,8 +7,8 @@ interface UserService {
   getMe(userId: string): Promise<PublicUser>;
   updateMe(userId: string, data: unknown): Promise<PublicUser>;
   search(query: string): Promise<PublicUser[]>;
-  getEmergencyContacts(userId: string): Promise<Array<{ contactId: string }>>;
-  upsertEmergencyContact(userId: string, contactId: string, message: string): Promise<any>;
+  getEmergencyContacts(userId: string): Promise<any>;
+  upsertEmergencyContact(userId: string, contactId: string, message: string): Promise<{ contact: any, isUpdate: boolean }>;
   deleteEmergencyContact(userId: string, contactId: string): Promise<void>;
   triggerEmergencyAlert(userId: string, message?: string): Promise<any>;
   checkInactivity(userId: string, now?: Date): Promise<any>;
@@ -57,9 +57,7 @@ export const makeUserController = (service: UserService) => ({
         return next(new ValidationError(parsed.error.issues[0]?.message ?? 'Invalid payload'));
       }
       const userId = req.user!.userId;
-      const existing = await service.getEmergencyContacts(userId);
-      const isUpdate = existing.some((c) => c.contactId === parsed.data.contactId);
-      const contact = await service.upsertEmergencyContact(userId, parsed.data.contactId, parsed.data.message);
+      const { contact, isUpdate } = await service.upsertEmergencyContact(userId, parsed.data.contactId, parsed.data.message);
       res.status(isUpdate ? 200 : 201).json(contact);
     } catch (err) {
       next(err);

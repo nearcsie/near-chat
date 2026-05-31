@@ -1,6 +1,7 @@
 import { Pool } from 'pg';
 import type { Message, MessageWithSender } from '@shared/types';
 import type { IMessageRepository } from './IMessageRepository';
+import { ValidationError } from '../errors/AppError';
 
 function mapRowToMessage(row: any): Message {
   return {
@@ -46,6 +47,15 @@ export class MessageRepository implements IMessageRepository {
     const limit = Math.max(1, opts.limit);
 
     if (opts.beforeId) {
+      const cursorRes = await this.db.query(
+        'SELECT sent_at, message_id FROM messages WHERE message_id = $1 AND room_id = $2',
+        [opts.beforeId, roomId]
+      );
+      if (cursorRes.rows.length === 0) {
+        throw new ValidationError('Cursor message not found in this room');
+      }
+      const cursor = cursorRes.rows[0];
+
       const res = await this.db.query(
         `SELECT
            m.*,
@@ -56,15 +66,11 @@ export class MessageRepository implements IMessageRepository {
          FROM messages m
          LEFT JOIN users u ON u.user_id = m.sender_id
          WHERE m.room_id = $1
-           AND ($4::timestamptz IS NULL OR m.sent_at >= $4)
-           AND m.sent_at < (
-             SELECT sent_at
-             FROM messages
-             WHERE message_id = $2 AND room_id = $1
-           )
-         ORDER BY m.sent_at DESC
-         LIMIT $3`,
-        [roomId, opts.beforeId, limit, opts.after ?? null],
+           AND ($5::timestamptz IS NULL OR m.sent_at >= $5)
+           AND (m.sent_at, m.message_id) < ($2, $3)
+         ORDER BY m.sent_at DESC, m.message_id DESC
+         LIMIT $4`,
+        [roomId, cursor.sent_at, cursor.message_id, limit, opts.after ?? null],
       );
       return res.rows.map(mapRowToMessageWithSender);
     }
@@ -80,7 +86,7 @@ export class MessageRepository implements IMessageRepository {
        LEFT JOIN users u ON u.user_id = m.sender_id
        WHERE m.room_id = $1
          AND ($3::timestamptz IS NULL OR m.sent_at >= $3)
-       ORDER BY m.sent_at DESC
+       ORDER BY m.sent_at DESC, m.message_id DESC
        LIMIT $2`,
       [roomId, limit, opts.after ?? null],
     );

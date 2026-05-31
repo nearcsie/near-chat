@@ -15,9 +15,6 @@ export function makeAttachmentController(attachmentService: any) {
         const result = await attachmentService.uploadAttachment(messageId, req.file);
         res.status(201).json(result);
       } catch (err: any) {
-        if (err.message === 'Message ID is required' || err.message === 'File is required') {
-          return res.status(400).json({ error: err.message });
-        }
         next(err);
       }
     },

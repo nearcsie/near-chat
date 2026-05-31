@@ -25,19 +25,22 @@ export class EmergencyContactRepository implements IEmergencyContactRepository {
     }));
   }
 
-  async upsert(userId: string, contactId: string, message: string): Promise<EmergencyContact> {
+  async upsert(userId: string, contactId: string, message: string): Promise<{ contact: EmergencyContact, isUpdate: boolean }> {
     const res = await this.db.query(
       `INSERT INTO emergency_contacts (user_id, contact_id, message)
        VALUES ($1, $2, $3)
        ON CONFLICT (user_id, contact_id) DO UPDATE SET message = EXCLUDED.message
-       RETURNING *`,
+       RETURNING *, (xmax != 0) AS is_update`,
       [userId, contactId, message]
     );
     return {
-      userId: res.rows[0].user_id,
-      contactId: res.rows[0].contact_id,
-      message: res.rows[0].message,
-      createdAt: res.rows[0].created_at
+      contact: {
+        userId: res.rows[0].user_id,
+        contactId: res.rows[0].contact_id,
+        message: res.rows[0].message,
+        createdAt: res.rows[0].created_at
+      },
+      isUpdate: res.rows[0].is_update
     };
   }
 

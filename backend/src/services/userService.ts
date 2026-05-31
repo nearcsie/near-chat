@@ -125,7 +125,7 @@ export const makeUserService = (
       return await emergencyContactRepo.findByUserId(userId);
     },
 
-    async upsertEmergencyContact(userId: string, contactId: string, message: string): Promise<EmergencyContact> {
+    async upsertEmergencyContact(userId: string, contactId: string, message: string): Promise<{ contact: EmergencyContact, isUpdate: boolean }> {
       const contact = await repo.findById(contactId);
       if (!contact) throw new NotFoundError('user', contactId);
       return await emergencyContactRepo.upsert(userId, contactId, message);

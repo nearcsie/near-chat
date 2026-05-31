@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { AppError } from '../errors/AppError';
+import { mapErrorToApiShape } from '../errors/mapError';
 
 export function errorHandler(
   err: unknown,
@@ -7,21 +7,6 @@ export function errorHandler(
   res: Response,
   _next: NextFunction,
 ): void {
-  if (err instanceof AppError) {
-    const body: { statusCode: number; message: string; code?: string } = {
-      statusCode: err.statusCode,
-      message: err.message,
-      ...(err.code !== undefined && { code: err.code }),
-    };
-    res.status(err.statusCode).json(body);
-    return;
-  }
-
-  console.error("APP ERROR:", err);
-  // Unknown / unexpected errors — never leak stack traces in production
-  res.status(500).json({
-    statusCode: 500,
-    message: 'Internal Server Error',
-    code: 'INTERNAL_ERROR',
-  });
+  const body = mapErrorToApiShape(err);
+  res.status(body.statusCode).json(body);
 }

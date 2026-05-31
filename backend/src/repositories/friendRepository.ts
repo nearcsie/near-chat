@@ -61,6 +61,17 @@ export const makeFriendRepository = (db: Pool) => {
       );
     },
 
+    async rejectFriendRequest(requesterId: string, addresseeId: string): Promise<boolean> {
+      const res = await db.query(
+        `DELETE FROM friendships
+         WHERE (requester_id = $1 AND addressee_id = $2)
+           AND status = 'pending'
+         RETURNING requester_id`,
+        [requesterId, addresseeId]
+      );
+      return (res.rowCount ?? 0) > 0;
+    },
+
     async getFriends(userId: string): Promise<any[]> {
       const res = await db.query(
         `SELECT

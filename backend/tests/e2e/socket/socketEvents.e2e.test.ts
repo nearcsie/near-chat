@@ -64,10 +64,11 @@ describe('Socket.IO chat events E2E', () => {
       recallMessage: vi.fn(),
     };
     messageRepository = {
-      findById: vi.fn(),
+      findById: vi.fn().mockResolvedValue(message),
     };
     roomMemberRepository = {
       update: vi.fn(),
+      findMember: vi.fn().mockResolvedValue({ role: 'member' }),
     };
     clients = [];
 
