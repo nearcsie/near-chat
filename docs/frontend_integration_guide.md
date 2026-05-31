@@ -22,14 +22,32 @@
   | POST | `/auth/logout` | JWT | 登出（204） |
   | GET | `/users/me` | JWT | 取得目前登入使用者資料 |
   | PATCH | `/users/me` | JWT | 更新個人資料（name/bio/avatarUrl/warningEnabled/warningDays） |
-  | GET | `/users/search?query=` | JWT | 依姓名或 userId 搜尋使用者，回傳 `PublicUser[]` |
+  | GET | `/users/search?query=` | JWT | 依姓名或 userId 搜尋使用者 |
+  | GET | `/users/me/emergency-contacts`| JWT | 取得緊急聯絡人 |
+  | POST | `/users/me/emergency-contacts`| JWT | 新增緊急聯絡人 |
+  | DELETE | `/users/me/emergency-contacts/:id`| JWT | 刪除緊急聯絡人 |
+  | POST | `/users/me/emergency-alert` | JWT | 觸發緊急求救 |
+  | POST | `/users/me/emergency-alert/check-inactivity`| JWT | 檢查不活躍狀態並可能觸發求救 |
+  | GET | `/friends` | JWT | 取得好友列表 |
+  | DELETE | `/friends/:id` | JWT | 刪除好友 |
+  | GET | `/friends/requests` | JWT | 取得好友邀請 |
+  | POST | `/friends/requests` | JWT | 發送好友邀請 |
+  | PATCH | `/friends/requests/:id` | JWT | 回覆好友邀請 ('accepted'/'rejected') |
+  | POST | `/blocks` | JWT | 封鎖使用者 |
+  | DELETE | `/blocks/:id` | JWT | 取消封鎖 |
   | GET | `/rooms` | JWT | 列出我加入的聊天室 |
   | POST | `/rooms/group` | JWT | 建立群組（body: `{ name }`），回傳 `Room`（201） |
   | GET | `/rooms/:id` | JWT | 取得聊天室詳情（非成員 → 403） |
   | PATCH | `/rooms/:id` | JWT (owner/admin) | 更新群組設定 |
   | POST | `/rooms/join/:code` | JWT | 透過邀請碼加入群組 |
   | DELETE | `/rooms/:id/leave` | JWT | 退出聊天室（owner 不得退出） |
-  | GET | `/rooms/:roomId/messages` | JWT | 取得歷史訊息，支援 `?before_id=&limit=`（cursor pagination） |
+  | GET | `/rooms/:roomId/messages` | JWT | 取得歷史訊息，支援 `?before_id=&limit=` |
+  | POST | `/attachments` | JWT | 上傳附件 |
+  | GET | `/attachments/:id` | JWT | 下載附件 |
+  | GET | `/folders` | JWT | 取得資料夾列表 |
+  | POST | `/folders` | JWT | 新增資料夾 |
+  | DELETE | `/folders/:id` | JWT | 刪除資料夾 |
+  | PUT | `/folders/:id/rooms` | JWT | 更新資料夾內的聊天室 |
 
 - **WebSocket (Socket.IO)**：
   - 完成 Socket.IO 伺服器建置，並整合 JWT 驗證（連線時於 `auth.token` 帶上 JWT）。
@@ -96,16 +114,21 @@ const socket = io('http://localhost:4000', {
 |----------------|---------|------|
 | `join_room` | `{ roomId }` | 加入房間頻道 |
 | `leave_room` | `{ roomId }` | 離開房間頻道 |
-| `send_message` | `{ roomId, content, replyTo? }` | 發送訊息 |
+| `send_message` | `{ roomId, content, replyTo?, attachments? }` | 發送訊息 |
 | `recall_message` | `{ messageId }` | 收回訊息 |
 | `typing` | `{ roomId, isTyping }` | 打字狀態 |
+| `read_receipt` | `{ roomId, messageId }` | 更新已讀進度 |
 
 | Server → Client | Payload | 說明 |
 |----------------|---------|------|
 | `new_message` | `MessageWithSender` | 新訊息廣播 |
 | `message_recalled` | `{ messageId }` | 訊息收回廣播 |
 | `user_typing` | `{ roomId, userId, isTyping }` | 打字狀態廣播 |
-| `error` | `{ statusCode, message }` | 錯誤回報 |
+| `read_update`  | `{ roomId, userId, messageId }` | 廣播已讀進度更新 |
+| `room_update`  | `{ type, data }` | 房間設定變更、成員變動等通知 |
+| `friend_request` | `FriendRequest` | 收到新的好友邀請通知 |
+| `emergency_alert`| `{ userId, message }` | 收到緊急聯絡通知 |
+| `error` | `{ statusCode, message, code? }` | 錯誤回報 |
 
 **6. 清空測試資料（重置資料庫）**
 
