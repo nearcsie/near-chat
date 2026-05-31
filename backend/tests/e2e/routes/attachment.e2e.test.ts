@@ -50,7 +50,6 @@ describe('Attachment E2E', () => {
     const res = await request(app)
       .post('/api/v1/attachments')
       .set('Authorization', `Bearer ${token}`)
-      .field('messageId', messageId)
       .attach('file', Buffer.from('dummy file content'), 'test.txt');
 
     expect(res.status).toBe(201);
@@ -58,20 +57,10 @@ describe('Attachment E2E', () => {
     expect(res.body.fileUrl).toContain('/api/v1/attachments/');
   });
 
-  it('should return 400 if messageId is missing', async () => {
-    const res = await request(app)
-      .post('/api/v1/attachments')
-      .set('Authorization', `Bearer ${token}`)
-      .attach('file', Buffer.from('dummy file content'), 'test.txt');
-
-    expect(res.status).toBe(400);
-  });
-
   it('should download an uploaded attachment', async () => {
     const uploadRes = await request(app)
       .post('/api/v1/attachments')
       .set('Authorization', `Bearer ${token}`)
-      .field('messageId', messageId)
       .attach('file', Buffer.from('dummy file content'), 'test.txt');
 
     const attachmentId = uploadRes.body.attachmentId;

@@ -77,7 +77,7 @@ export const makeUserService = (
 
     async login(data: LoginRequest): Promise<AuthResponse> {
       const user = await repo.findByEmail(data.email);
-      if (!user) {
+      if (!user || user.deletedAt) {
         throw new ValidationError('Invalid email or password');
       }
 
@@ -118,6 +118,10 @@ export const makeUserService = (
       }
       const updated = await repo.update(userId, parsed.data);
       return { userId: updated.userId, name: updated.name, avatarUrl: updated.avatarUrl };
+    },
+
+    async deleteMe(userId: string): Promise<void> {
+      await repo.update(userId, { deletedAt: new Date() } as any);
     },
 
     

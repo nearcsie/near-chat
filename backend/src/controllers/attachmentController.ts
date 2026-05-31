@@ -5,14 +5,11 @@ export function makeAttachmentController(attachmentService: any) {
   return {
     upload: async (req: Request, res: Response, next: NextFunction) => {
       try {
-        const { messageId } = req.body;
-        if (!messageId) {
-          return res.status(400).json({ error: 'messageId is required' });
-        }
+        const uploadedBy = req.user!.userId;
         if (!req.file) {
           return res.status(400).json({ error: 'file is required' });
         }
-        const result = await attachmentService.uploadAttachment(messageId, req.file);
+        const result = await attachmentService.uploadAttachment(uploadedBy, req.file);
         res.status(201).json(result);
       } catch (err: any) {
         next(err);

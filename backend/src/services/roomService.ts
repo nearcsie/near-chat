@@ -146,10 +146,44 @@ export const makeRoomService = (
       await roomMemberRepo.remove(roomId, userId);
     },
 
-    async delete(roomId: string): Promise<void> {
+    async transferOwnership(roomId: string, callerId: string, targetUserId: string): Promise<void> {
+      const room = await repo.findById(roomId);
+      if (!room) throw new NotFoundError('room', roomId);
+      if (room.type !== 'group') throw new ValidationError('Cannot transfer ownership of a private room');
+
+      const caller = await roomMemberRepo.findMember(roomId, callerId);
+      if (!caller || caller.role !== 'owner') {
+        throw new ForbiddenError('Only the owner can transfer ownership');
+      }
+
+      const target = await roomMemberRepo.findMember(roomId, targetUserId);
+      if (!target) throw new NotFoundError('member', targetUserId);
+      if (target.role === 'pending') {
+        throw new ValidationError('Cannot transfer ownership to a pending member');
+      }
+
+      await roomMemberRepo.update(roomId, callerId, { role: 'admin' });
+      await roomMemberRepo.update(roomId, targetUserId, { role: 'owner' });
+
+      if (emitRoomEvent) {
+        emitRoomEvent(roomId, 'room_update', { type: 'OWNERSHIP_TRANSFERRED', data: { oldOwner: callerId, newOwner: targetUserId } });
+      }
+    },
+
+    async archiveGroup(roomId: string, callerId: string): Promise<void> {
       const existing = await repo.findById(roomId);
       if (!existing) throw new NotFoundError('room', roomId);
-      await repo.delete(roomId);
+      if (existing.type !== 'group') throw new ValidationError('Cannot archive a private room');
+
+      const caller = await roomMemberRepo.findMember(roomId, callerId);
+      if (!caller || caller.role !== 'owner') {
+        throw new ForbiddenError('Only the owner can archive the group');
+      }
+
+      await repo.update(roomId, { isArchived: true });
+      if (emitRoomEvent) {
+        emitRoomEvent(roomId, 'room_update', { type: 'ROOM_ARCHIVED', data: { roomId } });
+      }
     },
 
     async approveMember(roomId: string, callerId: string, targetUserId: string): Promise<void> {

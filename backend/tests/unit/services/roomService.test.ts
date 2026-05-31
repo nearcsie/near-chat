@@ -104,13 +104,14 @@ describe('roomService', () => {
     await expect(roomService.update('missing-room', 'user-1', { name: 'Nope' })).rejects.toThrow(NotFoundError);
   });
 
-  it('delete throws NotFoundError when the room does not exist', async () => {
+  it('archiveGroup sets isArchived to true for group owner', async () => {
     mockRepo.findById.mockResolvedValueOnce(room);
-    await expect(roomService.delete('room-1')).resolves.toBeUndefined();
-    expect(mockRepo.delete).toHaveBeenCalledWith('room-1');
+    mockMemberRepo.findMember.mockResolvedValueOnce(ownerMember);
+    await expect(roomService.archiveGroup('room-1', 'user-1')).resolves.toBeUndefined();
+    expect(mockRepo.update).toHaveBeenCalledWith('room-1', { isArchived: true });
 
     mockRepo.findById.mockResolvedValueOnce(null);
-    await expect(roomService.delete('missing-room')).rejects.toThrow(NotFoundError);
+    await expect(roomService.archiveGroup('missing-room', 'user-1')).rejects.toThrow(NotFoundError);
   });
 
   it('createPrivate returns an existing private room for accepted friends', async () => {

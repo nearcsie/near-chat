@@ -28,6 +28,7 @@ export interface User {
   warningDays: number;
   lastActivity: Date;
   createdAt: Date;
+  deletedAt?: Date | null;
 }
 
 /** Safe public projection of a user — no credentials. */
@@ -76,6 +77,7 @@ export interface Message {
   replyToId?: string;
   isRecalled: boolean;
   sentAt: Date;
+  attachments?: string[];
 }
 
 /** Message enriched with the sender's public profile (via JOIN). */
@@ -165,6 +167,20 @@ export interface ServerToClientEvents {
 // ---------------------------------------------------------------------------
 
 export type FriendshipStatus = 'pending' | 'accepted';
+
+export interface FriendRequestResponse {
+  requesterId: string;
+  addresseeId: string;
+  status: FriendshipStatus;
+  createdAt: Date;
+  requester?: PublicUser;
+  addressee?: PublicUser;
+}
+
+export interface FriendResponse {
+  friend: PublicUser;
+  friendshipCreatedAt: Date;
+}
 
 /** Payload for the `friend_request` Socket.IO server event. */
 export interface FriendRequest {

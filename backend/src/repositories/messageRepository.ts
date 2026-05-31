@@ -4,7 +4,7 @@ import type { IMessageRepository } from './IMessageRepository';
 import { ValidationError } from '../errors/AppError';
 
 function mapRowToMessage(row: any): Message {
-  return {
+  const msg: Message = {
     messageId: row.message_id,
     roomId: row.room_id,
     senderId: row.sender_id,
@@ -13,17 +13,25 @@ function mapRowToMessage(row: any): Message {
     isRecalled: row.is_recalled,
     sentAt: row.sent_at,
   };
+  if (row.attachments && row.attachments.length > 0) {
+    msg.attachments = row.attachments.filter((id: string | null) => id !== null).map((id: string) => `/api/v1/attachments/${id}`);
+  }
+  return msg;
 }
 
 function mapRowToMessageWithSender(row: any): MessageWithSender {
+  const isDeleted = row.sender_deleted_at !== null && row.sender_deleted_at !== undefined;
+
   const msg: MessageWithSender = {
     ...mapRowToMessage(row),
     sender: row.sender_user_id
-      ? {
-          userId: row.sender_user_id,
-          name: row.sender_name,
-          avatarUrl: row.sender_avatar_url ?? undefined,
-        }
+      ? isDeleted 
+        ? { userId: row.sender_user_id, name: 'Deleted User', avatarUrl: undefined }
+        : {
+            userId: row.sender_user_id,
+            name: row.sender_name,
+            avatarUrl: row.sender_avatar_url ?? undefined,
+          }
       : null,
   };
   if (row.mentions) {
@@ -62,7 +70,9 @@ export class MessageRepository implements IMessageRepository {
            u.user_id AS sender_user_id,
            u.name AS sender_name,
            u.avatar_url AS sender_avatar_url,
-           (SELECT array_agg(user_id) FROM message_mentions WHERE message_id = m.message_id) AS mentions
+           u.deleted_at AS sender_deleted_at,
+           (SELECT array_agg(user_id) FROM message_mentions WHERE message_id = m.message_id) AS mentions,
+           (SELECT array_agg(attachment_id) FROM attachments WHERE message_id = m.message_id) AS attachments
          FROM messages m
          LEFT JOIN users u ON u.user_id = m.sender_id
          WHERE m.room_id = $1
@@ -81,7 +91,9 @@ export class MessageRepository implements IMessageRepository {
          u.user_id AS sender_user_id,
          u.name AS sender_name,
          u.avatar_url AS sender_avatar_url,
-         (SELECT array_agg(user_id) FROM message_mentions WHERE message_id = m.message_id) AS mentions
+         u.deleted_at AS sender_deleted_at,
+         (SELECT array_agg(user_id) FROM message_mentions WHERE message_id = m.message_id) AS mentions,
+         (SELECT array_agg(attachment_id) FROM attachments WHERE message_id = m.message_id) AS attachments
        FROM messages m
        LEFT JOIN users u ON u.user_id = m.sender_id
        WHERE m.room_id = $1
@@ -93,7 +105,7 @@ export class MessageRepository implements IMessageRepository {
     return res.rows.map(mapRowToMessageWithSender);
   }
 
-  async create(data: Pick<Message, 'roomId' | 'senderId' | 'content' | 'replyToId'> & { mentions?: string[] }): Promise<MessageWithSender> {
+  async create(data: Pick<Message, 'roomId' | 'senderId' | 'content' | 'replyToId'> & { mentions?: string[], attachments?: string[] }): Promise<MessageWithSender> {
     const client = await this.db.connect();
     try {
       await client.query('BEGIN');
@@ -107,7 +119,9 @@ export class MessageRepository implements IMessageRepository {
            inserted.*,
            u.user_id AS sender_user_id,
            u.name AS sender_name,
-           u.avatar_url AS sender_avatar_url
+           u.avatar_url AS sender_avatar_url,
+           u.deleted_at AS sender_deleted_at,
+           ARRAY[]::uuid[] AS attachments
          FROM inserted
          LEFT JOIN users u ON u.user_id = inserted.sender_id`,
         [data.roomId, data.senderId, data.content, data.replyToId ?? null],
@@ -120,6 +134,13 @@ export class MessageRepository implements IMessageRepository {
           await client.query('INSERT INTO message_mentions (message_id, user_id) VALUES ($1, $2)', [msg.messageId, userId]);
         }
         msg.mentions = data.mentions;
+      }
+      
+      if (data.attachments && data.attachments.length > 0) {
+        for (const attachmentId of data.attachments) {
+          await client.query('UPDATE attachments SET message_id = $1 WHERE attachment_id = $2', [msg.messageId, attachmentId]);
+        }
+        msg.attachments = data.attachments.map(id => `/api/v1/attachments/${id}`);
       }
       
       await client.query('COMMIT');
@@ -145,7 +166,9 @@ export class MessageRepository implements IMessageRepository {
          u.user_id AS sender_user_id,
          u.name AS sender_name,
          u.avatar_url AS sender_avatar_url,
-         (SELECT array_agg(user_id) FROM message_mentions WHERE message_id = updated.message_id) AS mentions
+         u.deleted_at AS sender_deleted_at,
+         (SELECT array_agg(user_id) FROM message_mentions WHERE message_id = updated.message_id) AS mentions,
+         (SELECT array_agg(attachment_id) FROM attachments WHERE message_id = updated.message_id) AS attachments
        FROM updated
        LEFT JOIN users u ON u.user_id = updated.sender_id`,
       [messageId],
