@@ -1,10 +1,12 @@
 import type {
   AuthResponse,
+  Folder as ApiFolder,
   LoginRequest,
   MessageWithSender,
   PublicUser,
   RegisterRequest,
   Room,
+  RoomMember,
   RoomSummary,
   User,
 } from '@shared/types';
@@ -25,9 +27,18 @@ type CreatePrivateRequest = {
   targetUserId: string;
 };
 
+type UpdateRoomRequest = Partial<
+  Pick<Room, 'name' | 'avatarUrl' | 'requireApproval' | 'viewHistory' | 'isArchived'>
+>;
+
 type ListMessagesRequest = {
   beforeId?: string;
   limit?: number;
+};
+
+type UploadAttachmentResponse = {
+  attachmentId: string;
+  fileUrl: string;
 };
 
 type EmergencyAlertResult = {
@@ -134,6 +145,26 @@ export const createPrivateRoom = (token: string, data: CreatePrivateRequest): Pr
     { token },
   );
 
+export const updateRoom = (
+  token: string,
+  roomId: string,
+  data: UpdateRoomRequest,
+): Promise<Room> =>
+  requestJson<Room>(
+    `/rooms/${roomId}`,
+    {
+      method: 'PATCH',
+      ...withJsonBody(data),
+    },
+    { token },
+  );
+
+export const leaveRoom = (token: string, roomId: string): Promise<void> =>
+  requestJson<void>(`/rooms/${roomId}/leave`, { method: 'DELETE' }, { token });
+
+export const listRoomMembers = (token: string, roomId: string): Promise<RoomMember[]> =>
+  requestJson<RoomMember[]>(`/rooms/${roomId}/members`, {}, { token });
+
 export const listMessages = (
   token: string,
   roomId: string,
@@ -146,6 +177,56 @@ export const listMessages = (
 
   return requestJson<MessageWithSender[]>(`/rooms/${roomId}/messages${suffix}`, {}, { token });
 };
+
+export const listFolders = (token: string): Promise<ApiFolder[]> =>
+  requestJson<ApiFolder[]>('/folders', {}, { token });
+
+export const createFolder = (token: string, name: string): Promise<ApiFolder> =>
+  requestJson<ApiFolder>(
+    '/folders',
+    {
+      method: 'POST',
+      ...withJsonBody({ name }),
+    },
+    { token },
+  );
+
+export const deleteFolder = (token: string, folderId: string): Promise<void> =>
+  requestJson<void>(`/folders/${folderId}`, { method: 'DELETE' }, { token });
+
+export const updateFolderRooms = (
+  token: string,
+  folderId: string,
+  roomIds: string[],
+): Promise<{ success: boolean }> =>
+  requestJson<{ success: boolean }>(
+    `/folders/${folderId}/rooms`,
+    {
+      method: 'PUT',
+      ...withJsonBody({ roomIds }),
+    },
+    { token },
+  );
+
+export const uploadAttachment = async (
+  token: string,
+  file: File,
+): Promise<UploadAttachmentResponse> => {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  return requestJson<UploadAttachmentResponse>(
+    '/attachments',
+    {
+      method: 'POST',
+      body: formData,
+    },
+    { token },
+  );
+};
+
+export const attachmentDownloadUrl = (fileUrl: string): string =>
+  fileUrl.startsWith('http') ? fileUrl : `${API_BASE_URL}${fileUrl}`;
 
 export const triggerEmergencyAlert = (token: string, message?: string): Promise<EmergencyAlertResult> =>
   requestJson<EmergencyAlertResult>(

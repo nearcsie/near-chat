@@ -23,7 +23,8 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
     user,
     activeRoomNicknames,
     handleSendMessage,
-    handleMockAttachment,
+    handleTyping,
+    handleUploadAttachment,
     handleRecallMessage,
     handleCategorizeRoom,
     handleModifyNickname,
@@ -34,6 +35,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
   const [inputText, setInputText] = useState("");
   const [replyTarget, setReplyTarget] = useState<Message | null>(null);
   const messageEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const activeRoom = rooms.find((r) => r.id === roomId);
 
@@ -55,15 +57,26 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
     if (!inputText.trim()) return;
 
     handleSendMessage(activeRoom.id, inputText, replyTarget);
+    handleTyping(activeRoom.id, false);
     setInputText("");
     setReplyTarget(null);
   };
 
   const handleAttach = () => {
-    const filename = prompt("請輸入擬真上傳檔案名稱：", "報告大綱.pdf");
-    if (!filename) return;
+    fileInputRef.current?.click();
+  };
 
-    handleMockAttachment(activeRoom.id, filename);
+  const handleFileSelected = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    try {
+      await handleUploadAttachment(activeRoom.id, file);
+    } catch (error) {
+      console.error(error);
+      alert(error instanceof Error ? error.message : "Failed to upload attachment");
+    }
   };
 
   const handleModifyNick = () => {
@@ -74,10 +87,10 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
     }
   };
 
-  const handleLeaveOrBlockAction = () => {
+  const handleLeaveOrBlockAction = async () => {
     const action = activeRoom.type === "group" ? "退出" : activeRoom.isArchived ? "解除封鎖" : "封鎖";
     if (confirm(`確定要${action}「${activeRoom.name}」嗎？`)) {
-      const { isDeleted, newActiveId } = handleLeaveOrBlock(activeRoom.id);
+      const { isDeleted, newActiveId } = await handleLeaveOrBlock(activeRoom.id);
       if (isDeleted) {
         if (newActiveId) {
           router.push(`/chat/${newActiveId}`);
@@ -237,6 +250,12 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
           </div>
         ) : (
           <form onSubmit={handleSend} className="flex gap-4 items-end">
+            <input
+              ref={fileInputRef}
+              type="file"
+              className="hidden"
+              onChange={handleFileSelected}
+            />
             <button
               type="button"
               onClick={handleAttach}
@@ -252,7 +271,11 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
               type="text"
               placeholder="輸入訊息..."
               value={inputText}
-              onChange={(e) => setInputText(e.target.value)}
+              onChange={(e) => {
+                setInputText(e.target.value);
+                handleTyping(activeRoom.id, e.target.value.length > 0);
+              }}
+              onBlur={() => handleTyping(activeRoom.id, false)}
               className="flex-1 bg-surface-card border border-border-secondary hover:border-border-primary focus:border-primary focus:outline-none rounded-sm px-3.5 py-2.5 text-sm text-foreground transition-colors"
             />
 

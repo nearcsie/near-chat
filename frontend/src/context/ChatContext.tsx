@@ -1,9 +1,46 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect } from "react";
+import React, { createContext, useContext, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import type {
+  Folder as ApiFolder,
+  MessageWithSender,
+  PublicUser,
+  Room,
+  RoomSummary,
+} from "@shared/types";
+import {
+  attachmentDownloadUrl,
+  createFolder,
+  createGroup,
+  createPrivateRoom,
+  getMe,
+  leaveRoom as leaveRoomApi,
+  listFolders,
+  listMessages,
+  listRooms,
+  logout,
+  searchUsers,
+  updateFolderRooms,
+  updateMe,
+  updateRoom,
+  uploadAttachment,
+} from "@/lib/api";
+import {
+  createChatSocket,
+  joinRoom,
+  onMessageRecalled,
+  onNewMessage,
+  onReadUpdate,
+  onSocketError,
+  onUserTyping,
+  recallMessage,
+  sendMessage,
+  sendReadReceipt,
+  sendTyping,
+  type ChatSocket,
+} from "@/lib/socket";
 
-// --- Types ---
 export interface Member {
   name: string;
   role: "owner" | "admin" | "member";
@@ -36,7 +73,7 @@ export interface Message {
     senderName: string;
     content: string;
   } | null;
-  attachments?: { filename: string; filetype: string }[];
+  attachments?: { filename: string; filetype: string; url?: string }[];
   isRead?: boolean;
 }
 
@@ -52,20 +89,17 @@ export interface User {
   avatar: string;
 }
 
-// --- Helper to map user display names to mock avatars ---
-export const getAvatarForUser = (username: string, currentUserAvatar?: string, currentUsername?: string) => {
-  if (username === "我" || (currentUsername && username === currentUsername)) {
+type StoredUser = User & { userId?: string };
+
+export const getAvatarForUser = (
+  username: string,
+  currentUserAvatar?: string,
+  currentUsername?: string,
+) => {
+  if (currentUsername && username === currentUsername) {
     return currentUserAvatar || "";
   }
-  const avatarMap: Record<string, string> = {
-    "陳小明": "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&h=100&fit=crop",
-    "吳同學": "https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?w=100&h=100&fit=crop",
-    "鄭朋友": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&h=100&fit=crop",
-    "李大大": "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100&h=100&fit=crop",
-    "多點鹽不健康餐盒": "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=100&h=100&fit=crop",
-    "王同學": "https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?w=100&h=100&fit=crop"
-  };
-  return avatarMap[username] || "";
+  return "";
 };
 
 interface ChatContextType {
@@ -77,108 +111,166 @@ interface ChatContextType {
   activeRoomNicknames: Record<string, string>;
   isAuthenticated: boolean;
   isMounted: boolean;
-  
+
   setRooms: React.Dispatch<React.SetStateAction<ChatRoom[]>>;
   setFolders: React.Dispatch<React.SetStateAction<Folder[]>>;
   setMessages: React.Dispatch<React.SetStateAction<Message[]>>;
   setUser: React.Dispatch<React.SetStateAction<User>>;
   setActiveRoomNicknames: React.Dispatch<React.SetStateAction<Record<string, string>>>;
-  
+
   toggleFolder: (folderId: string) => void;
   handleLogout: () => void;
   handleSendMessage: (roomId: string, content: string, replyTarget: Message | null) => void;
-  handleMockAttachment: (roomId: string, filename: string) => void;
+  handleTyping: (roomId: string, isTyping: boolean) => void;
+  handleUploadAttachment: (roomId: string, file: File) => Promise<void>;
   handleRecallMessage: (msgId: string) => void;
-  handleCreateRoom: (name: string, type: "msg" | "group", folderId: string) => string;
-  handleCreateFolder: (name: string) => void;
-  handleCategorizeRoom: (roomId: string, folderId: string | null) => void;
+  handleCreateRoom: (name: string, type: "msg" | "group", folderId: string) => Promise<string>;
+  handleCreateFolder: (name: string) => Promise<void>;
+  handleCategorizeRoom: (roomId: string, folderId: string | null) => Promise<void>;
   handleModifyNickname: (roomId: string, nickname: string) => void;
-  handleLeaveOrBlock: (roomId: string) => { isDeleted: boolean; newActiveId?: string };
-  handleSavePersonalSettings: (settings: { username: string; email: string; avatar: string; theme: string; notifyDesktop: boolean; notifySound: boolean }) => void;
-  saveGroupSettings: (roomId: string, settings: { name: string; description: string; isPublic: boolean; allowInvite: boolean; allowUpload: boolean; members: Member[] }) => void;
-  handleDeleteGroupRoom: (roomId: string) => string | null;
+  handleLeaveOrBlock: (roomId: string) => Promise<{ isDeleted: boolean; newActiveId?: string }>;
+  handleSavePersonalSettings: (settings: {
+    username: string;
+    email: string;
+    avatar: string;
+    theme: string;
+    notifyDesktop: boolean;
+    notifySound: boolean;
+  }) => Promise<void>;
+  saveGroupSettings: (roomId: string, settings: {
+    name: string;
+    description: string;
+    isPublic: boolean;
+    allowInvite: boolean;
+    allowUpload: boolean;
+    members: Member[];
+  }) => Promise<void>;
+  handleDeleteGroupRoom: (roomId: string) => Promise<string | null>;
   getReadAvatarsForMessage: (room: ChatRoom, msg: Message) => string[];
 }
 
 const ChatContext = createContext<ChatContextType | undefined>(undefined);
 
+const toStoredUser = (user: PublicUser, email = ""): StoredUser => ({
+  userId: user.userId,
+  username: user.name,
+  email,
+  avatar: user.avatarUrl ?? "",
+});
+
+const formatMessageTime = (value: Date | string): string => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+};
+
+const mapAttachment = (fileUrl: string) => {
+  const url = attachmentDownloadUrl(fileUrl);
+  const filename = decodeURIComponent(fileUrl.split("/").filter(Boolean).at(-1) ?? "attachment");
+  return {
+    filename,
+    filetype: filename.includes(".") ? filename.split(".").pop() ?? "file" : "file",
+    url,
+  };
+};
+
+const mapMessage = (message: MessageWithSender, currentUserId?: string): Message => ({
+  id: message.messageId,
+  roomId: message.roomId,
+  senderName: message.sender?.name ?? "Deleted User",
+  content: message.content,
+  timestamp: formatMessageTime(message.sentAt),
+  isOutgoing: Boolean(currentUserId && message.senderId === currentUserId),
+  isRecalled: message.isRecalled,
+  replyTo: null,
+  attachments: message.attachments?.map(mapAttachment) ?? [],
+});
+
+const mapRooms = (
+  apiRooms: RoomSummary[],
+  apiFolders: ApiFolder[],
+  currentRooms: ChatRoom[],
+): ChatRoom[] => {
+  const collapsedById = new Map(currentRooms.map((room) => [room.id, room.folderId]));
+  const folderByRoom = new Map<string, string>();
+  for (const folder of apiFolders) {
+    for (const roomId of folder.roomIds) {
+      folderByRoom.set(roomId, folder.folderId);
+    }
+  }
+
+  return apiRooms.map((room) => ({
+    id: room.roomId,
+    type: room.type === "group" ? "group" : "msg",
+    name: room.name || `Private ${room.roomId.slice(0, 8)}`,
+    folderId: folderByRoom.get(room.roomId) ?? collapsedById.get(room.roomId) ?? null,
+    description: room.inviteCode ? `Invite code: ${room.inviteCode}` : undefined,
+    isPublic: !room.requireApproval,
+    allowInvite: Boolean(room.inviteCode),
+    allowUpload: true,
+    isArchived: room.isArchived || room.isReadonly,
+    members: room.type === "group" ? [] : undefined,
+  }));
+};
+
+const mapFolders = (apiFolders: ApiFolder[], currentFolders: Folder[]): Folder[] => {
+  const collapsedById = new Map(currentFolders.map((folder) => [folder.id, folder.collapsed]));
+  return apiFolders.map((folder) => ({
+    id: folder.folderId,
+    name: folder.name,
+    collapsed: collapsedById.get(folder.folderId) ?? false,
+  }));
+};
+
+const sortMessages = (items: Message[]) =>
+  [...items].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+
 export function ChatProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
+  const socketRef = useRef<ChatSocket | null>(null);
+  const roomsRef = useRef<ChatRoom[]>([]);
+
   const [isMounted, setIsMounted] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [user, setUser] = useState<User>({ username: "我", email: "your@email.com", avatar: "" });
-
-  // --- Initial Mock Data States ---
-  const [rooms, setRooms] = useState<ChatRoom[]>([
-    { id: "1", type: "msg", name: "陳小明", isOnline: true, isArchived: false },
-    {
-      id: "2",
-      type: "group",
-      name: "師大資工117",
-      description: "隨意聊天的地方",
-      isPublic: false,
-      allowInvite: true,
-      allowUpload: true,
-      members: [
-        { name: "我", role: "member" },
-        { name: "吳同學", role: "owner" },
-        { name: "鄭朋友", role: "member" },
-      ],
-    },
-    { id: "3", type: "msg", name: "李大大", isOnline: false, folderId: "study", isArchived: false },
-    {
-      id: "4",
-      type: "group",
-      name: "資料庫報告第九組",
-      description: "資料庫期末專題小組報告討論區",
-      isPublic: false,
-      allowInvite: false,
-      allowUpload: true,
-      folderId: "study",
-      members: [
-        { name: "我", role: "owner" },
-        { name: "王同學", role: "member" },
-      ],
-    },
-    { id: "5", type: "msg", name: "多點鹽不健康餐盒", isOnline: true, folderId: "life", isArchived: false },
-  ]);
-
-  const [folders, setFolders] = useState<Folder[]>([
-    { id: "study", name: "學業", collapsed: true },
-    { id: "life", name: "生活", collapsed: true },
-  ]);
-
-  const [messages, setMessages] = useState<Message[]>([
-    { id: "m1-1", roomId: "1", senderName: "陳小明", content: "哈囉，你今天會來開會嗎？", timestamp: "10:15 AM" },
-    { id: "m1-2", roomId: "1", senderName: "我", content: "會的，我大概下午兩點到。", timestamp: "10:16 AM", isOutgoing: true, isRead: true },
-    { id: "m1-3", roomId: "1", senderName: "陳小明", content: "OK，那我們兩點見！", timestamp: "10:18 AM" },
-
-    { id: "m2-1", roomId: "2", senderName: "鄭朋友", content: "這學期的資料庫專題報告要開始分組囉", timestamp: "Yesterday 3:40 PM" },
-    { id: "m2-2", roomId: "2", senderName: "吳同學", content: "我們這組已經有三個人了，還缺一個", timestamp: "Yesterday 4:00 PM" },
-    { id: "m2-3", roomId: "2", senderName: "我", content: "那我加入你們組好了！", timestamp: "Yesterday 4:10 PM", isOutgoing: true },
-
-    { id: "m3-1", roomId: "3", senderName: "李大大", content: "作業寫完了嗎？", timestamp: "Monday 1:15 PM" },
-    { id: "m3-2", roomId: "3", senderName: "我", content: "寫完了，等下傳給你參考。", timestamp: "Monday 1:20 PM", isOutgoing: true, isRead: true },
-
-    { id: "m4-1", roomId: "4", senderName: "我", content: "我們來討論一下資料庫期末報告的題目吧", timestamp: "Tuesday 2:00 PM", isOutgoing: true },
-    { id: "m4-2", roomId: "4", senderName: "王同學", content: "好啊，你有什麼想法嗎？", timestamp: "Tuesday 2:05 PM" },
-
-    { id: "m5-1", roomId: "5", senderName: "多點鹽不健康餐盒", content: "您好！今天有限定餐盒：蒜香舒肥雞胸，歡迎訂購！", timestamp: "11:00 AM" },
-  ]);
-
-  const [groupReadStates, setGroupReadStates] = useState<Record<string, Record<string, string>>>({
-    "2": {
-      "吳同學": "m2-3",
-      "鄭朋友": "m2-3",
-    },
-    "4": {
-      "王同學": "m4-2",
-    },
-  });
-
+  const [token, setToken] = useState<string | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | undefined>(undefined);
+  const [user, setUser] = useState<User>({ username: "", email: "", avatar: "" });
+  const [rooms, setRooms] = useState<ChatRoom[]>([]);
+  const [folders, setFolders] = useState<Folder[]>([]);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [groupReadStates, setGroupReadStates] = useState<Record<string, Record<string, string>>>({});
   const [activeRoomNicknames, setActiveRoomNicknames] = useState<Record<string, string>>({});
 
-  // --- Mount Gate & Auth Check ---
+  const clearSession = () => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+    setToken(null);
+    setCurrentUserId(undefined);
+    setIsAuthenticated(false);
+    socketRef.current?.disconnect();
+    socketRef.current = null;
+  };
+
+  const loadMessagesForRooms = async (authToken: string, nextRooms: ChatRoom[], userId?: string) => {
+    const roomMessages = await Promise.all(
+      nextRooms.map(async (room) => {
+        const rows = await listMessages(authToken, room.id, { limit: 50 });
+        return rows.reverse().map((message) => mapMessage(message, userId));
+      }),
+    );
+    setMessages(roomMessages.flat());
+  };
+
+  const refreshRoomsAndFolders = async (authToken: string, userId = currentUserId) => {
+    const [apiRooms, apiFolders] = await Promise.all([listRooms(authToken), listFolders(authToken)]);
+    setFolders((current) => mapFolders(apiFolders, current));
+    setRooms((current) => {
+      const nextRooms = mapRooms(apiRooms, apiFolders, current);
+      void loadMessagesForRooms(authToken, nextRooms, userId);
+      return nextRooms;
+    });
+  };
+
   useEffect(() => {
     setIsMounted(true);
   }, []);
@@ -186,216 +278,246 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!isMounted) return;
 
-    const token = localStorage.getItem("token");
+    const savedToken = localStorage.getItem("token");
     const savedUser = localStorage.getItem("user");
-    if (!token) {
-      window.location.replace("/login");
-    } else {
-      setIsAuthenticated(true);
-      if (savedUser) {
-        try {
-          setUser(JSON.parse(savedUser));
-        } catch (e) {
-          console.error(e);
-        }
-      }
-    }
-
     const savedTheme = localStorage.getItem("theme");
+
     if (savedTheme === "dark") {
       document.documentElement.classList.add("dark");
     } else {
       document.documentElement.classList.remove("dark");
     }
-  }, [isMounted]);
 
-  // --- Simulated Reply Helper ---
-  const triggerReadAndReplySimulation = (newMsg: Message) => {
-    const roomId = newMsg.roomId;
-    const room = rooms.find((r) => r.id === roomId);
-    if (!room) return;
+    if (!savedToken) {
+      window.location.replace("/login");
+      return;
+    }
 
-    if (room.type === "msg") {
-      setTimeout(() => {
-        setMessages((prevMessages) =>
-          prevMessages.map((m) => (m.id === newMsg.id ? { ...m, isRead: true } : m))
-        );
-      }, 1500);
-
-      setTimeout(() => {
-        const recipientName = room.name;
-        const replyMsg: Message = {
-          id: `m-reply-${Date.now()}`,
-          roomId: roomId,
-          senderName: recipientName,
-          content: `好的，我已經收到您的訊息了！「${newMsg.content.substring(0, 15)}${newMsg.content.length > 15 ? "..." : ""}」`,
-          timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-        };
-        setMessages((prevMessages) => [...prevMessages, replyMsg]);
-      }, 3000);
-    } else {
-      const members = room.members || [];
-      const nonSelfMembers = members.filter((m) => m.name !== "我" && m.name !== user.username);
-      
-      if (nonSelfMembers.length > 0) {
-        nonSelfMembers.forEach((member, index) => {
-          const delay = (index + 1) * 1200;
-          setTimeout(() => {
-            setGroupReadStates((prev) => {
-              const roomReads = prev[roomId] || {};
-              return {
-                ...prev,
-                [roomId]: {
-                  ...roomReads,
-                  [member.name]: newMsg.id,
-                },
-              };
-            });
-          }, delay);
-        });
-
-        setTimeout(() => {
-          const replyingMember = nonSelfMembers[0].name;
-          const replyMsg: Message = {
-            id: `m-group-reply-${Date.now()}`,
-            roomId: roomId,
-            senderName: replyingMember,
-            content: `收到！大家加油～`,
-            timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-          };
-          setMessages((prevMessages) => [...prevMessages, replyMsg]);
-          
-          setGroupReadStates((prev) => {
-            const roomReads = prev[roomId] || {};
-            return {
-              ...prev,
-              [roomId]: {
-                ...roomReads,
-                [replyingMember]: replyMsg.id,
-              },
-            };
-          });
-        }, 4000);
+    if (savedUser) {
+      try {
+        const parsed = JSON.parse(savedUser) as StoredUser;
+        setUser(parsed);
+        setCurrentUserId(parsed.userId);
+      } catch (error) {
+        console.error(error);
       }
     }
-  };
 
-  // --- Actions ---
+    let cancelled = false;
+    void (async () => {
+      try {
+        const profile = await getMe(savedToken);
+        if (cancelled) return;
+        const stored = toStoredUser(profile, savedUser ? (JSON.parse(savedUser) as StoredUser).email : "");
+        localStorage.setItem("user", JSON.stringify(stored));
+        setUser(stored);
+        setCurrentUserId(profile.userId);
+        setToken(savedToken);
+        setIsAuthenticated(true);
+        await refreshRoomsAndFolders(savedToken, profile.userId);
+      } catch (error) {
+        console.error(error);
+        if (!cancelled) {
+          clearSession();
+          window.location.replace("/login");
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isMounted]);
+
+  useEffect(() => {
+    roomsRef.current = rooms;
+    if (socketRef.current?.connected) {
+      rooms.forEach((room) => joinRoom(socketRef.current!, room.id));
+    }
+  }, [rooms]);
+
+  useEffect(() => {
+    if (!token) return;
+
+    const socket = createChatSocket(token);
+    socketRef.current = socket;
+
+    const joinKnownRooms = () => {
+      roomsRef.current.forEach((room) => joinRoom(socket, room.id));
+    };
+
+    const cleanupNewMessage = onNewMessage(socket, (payload) => {
+      const incoming = mapMessage(payload, currentUserId);
+      setMessages((current) => {
+        const withoutDuplicate = current.filter((message) => message.id !== incoming.id);
+        return sortMessages([...withoutDuplicate, incoming]);
+      });
+    });
+    const cleanupRecall = onMessageRecalled(socket, ({ messageId }) => {
+      setMessages((current) =>
+        current.map((message) =>
+          message.id === messageId ? { ...message, isRecalled: true, content: "" } : message,
+        ),
+      );
+    });
+    const cleanupRead = onReadUpdate(socket, ({ roomId, userId, messageId }) => {
+      setGroupReadStates((current) => ({
+        ...current,
+        [roomId]: {
+          ...(current[roomId] ?? {}),
+          [userId]: messageId,
+        },
+      }));
+    });
+    const cleanupTyping = onUserTyping(socket, ({ roomId, userId, isTyping }) => {
+      console.debug("typing", { roomId, userId, isTyping });
+    });
+    const cleanupError = onSocketError(socket, (error) => {
+      console.error("Socket error", error);
+    });
+
+    socket.on("connect", joinKnownRooms);
+    socket.connect();
+
+    return () => {
+      cleanupNewMessage();
+      cleanupRecall();
+      cleanupRead();
+      cleanupTyping();
+      cleanupError();
+      socket.off("connect", joinKnownRooms);
+      socket.disconnect();
+      if (socketRef.current === socket) {
+        socketRef.current = null;
+      }
+    };
+  }, [token, currentUserId]);
 
   const toggleFolder = (folderId: string) => {
-    setFolders(
-      folders.map((f) => (f.id === folderId ? { ...f, collapsed: !f.collapsed } : f))
+    setFolders((current) =>
+      current.map((folder) =>
+        folder.id === folderId ? { ...folder, collapsed: !folder.collapsed } : folder,
+      ),
     );
   };
 
   const handleLogout = () => {
-    localStorage.removeItem("token");
-    localStorage.removeItem("user");
+    const authToken = token;
+    clearSession();
+    if (authToken) {
+      void logout(authToken).catch(console.error);
+    }
     router.push("/login");
   };
 
   const handleSendMessage = (roomId: string, content: string, replyTarget: Message | null) => {
-    if (!content.trim()) return;
+    if (!content.trim() || !socketRef.current) return;
 
-    const sender = activeRoomNicknames[roomId] || user.username;
-    const newMsg: Message = {
-      id: `m-${Date.now()}`,
-      roomId: roomId,
-      senderName: sender,
-      content: content,
-      timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-      isOutgoing: true,
-      replyTo: replyTarget
-        ? { senderName: replyTarget.senderName, content: replyTarget.content }
-        : null,
-    };
-
-    setMessages((prev) => [...prev, newMsg]);
-    triggerReadAndReplySimulation(newMsg);
+    sendMessage(socketRef.current, {
+      roomId,
+      content,
+      replyTo: replyTarget?.id,
+    });
   };
 
-  const handleMockAttachment = (roomId: string, filename: string) => {
-    const sender = activeRoomNicknames[roomId] || user.username;
-    const newMsg: Message = {
-      id: `m-${Date.now()}`,
-      roomId: roomId,
-      senderName: sender,
-      content: `上傳了檔案: ${filename}`,
-      timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-      isOutgoing: true,
-      attachments: [{ filename, filetype: filename.split(".").pop() || "unknown" }],
-    };
+  const handleTyping = (roomId: string, isTyping: boolean) => {
+    if (!socketRef.current) return;
+    sendTyping(socketRef.current, { roomId, isTyping });
+  };
 
-    setMessages((prev) => [...prev, newMsg]);
-    triggerReadAndReplySimulation(newMsg);
+  const handleUploadAttachment = async (roomId: string, file: File) => {
+    if (!token || !socketRef.current) return;
+    const uploaded = await uploadAttachment(token, file);
+    sendMessage(socketRef.current, {
+      roomId,
+      content: `Uploaded ${file.name}`,
+      attachments: [uploaded.attachmentId],
+    });
   };
 
   const handleRecallMessage = (msgId: string) => {
-    setMessages(
-      messages.map((m) => (m.id === msgId ? { ...m, isRecalled: true, content: "" } : m))
+    if (!socketRef.current) return;
+    recallMessage(socketRef.current, msgId);
+  };
+
+  const handleCreateRoom = async (name: string, type: "msg" | "group", folderId: string) => {
+    if (!token) return "";
+
+    let created: Room;
+    if (type === "group") {
+      created = await createGroup(token, { name });
+    } else {
+      const matches = await searchUsers(token, { query: name });
+      const target = matches[0];
+      if (!target) {
+        throw new Error("No matching user found for private room");
+      }
+      created = await createPrivateRoom(token, { targetUserId: target.userId });
+    }
+
+    await refreshRoomsAndFolders(token);
+    if (folderId) {
+      await handleCategorizeRoom(created.roomId, folderId);
+    }
+    return created.roomId;
+  };
+
+  const handleCreateFolder = async (name: string) => {
+    if (!token) return;
+    const folder = await createFolder(token, name);
+    setFolders((current) => [...current, { id: folder.folderId, name: folder.name, collapsed: false }]);
+  };
+
+  const handleCategorizeRoom = async (roomId: string, folderId: string | null) => {
+    if (!token) return;
+
+    const nextFolders = folders.map((folder) => {
+      const currentRoomIds = rooms
+        .filter((room) => room.folderId === folder.id && room.id !== roomId)
+        .map((room) => room.id);
+      const roomIds = folder.id === folderId ? [...currentRoomIds, roomId] : currentRoomIds;
+      return { folder, roomIds };
+    });
+
+    await Promise.all(
+      nextFolders.map(({ folder, roomIds }) => updateFolderRooms(token, folder.id, roomIds)),
     );
-  };
 
-  const handleCreateRoom = (name: string, type: "msg" | "group", folderId: string) => {
-    const newId = `room-${Date.now()}`;
-    const newRoom: ChatRoom = {
-      id: newId,
-      type: type,
-      name: name,
-      isOnline: type === "msg" ? true : undefined,
-      folderId: folderId || null,
-      description: type === "group" ? "隨意聊天的地方" : undefined,
-      isPublic: type === "group" ? false : undefined,
-      allowInvite: type === "group" ? true : undefined,
-      allowUpload: type === "group" ? true : undefined,
-      members:
-        type === "group"
-          ? [
-              { name: "我", role: "owner" },
-              { name: "吳同學", role: "member" },
-            ]
-          : undefined,
-    };
-
-    setRooms([...rooms, newRoom]);
-    return newId;
-  };
-
-  const handleCreateFolder = (name: string) => {
-    const folderId = `folder-${Date.now()}`;
-    setFolders([...folders, { id: folderId, name: name, collapsed: false }]);
-  };
-
-  const handleCategorizeRoom = (roomId: string, folderId: string | null) => {
-    setRooms(
-      rooms.map((r) => (r.id === roomId ? { ...r, folderId: folderId } : r))
+    setRooms((current) =>
+      current.map((room) =>
+        room.id === roomId ? { ...room, folderId } : room,
+      ),
     );
   };
 
   const handleModifyNickname = (roomId: string, nickname: string) => {
-    setActiveRoomNicknames({
-      ...activeRoomNicknames,
-      [roomId]: nickname || "我",
-    });
+    setActiveRoomNicknames((current) => ({
+      ...current,
+      [roomId]: nickname || user.username,
+    }));
   };
 
-  const handleLeaveOrBlock = (roomId: string) => {
-    const room = rooms.find((r) => r.id === roomId);
+  const handleLeaveOrBlock = async (roomId: string) => {
+    if (!token) return { isDeleted: false };
+    const room = rooms.find((item) => item.id === roomId);
     if (!room) return { isDeleted: false };
 
     if (room.type === "group") {
-      setRooms(rooms.filter((r) => r.id !== roomId));
-      const remaining = rooms.filter((r) => r.id !== roomId);
-      return { isDeleted: true, newActiveId: remaining.length > 0 ? remaining[0].id : undefined };
-    } else {
-      setRooms(
-        rooms.map((r) => (r.id === roomId ? { ...r, isArchived: !r.isArchived } : r))
-      );
-      return { isDeleted: false };
+      await leaveRoomApi(token, roomId);
+      const remaining = rooms.filter((item) => item.id !== roomId);
+      setRooms(remaining);
+      return { isDeleted: true, newActiveId: remaining[0]?.id };
     }
+
+    setRooms((current) =>
+      current.map((item) =>
+        item.id === roomId ? { ...item, isArchived: !item.isArchived } : item,
+      ),
+    );
+    return { isDeleted: false };
   };
 
-  const handleSavePersonalSettings = (settings: {
+  const handleSavePersonalSettings = async (settings: {
     username: string;
     email: string;
     avatar: string;
@@ -403,21 +525,29 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     notifyDesktop: boolean;
     notifySound: boolean;
   }) => {
-    const updatedUser = {
+    let nextUser: StoredUser = {
       username: settings.username,
       email: settings.email,
       avatar: settings.avatar,
-      bio: "隨意聊天的地方",
+      userId: currentUserId,
     };
-    localStorage.setItem("user", JSON.stringify(updatedUser));
+
+    if (token) {
+      const updated = await updateMe(token, {
+        name: settings.username,
+        avatarUrl: settings.avatar,
+      });
+      nextUser = toStoredUser(updated, settings.email);
+    }
+
+    localStorage.setItem("user", JSON.stringify(nextUser));
     localStorage.setItem("theme", settings.theme);
     localStorage.setItem("notify-desktop", String(settings.notifyDesktop));
     localStorage.setItem("notify-sound", String(settings.notifySound));
-
-    setUser(updatedUser);
+    setUser(nextUser);
   };
 
-  const saveGroupSettings = (roomId: string, settings: {
+  const saveGroupSettings = async (roomId: string, settings: {
     name: string;
     description: string;
     isPublic: boolean;
@@ -425,11 +555,18 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     allowUpload: boolean;
     members: Member[];
   }) => {
-    setRooms(
-      rooms.map((r) =>
-        r.id === roomId
+    if (token) {
+      await updateRoom(token, roomId, {
+        name: settings.name,
+        requireApproval: !settings.isPublic,
+      });
+    }
+
+    setRooms((current) =>
+      current.map((room) =>
+        room.id === roomId
           ? {
-              ...r,
+              ...room,
               name: settings.name,
               description: settings.description,
               isPublic: settings.isPublic,
@@ -437,35 +574,40 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
               allowUpload: settings.allowUpload,
               members: settings.members,
             }
-          : r
-      )
+          : room,
+      ),
     );
   };
 
-  const handleDeleteGroupRoom = (roomId: string) => {
-    setRooms(rooms.filter((r) => r.id !== roomId));
-    const remaining = rooms.filter((r) => r.id !== roomId);
-    return remaining.length > 0 ? remaining[0].id : null;
+  const handleDeleteGroupRoom = async (roomId: string) => {
+    if (token) {
+      await updateRoom(token, roomId, { isArchived: true });
+    }
+    const remaining = rooms.filter((room) => room.id !== roomId);
+    setRooms(remaining);
+    return remaining[0]?.id ?? null;
   };
 
   const getReadAvatarsForMessage = (room: ChatRoom, msg: Message): string[] => {
     if (room.type !== "group") return [];
-    
+
     const roomReads = groupReadStates[room.id];
     if (!roomReads) return [];
-    
-    const avatars: string[] = [];
-    Object.entries(roomReads).forEach(([memberName, lastReadId]) => {
-      if (memberName === "我" || memberName === user.username) return;
-      if (memberName === msg.senderName) return;
-      
-      if (lastReadId === msg.id) {
-        const avatarUrl = getAvatarForUser(memberName, user.avatar, user.username);
-        avatars.push(avatarUrl);
-      }
-    });
-    return avatars;
+
+    return Object.entries(roomReads)
+      .filter(([readerId, lastReadId]) => readerId !== currentUserId && lastReadId === msg.id)
+      .map(() => "");
   };
+
+  useEffect(() => {
+    const lastMessage = messages.at(-1);
+    if (lastMessage && socketRef.current && !lastMessage.isOutgoing) {
+      sendReadReceipt(socketRef.current, {
+        roomId: lastMessage.roomId,
+        messageId: lastMessage.id,
+      });
+    }
+  }, [messages]);
 
   return (
     <ChatContext.Provider
@@ -486,7 +628,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         toggleFolder,
         handleLogout,
         handleSendMessage,
-        handleMockAttachment,
+        handleTyping,
+        handleUploadAttachment,
         handleRecallMessage,
         handleCreateRoom,
         handleCreateFolder,

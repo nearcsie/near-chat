@@ -81,7 +81,7 @@ export default function PersonalSettings() {
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setPersonalErrorMsg("");
     setPersonalSuccessMsg("");
@@ -96,19 +96,24 @@ export default function PersonalSettings() {
       return;
     }
 
-    handleSavePersonalSettings({
-      username: personalUsername,
-      email: personalEmail,
-      avatar: personalAvatar,
-      theme: personalTheme,
-      notifyDesktop: desktopNotifications,
-      notifySound: messageSounds,
-    });
+    try {
+      await handleSavePersonalSettings({
+        username: personalUsername,
+        email: personalEmail,
+        avatar: personalAvatar,
+        theme: personalTheme,
+        notifyDesktop: desktopNotifications,
+        notifySound: messageSounds,
+      });
 
-    setPersonalSuccessMsg("設定已成功儲存！");
-    setTimeout(() => {
-      handleBack();
-    }, 800);
+      setPersonalSuccessMsg("設定已成功儲存！");
+      setTimeout(() => {
+        handleBack();
+      }, 800);
+    } catch (error) {
+      console.error(error);
+      setPersonalErrorMsg(error instanceof Error ? error.message : "Failed to save settings");
+    }
   };
 
   return (
