@@ -37,7 +37,15 @@
 | 加入群組 (代碼) | POST | `/rooms/join/:code` | |
 | 退出聊天室 | DELETE | `/rooms/:id/leave` | |
 
-### D. 訊息與附件 (Messages & Attachments)
+### D. 成員管理 (Member Management) (Planned / 尚未實作)
+| 功能 | 方法 | 路徑 | 說明 |
+| :--- | :--- | :--- | :--- |
+| 列出成員 | GET | `/rooms/:id/members` | |
+| 審核成員 | PATCH | `/rooms/:id/members/:userId/approve` | |
+| 修改權限/暱稱 | PATCH | `/rooms/:id/members/:userId` | role, nickname, is_muted |
+| 踢出成員 | DELETE | `/rooms/:id/members/:userId` | |
+
+### E. 訊息與附件 (Messages & Attachments)
 | 功能 | 方法 | 路徑 | 說明 |
 | :--- | :--- | :--- | :--- |
 | 取得歷史訊息 | GET | `/rooms/:roomId/messages` | cursor pagination (before_id, limit) |

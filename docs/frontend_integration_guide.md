@@ -41,6 +41,10 @@
   | PATCH | `/rooms/:id` | JWT (owner/admin) | 更新群組設定 |
   | POST | `/rooms/join/:code` | JWT | 透過邀請碼加入群組 |
   | DELETE | `/rooms/:id/leave` | JWT | 退出聊天室（owner 不得退出） |
+  | GET | `/rooms/:id/members` | JWT | 列出成員 (Planned / 尚未實作) |
+  | PATCH | `/rooms/:id/members/:userId/approve` | JWT | 審核成員 (Planned / 尚未實作) |
+  | PATCH | `/rooms/:id/members/:userId` | JWT | 修改權限/暱稱 (Planned / 尚未實作) |
+  | DELETE | `/rooms/:id/members/:userId` | JWT | 踢出成員 (Planned / 尚未實作) |
   | GET | `/rooms/:roomId/messages` | JWT | 取得歷史訊息，支援 `?before_id=&limit=` |
   | POST | `/attachments` | JWT | 上傳附件 |
   | GET | `/attachments/:id` | JWT | 下載附件 |
