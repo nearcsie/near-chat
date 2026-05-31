@@ -41,3 +41,7 @@ This project is the final project for Database Theories.
 
 ## Development Guide
 See [DEVELOPMENT.md](docs/DEVELOPMENT.md)
+
+## Authentication Token Lifetime
+
+Login and register responses still include a JWT in the JSON body for Bearer-token clients, but the default token lifetime is now `15m`. This matches the HttpOnly cookie flow used by the frontend. Clients that keep using `Authorization: Bearer <token>` must re-authenticate after expiry, or deployments that need a longer lifetime can set `JWT_EXPIRES_IN` explicitly, for example `JWT_EXPIRES_IN=7d`.
