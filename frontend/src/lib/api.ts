@@ -57,6 +57,7 @@ const requestJson = async <T>(
 
   const response = await fetch(buildUrl(path), {
     ...init,
+    credentials: 'include',
     headers,
   });
 

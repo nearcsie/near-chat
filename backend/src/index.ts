@@ -45,7 +45,7 @@ const io = new Server<ClientToServerEvents, ServerToClientEvents>(server, { cors
 const PORT = process.env.PORT || 4000;
 
 app.use(securityHeaders);
-app.use(cors());
+app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
 app.use("/api", makeGlobalRateLimiter());
 

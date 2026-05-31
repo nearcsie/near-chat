@@ -4,7 +4,7 @@ import { ValidationError } from '../../../src/errors/AppError';
 import type { Request, Response, NextFunction } from 'express';
 
 const mockRes = () => {
-  const res = { status: vi.fn(), json: vi.fn(), send: vi.fn() } as any;
+  const res = { status: vi.fn(), json: vi.fn(), send: vi.fn(), cookie: vi.fn(), clearCookie: vi.fn() } as any;
   res.status.mockReturnValue(res);
   return res;
 };
@@ -26,6 +26,11 @@ describe('authController', () => {
       await ctrl.register(req, res, next);
 
       expect(res.status).toHaveBeenCalledWith(201);
+      expect(res.cookie).toHaveBeenCalledWith(
+        'auth_token',
+        'tok',
+        expect.objectContaining({ httpOnly: true, secure: true, sameSite: 'strict' }),
+      );
       expect(res.json).toHaveBeenCalledWith(authResult);
       expect(next).not.toHaveBeenCalled();
     });
@@ -64,6 +69,11 @@ describe('authController', () => {
       await ctrl.login(req, res, next);
 
       expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.cookie).toHaveBeenCalledWith(
+        'auth_token',
+        'tok',
+        expect.objectContaining({ httpOnly: true, secure: true, sameSite: 'strict' }),
+      );
       expect(res.json).toHaveBeenCalledWith(authResult);
       expect(next).not.toHaveBeenCalled();
     });
@@ -98,6 +108,10 @@ describe('authController', () => {
 
       ctrl.logout(req, res);
 
+      expect(res.clearCookie).toHaveBeenCalledWith(
+        'auth_token',
+        expect.objectContaining({ httpOnly: true, secure: true, sameSite: 'strict' }),
+      );
       expect(res.status).toHaveBeenCalledWith(204);
       expect(res.send).toHaveBeenCalled();
     });
