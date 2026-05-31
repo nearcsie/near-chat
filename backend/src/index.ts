@@ -96,4 +96,3 @@ if (require.main === module) {
   );
 }
 
-export { app, server, io };

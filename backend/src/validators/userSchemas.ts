@@ -27,13 +27,13 @@ export const searchQuerySchema = z.object({
   query: z.string().trim().min(1, 'Search query cannot be empty'),
 });
 
-export type RegisterSchema = z.infer<typeof registerSchema>;
-export type LoginSchema = z.infer<typeof loginSchema>;
+type RegisterSchema = z.infer<typeof registerSchema>;
+type LoginSchema = z.infer<typeof loginSchema>;
 export type UpdateMeInput = z.input<typeof updateMeSchema>;
-export type SearchQueryInput = z.input<typeof searchQuerySchema>;
+type SearchQueryInput = z.input<typeof searchQuerySchema>;
 
 export const addEmergencyContactSchema = z.object({
   contactId: z.string().uuid('Invalid contactId'),
   message: z.string().min(1, 'Message cannot be empty'),
 });
-export type AddEmergencyContactInput = z.input<typeof addEmergencyContactSchema>;
+type AddEmergencyContactInput = z.input<typeof addEmergencyContactSchema>;

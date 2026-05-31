@@ -1,7 +1,7 @@
 import jwt from 'jsonwebtoken';
 import type { JwtPayload } from '@shared/types';
 
-export const getJwtSecret = (): string => {
+const getJwtSecret = (): string => {
   const secret = process.env.JWT_SECRET;
   if (!secret) {
     if (process.env.NODE_ENV === 'production') {

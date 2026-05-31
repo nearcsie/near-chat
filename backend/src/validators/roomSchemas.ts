@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const roomTypeSchema = z.enum(['private', 'group']);
+const roomTypeSchema = z.enum(['private', 'group']);
 
 export const createRoomSchema = z.object({
   type: roomTypeSchema.default('group'),

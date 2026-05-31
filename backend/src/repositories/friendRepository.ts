@@ -1,19 +1,19 @@
 import type { Pool } from 'pg';
 
-export interface Friendship {
+interface Friendship {
   requester_id: string;
   addressee_id: string;
   status: 'pending' | 'accepted';
   created_at: Date;
 }
 
-export interface Block {
+interface Block {
   blocker_id: string;
   blocked_id: string;
   created_at: Date;
 }
 
-export interface FriendRequestResult {
+interface FriendRequestResult {
   requesterId: string;
   addresseeId: string;
   status: 'pending' | 'accepted';
