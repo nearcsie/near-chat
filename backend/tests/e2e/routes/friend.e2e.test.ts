@@ -76,7 +76,7 @@ describe('Friendships & Blocks E2E', () => {
       expect(res.status).toBe(200);
       expect(Array.isArray(res.body)).toBe(true);
       expect(res.body.length).toBe(1);
-      expect(res.body[0].requester_id).toBe(userA.userId);
+      expect(res.body[0].requesterId).toBe(userA.userId);
     });
 
     it('should accept a friend request', async () => {
@@ -102,7 +102,7 @@ describe('Friendships & Blocks E2E', () => {
       
       expect(listRes.status).toBe(200);
       expect(listRes.body.length).toBe(1);
-      expect(listRes.body[0].user_id).toBe(userA.userId);
+      expect(listRes.body[0].friend.userId).toBe(userA.userId);
 
       const roomsA = await request(app).get('/api/v1/rooms').set('Authorization', `Bearer ${tokenA}`);
       const roomsB = await request(app).get('/api/v1/rooms').set('Authorization', `Bearer ${tokenB}`);
@@ -168,7 +168,7 @@ describe('Friendships & Blocks E2E', () => {
       
       expect(listRes.status).toBe(200);
       expect(listRes.body.length).toBe(1);
-      expect(listRes.body[0].user_id).toBe(userC.userId);
+      expect(listRes.body[0].friend.userId).toBe(userC.userId);
     });
   });
 
