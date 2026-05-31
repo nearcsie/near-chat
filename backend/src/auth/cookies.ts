@@ -12,7 +12,7 @@ export const getAuthCookieMaxAgeMs = (): number =>
 
 export const authCookieOptions = () => ({
   httpOnly: true,
-  secure: process.env.NODE_ENV === 'production',
+  secure: process.env.NODE_ENV !== 'development' && process.env.NODE_ENV !== 'test',
   sameSite: 'strict' as const,
   path: '/',
 });
