@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, type Mocked } from 'vitest';
 import { makeRoomService } from '../../../src/services/roomService';
-import { ForbiddenError, NotFoundError, ValidationError } from '../../../src/errors/AppError';
+import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../../../src/errors/AppError';
 import type { IRoomRepository } from '../../../src/repositories/IRoomRepository';
 import type { IRoomMemberRepository } from '../../../src/repositories/IRoomMemberRepository';
 import type { Room, RoomMember } from '../../../../shared/types';
@@ -138,5 +138,54 @@ describe('roomService', () => {
 
     await expect(roomService.createPrivate('user-1', 'user-2')).rejects.toThrow(ForbiddenError);
     expect(mockRepo.create).not.toHaveBeenCalled();
+  });
+  describe('joinByCode', () => {
+    it('joins room using invite code', async () => {
+      mockRepo.findByInviteCode.mockResolvedValue(room);
+      mockMemberRepo.findMember.mockResolvedValue(null);
+      await roomService.joinByCode('user-2', 'ABCDEF');
+      expect(mockMemberRepo.add).toHaveBeenCalledWith({ roomId: 'room-1', userId: 'user-2', role: 'member' });
+    });
+    it('throws ConflictError if already a member', async () => {
+      mockRepo.findByInviteCode.mockResolvedValue(room);
+      mockMemberRepo.findMember.mockResolvedValue({} as RoomMember);
+      await expect(roomService.joinByCode('user-2', 'ABCDEF')).rejects.toThrow(ConflictError);
+    });
+  });
+
+  describe('leave', () => {
+    it('allows normal member to leave', async () => {
+      mockRepo.findById.mockResolvedValue(room);
+      mockMemberRepo.findMember.mockResolvedValue({ role: 'member' } as RoomMember);
+      await roomService.leave('user-2', 'room-1');
+      expect(mockMemberRepo.remove).toHaveBeenCalledWith('room-1', 'user-2');
+    });
+    it('throws ForbiddenError if owner tries to leave', async () => {
+      mockRepo.findById.mockResolvedValue(room);
+      mockMemberRepo.findMember.mockResolvedValue(ownerMember);
+      await expect(roomService.leave('user-1', 'room-1')).rejects.toThrow(ForbiddenError);
+    });
+  });
+
+  describe('kickMember', () => {
+    it('allows owner to kick member', async () => {
+      mockRepo.findById.mockResolvedValue(room);
+      mockMemberRepo.findMember.mockImplementation(async (roomId, userId) => {
+        if (userId === 'user-1') return ownerMember;
+        if (userId === 'user-2') return { role: 'member' } as RoomMember;
+        return null;
+      });
+      await roomService.kickMember('room-1', 'user-1', 'user-2');
+      expect(mockMemberRepo.remove).toHaveBeenCalledWith('room-1', 'user-2');
+    });
+    it('prevents kicking the owner', async () => {
+      mockRepo.findById.mockResolvedValue(room);
+      mockMemberRepo.findMember.mockImplementation(async (roomId, userId) => {
+        if (userId === 'user-1') return { role: 'admin' } as RoomMember;
+        if (userId === 'user-2') return ownerMember;
+        return null;
+      });
+      await expect(roomService.kickMember('room-1', 'user-1', 'user-2')).rejects.toThrow(ForbiddenError);
+    });
   });
 });
