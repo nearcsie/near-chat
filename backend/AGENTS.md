@@ -1,16 +1,16 @@
 <!-- Parent: ../AGENTS.md -->
-<!-- Generated: 2026-05-22 | Updated: 2026-05-24 -->
+<!-- Generated: 2026-05-31 -->
 
 # backend
 
 ## Purpose
-The Express + TypeScript API server for the chat application. Handles user authentication (JWT + bcrypt), chat room CRUD, real-time messaging via Socket.IO WebSockets, and persists all data to PostgreSQL using raw SQL via the `pg` library. The server listens on port 4000.
+The Express + TypeScript API server for the chat application. Handles user authentication (JWT + bcrypt), chat room CRUD, real-time messaging via Socket.IO WebSockets, and persists all data to PostgreSQL using raw SQL via the `pg` library. The server listens on port 4000. It implements a layered architecture: Routes -> Controllers -> Services -> Repositories.
 
 ## Key Files
 
 | File | Description |
 |------|-------------|
-| `src/index.ts` | Application entry point — registers Express middleware, inline auth/room/message REST routes, Socket.IO server with JWT middleware, and starts the HTTP server |
+| `src/index.ts` | Application entry point — wires up Express middleware, instantiates Repositories, Services, Controllers, mounts Routers, and starts the Socket.IO & HTTP server |
 | `src/db.ts` | Shared `pg.Pool` instance exported for use across the app; reads `DATABASE_URL` from env |
 | `package.json` | Dependencies and npm scripts; `dev` runs `ts-node-dev`; migration scripts use `node-pg-migrate` |
 | `tsconfig.json` | TypeScript compiler configuration |
@@ -21,8 +21,8 @@ The Express + TypeScript API server for the chat application. Handles user authe
 
 | Directory | Purpose |
 |-----------|---------|
-| `src/` | TypeScript source code — entry point, db pool, plus routes and services subdirectories (see `src/AGENTS.md`) |
-| `tests/` | Vitest integration tests for service-layer CRUD operations (see `tests/AGENTS.md`) |
+| `src/` | TypeScript source code — layered architecture (routes, controllers, services, repositories) (see `src/AGENTS.md`) |
+| `tests/` | Vitest tests including unit tests and end-to-end integration tests using real DB |
 
 ## For AI Agents
 
@@ -30,24 +30,23 @@ The Express + TypeScript API server for the chat application. Handles user authe
 - Database is accessed via the `pg.Pool` in `src/db.ts` — **Prisma has been removed**. All queries use raw SQL with parameterised placeholders (`$1`, `$2`, …).
 - Schema migrations are managed with `node-pg-migrate`: `pnpm migrate:up` / `pnpm migrate:down` / `pnpm migrate:create`.
 - The `dev` script starts the server directly with `ts-node-dev` — no schema generation step needed.
-- Auth is handled inline in `src/index.ts` (register/login endpoints); the separate `src/routes/userRoutes.ts` is a CRUD-only route without hashing — do not confuse the two.
+- Express routes are defined in `src/routes/` and controllers in `src/controllers/`, then mounted in `src/index.ts`. There are NO inline route handlers in `index.ts`.
 - Socket.IO uses a JWT middleware (`io.use(...)`) — all socket connections require a valid token in `handshake.auth.token`.
 
 ### Testing Requirements
 - Tests require a running PostgreSQL instance; set `DATABASE_URL_TEST` (copy `.env.test.example` → `.env.test`).
-- Run unit tests (no DB): `pnpm run test:unit`. Run integration tests: `pnpm run test:db:up && pnpm run test:integration`.
+- Run unit tests (no DB): `pnpm run test:unit`. Run E2E tests: `pnpm run test:db:up && pnpm run test:e2e`.
 - Tests use real database calls (integration style) — each test suite creates and tears down its own records.
 
 ### Common Patterns
-- Services (`src/services/`) still exist as a CRUD layer but are not yet mounted in `index.ts`; `index.ts` uses raw `pool.query` directly.
-- IDs are always integers — routes parse `parseInt(req.params.id)` and validate with `isNaN`.
+- The backend strictly follows a layered architecture. Repositories handle database SQL, Services handle business logic, Controllers parse HTTP inputs, Routes define endpoints.
+- Error handling uses a custom `AppError` class. `ValidationError`, `NotFoundError`, etc., are thrown by Services and caught by the `errorHandler` middleware.
 - `204 No Content` is returned on successful DELETE operations.
 
 ## Dependencies
 
 ### Internal
-- `src/db.ts` — shared pg pool consumed by `index.ts` and service modules
-- `src/services/` — CRUD service layer (untracked, not yet wired to active routes; still references Prisma internally — needs migration to `pg` before use)
+- `src/db.ts` — shared pg pool consumed by Repositories
 
 ### External
 - `express` ^5 — HTTP framework
@@ -58,5 +57,3 @@ The Express + TypeScript API server for the chat application. Handles user authe
 - `bcryptjs` ^3 — password hashing
 - `cors` ^2 — cross-origin headers
 - `ts-node-dev` — TypeScript dev runner with hot reload
-
-<!-- MANUAL: Any manually added notes below this line are preserved on regeneration -->

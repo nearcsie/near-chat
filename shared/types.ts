@@ -7,9 +7,8 @@
  *   - Repositories own the snake_case → camelCase mapping; nothing above the
  *     repo layer sees snake_case.
  *
- * v1 implementation scope: users, rooms, messages, room_members
- * Deferred (later phases): Folder, Attachment, Friendship, Block,
- *   EmergencyContact, MessageMention
+ * v1 implementation scope: users, rooms, messages, room_members, folders,
+ *   attachments, friendships, blocks, emergency_contacts, message_mentions
  */
 
 // ---------------------------------------------------------------------------
@@ -162,9 +161,7 @@ export interface ServerToClientEvents {
 }
 
 // ---------------------------------------------------------------------------
-// Deferred entities — not in v1 implementation scope
-// Defined here for full API contract coverage; their repositories, services,
-// and routes will be implemented in later phases.
+// Additional Entities
 // ---------------------------------------------------------------------------
 
 export type FriendshipStatus = 'pending' | 'accepted';
