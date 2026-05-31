@@ -49,3 +49,6 @@ yarn-error.log*
 
 # MCP server (local tool, not for repo)
 mcp/
+
+# user uploaded files
+uploads/
