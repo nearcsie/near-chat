@@ -77,7 +77,7 @@ export const makeUserService = (
 
     async login(data: LoginRequest): Promise<AuthResponse> {
       const user = await repo.findByEmail(data.email);
-      if (!user) {
+      if (!user || user.deletedAt) {
         throw new ValidationError('Invalid email or password');
       }
 
