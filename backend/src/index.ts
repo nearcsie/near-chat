@@ -20,6 +20,7 @@ import { makeUserService } from "./services/userService";
 import { makeRoomService } from "./services/roomService";
 import { makeMessageService } from "./services/messageService";
 import { makeFolderService } from "./services/folderService";
+import { makeFriendService } from "./services/friendService";
 import { makeAuthController } from "./controllers/authController";
 import { makeUserController } from "./controllers/userController";
 import { makeRoomController } from "./controllers/roomController";
@@ -65,13 +66,13 @@ const messageService = makeMessageService(messageRepo, roomRepo, roomMemberRepo)
 const folderService = makeFolderService(folderRepo, roomMemberRepo);
 const attachmentService = makeAttachmentService(attachmentRepo);
 
-const friendController = makeFriendController(friendRepo, (userId, eventName, payload) =>
-  io.to(`user_${userId}`).emit(eventName as any, payload),
-  {
-    createPrivate: roomService.createPrivate,
-    markPrivateReadOnly: roomService.markPrivateReadOnly,
-  },
-);
+const friendService = makeFriendService(friendRepo, (userId, eventName, payload) => {
+  io.to(`user_${userId}`).emit(eventName as any, payload);
+}, {
+  createPrivate: roomService.createPrivate,
+  markPrivateReadOnly: roomService.markPrivateReadOnly,
+});
+const friendController = makeFriendController(friendService);
 
 app.use("/api/v1/auth", makeAuthRoutes(makeAuthController(userService)));
 app.use("/api/v1/users", makeUserRoutes(makeUserController(userService)));

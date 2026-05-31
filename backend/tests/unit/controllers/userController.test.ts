@@ -19,7 +19,7 @@ const authedReq = (overrides: Partial<Request> = {}): any => ({
 
 describe('userController', () => {
   const publicUser = { userId: 'user-1', name: 'Alice', email: 'alice@example.com' };
-  const service = { getMe: vi.fn(), updateMe: vi.fn(), search: vi.fn() };
+  const service = { getMe: vi.fn(), updateMe: vi.fn(), search: vi.fn(), getEmergencyContacts: vi.fn(), upsertEmergencyContact: vi.fn(), deleteEmergencyContact: vi.fn() } as any;
   const ctrl = makeUserController(service);
 
   beforeEach(() => vi.clearAllMocks());
@@ -117,6 +117,33 @@ describe('userController', () => {
       await ctrl.search(authedReq({ query: { query: 'alice' } }), res, next);
 
       expect(next).toHaveBeenCalledWith(err);
+    });
+  });
+
+  describe('addEmergencyContact', () => {
+    const validContactId = '550e8400-e29b-41d4-a716-446655440000';
+    it('returns 201 on insert', async () => {
+      const contact = { contactId: validContactId, message: 'msg' };
+      service.upsertEmergencyContact.mockResolvedValue({ contact, isUpdate: false });
+      const res = mockRes();
+      const next = vi.fn();
+
+      await ctrl.addEmergencyContact(authedReq({ body: { contactId: validContactId, message: 'msg' } }), res, next);
+
+      expect(res.status).toHaveBeenCalledWith(201);
+      expect(res.json).toHaveBeenCalledWith(contact);
+    });
+
+    it('returns 200 on update', async () => {
+      const contact = { contactId: validContactId, message: 'new msg' };
+      service.upsertEmergencyContact.mockResolvedValue({ contact, isUpdate: true });
+      const res = mockRes();
+      const next = vi.fn();
+
+      await ctrl.addEmergencyContact(authedReq({ body: { contactId: validContactId, message: 'new msg' } }), res, next);
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith(contact);
     });
   });
 });

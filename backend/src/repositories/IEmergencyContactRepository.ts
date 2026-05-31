@@ -12,7 +12,7 @@ export interface EmergencyContact {
 
 export interface IEmergencyContactRepository {
   findByUserId(userId: string): Promise<EmergencyContact[]>;
-  upsert(userId: string, contactId: string, message: string): Promise<EmergencyContact>;
+  upsert(userId: string, contactId: string, message: string): Promise<{ contact: EmergencyContact, isUpdate: boolean }>;
   delete(userId: string, contactId: string): Promise<void>;
   recordAlertIfNew(userId: string, lastActivity: Date): Promise<boolean>;
 }

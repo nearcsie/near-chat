@@ -133,6 +133,43 @@ describe('Friendships & Blocks E2E', () => {
       const row = await testPool.query('SELECT is_readonly FROM chat_rooms WHERE room_id = $1', [privateRoom.roomId]);
       expect(row.rows[0].is_readonly).toBe(true);
     });
+    it('should reject a friend request and not affect accepted friendships', async () => {
+      // C sends request to B
+      await request(app)
+        .post('/api/v1/friends/requests')
+        .set('Authorization', `Bearer ${tokenC}`)
+        .send({ target_user_id: userB.userId });
+
+      // B accepts C
+      await request(app)
+        .patch(`/api/v1/friends/requests/${userC.userId}`)
+        .set('Authorization', `Bearer ${tokenB}`)
+        .send({ status: 'accepted' });
+
+      // A sends request to B
+      await request(app)
+        .post('/api/v1/friends/requests')
+        .set('Authorization', `Bearer ${tokenA}`)
+        .send({ target_user_id: userB.userId });
+
+      // B rejects A
+      const res = await request(app)
+        .patch(`/api/v1/friends/requests/${userA.userId}`)
+        .set('Authorization', `Bearer ${tokenB}`)
+        .send({ status: 'rejected' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe('rejected');
+
+      // Check friends list for B, C should still be there
+      const listRes = await request(app)
+        .get('/api/v1/friends')
+        .set('Authorization', `Bearer ${tokenB}`);
+      
+      expect(listRes.status).toBe(200);
+      expect(listRes.body.length).toBe(1);
+      expect(listRes.body[0].user_id).toBe(userC.userId);
+    });
   });
 
   describe('Blocks', () => {

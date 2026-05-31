@@ -1,5 +1,5 @@
 import type { ApiError, MessageWithSender } from '@shared/types';
-import { AppError, ForbiddenError, NotFoundError } from '../errors/AppError';
+import { AppError, ForbiddenError, NotFoundError, ValidationError } from '../errors/AppError';
 import type { IMessageRepository } from '../repositories/IMessageRepository';
 import type { IRoomMemberRepository } from '../repositories/IRoomMemberRepository';
 import type { ChatServer } from './authSocket';
@@ -17,15 +17,10 @@ interface MessageService {
 interface SocketDeps {
   messageService: MessageService;
   messageRepository: Pick<IMessageRepository, 'findById'>;
-  roomMemberRepository: Pick<IRoomMemberRepository, 'update'>;
+  roomMemberRepository: Pick<IRoomMemberRepository, 'update' | 'findMember'>;
 }
 
-const toApiError = (err: unknown): ApiError => {
-  if (err instanceof AppError) {
-    return { statusCode: err.statusCode, message: err.message, code: err.code };
-  }
-  return { statusCode: 500, message: 'Internal server error' };
-};
+import { mapErrorToApiShape } from '../errors/mapError';
 
 export const attachSockets = (io: ChatServer, deps: SocketDeps): void => {
   io.on('connection', (socket) => {
@@ -33,8 +28,16 @@ export const attachSockets = (io: ChatServer, deps: SocketDeps): void => {
 
     socket.join(`user_${userId}`);
 
-    socket.on('join_room', ({ roomId }) => {
-      socket.join(`room_${roomId}`);
+    socket.on('join_room', async ({ roomId }) => {
+      try {
+        const member = await deps.roomMemberRepository.findMember(roomId, userId);
+        if (!member) {
+          throw new ForbiddenError('Not a member of this room');
+        }
+        socket.join(`room_${roomId}`);
+      } catch (err) {
+        socket.emit('error', mapErrorToApiShape(err));
+      }
     });
 
     socket.on('leave_room', ({ roomId }) => {
@@ -48,7 +51,7 @@ export const attachSockets = (io: ChatServer, deps: SocketDeps): void => {
         });
         io.to(`room_${roomId}`).emit('new_message', message);
       } catch (err) {
-        socket.emit('error', toApiError(err));
+        socket.emit('error', mapErrorToApiShape(err));
       }
     });
 
@@ -67,7 +70,7 @@ export const attachSockets = (io: ChatServer, deps: SocketDeps): void => {
           messageId: recalled.messageId,
         });
       } catch (err) {
-        socket.emit('error', toApiError(err));
+        socket.emit('error', mapErrorToApiShape(err));
       }
     });
 
@@ -77,10 +80,14 @@ export const attachSockets = (io: ChatServer, deps: SocketDeps): void => {
 
     socket.on('read_receipt', async ({ roomId, messageId }) => {
       try {
+        const msg = await deps.messageRepository.findById(messageId);
+        if (!msg || msg.roomId !== roomId) {
+          throw new ValidationError('Invalid messageId for this room');
+        }
         await deps.roomMemberRepository.update(roomId, userId, { lastReadId: messageId });
         socket.to(`room_${roomId}`).emit('read_update', { roomId, userId, messageId });
       } catch (err) {
-        socket.emit('error', toApiError(err));
+        socket.emit('error', mapErrorToApiShape(err));
       }
     });
   });

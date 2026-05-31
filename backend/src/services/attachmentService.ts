@@ -1,13 +1,14 @@
+import { ValidationError } from '../errors/AppError';
 import { AttachmentRepository } from '../repositories/attachmentRepository';
 
 export function makeAttachmentService(attachmentRepo: AttachmentRepository) {
   return {
     async uploadAttachment(messageId: string, file: Express.Multer.File) {
       if (!messageId) {
-        throw new Error('Message ID is required');
+        throw new ValidationError('messageId is required');
       }
       if (!file) {
-        throw new Error('File is required');
+        throw new ValidationError('file is required');
       }
       const attachment = await attachmentRepo.create({
         messageId,

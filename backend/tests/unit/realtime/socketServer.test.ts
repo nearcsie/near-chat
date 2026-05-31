@@ -44,7 +44,7 @@ describe('attachSockets', () => {
       recallMessage: vi.fn(),
     };
     repo = { findById: vi.fn() };
-    roomMemberRepo = { update: vi.fn() };
+    roomMemberRepo = { update: vi.fn(), findMember: vi.fn() };
 
     const io = {
       on: vi.fn((event, handler) => {
@@ -57,12 +57,26 @@ describe('attachSockets', () => {
     connectionHandler(socket);
   });
 
-  it('handles join_room and leave_room', () => {
-    handlers.join_room({ roomId: 'room-1' });
+  it('handles join_room for members and leave_room', async () => {
+    roomMemberRepo.findMember.mockResolvedValue({ role: 'member' } as any);
+    await handlers.join_room({ roomId: 'room-1' });
     handlers.leave_room({ roomId: 'room-1' });
 
+    expect(roomMemberRepo.findMember).toHaveBeenCalledWith('room-1', 'user-1');
     expect(socket.join).toHaveBeenCalledWith('room_room-1');
     expect(socket.leave).toHaveBeenCalledWith('room_room-1');
+  });
+
+  it('rejects join_room for non-members', async () => {
+    roomMemberRepo.findMember.mockResolvedValue(null);
+    await handlers.join_room({ roomId: 'room-2' });
+
+    expect(socket.join).not.toHaveBeenCalledWith('room_room-2');
+    expect(socket.emit).toHaveBeenCalledWith('error', {
+      statusCode: 403,
+      message: 'Not a member of this room',
+      code: 'FORBIDDEN',
+    });
   });
 
   it('sends messages through messageService and emits new_message to the room', async () => {
@@ -114,6 +128,7 @@ describe('attachSockets', () => {
   it('broadcasts typing and read receipts', async () => {
     const socketRoomEmit = vi.fn();
     socket.to.mockReturnValue({ emit: socketRoomEmit });
+    repo.findById.mockResolvedValue(message); // msg-1 in room-1
 
     handlers.typing({ roomId: 'room-1', isTyping: true });
     await handlers.read_receipt({ roomId: 'room-1', messageId: 'msg-1' });
@@ -128,6 +143,19 @@ describe('attachSockets', () => {
       roomId: 'room-1',
       userId: 'user-1',
       messageId: 'msg-1',
+    });
+  });
+
+  it('rejects read_receipt for cross-room message', async () => {
+    repo.findById.mockResolvedValue({ ...message, roomId: 'room-2' });
+
+    await handlers.read_receipt({ roomId: 'room-1', messageId: 'msg-1' });
+
+    expect(roomMemberRepo.update).not.toHaveBeenCalled();
+    expect(socket.emit).toHaveBeenCalledWith('error', {
+      statusCode: 400,
+      message: 'Invalid messageId for this room',
+      code: 'VALIDATION_ERROR',
     });
   });
 });

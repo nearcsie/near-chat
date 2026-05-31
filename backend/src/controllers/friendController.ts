@@ -12,12 +12,7 @@ export const friendResponseSchema = z.object({
 });
 
 export const makeFriendController = (
-  repo: ReturnType<typeof makeFriendRepository>,
-  notifyUser?: (userId: string, eventName: string, payload: any) => void,
-  privateRooms?: {
-    createPrivate(creatorId: string, targetUserId: string): Promise<unknown>;
-    markPrivateReadOnly(userA: string, userB: string): Promise<void>;
-  }
+  service: any
 ) => {
   return {
     async sendRequest(req: Request, res: Response, next: NextFunction) {
@@ -25,20 +20,7 @@ export const makeFriendController = (
         const userId = req.user!.userId;
         const body = friendRequestSchema.parse(req.body);
         
-        if (userId === body.target_user_id) {
-          throw new ValidationError('Cannot send friend request to yourself');
-        }
-
-        const isBlocked = await repo.isBlocked(userId, body.target_user_id);
-        if (isBlocked) {
-          throw new AppError(403, 'Cannot interact with this user', 'FORBIDDEN');
-        }
-
-        const request = await repo.sendFriendRequest(userId, body.target_user_id);
-        
-        if (notifyUser) {
-          notifyUser(body.target_user_id, 'friend_request', request);
-        }
+        const request = await service.sendFriendRequest(userId, body.target_user_id);
 
         res.status(201).json(request);
       } catch (err) {
@@ -55,7 +37,7 @@ export const makeFriendController = (
     async getRequests(req: Request, res: Response, next: NextFunction) {
       try {
         const userId = req.user!.userId;
-        const requests = await repo.getPendingRequests(userId);
+        const requests = await service.getPendingRequests(userId);
         res.status(200).json(requests);
       } catch (err) {
         next(err);
@@ -68,21 +50,8 @@ export const makeFriendController = (
         const requesterId = req.params.id;
         const body = friendResponseSchema.parse(req.body);
 
-        if (body.status === 'accepted') {
-          const isBlocked = await repo.isBlocked(requesterId, userId);
-          if (isBlocked) {
-            throw new AppError(403, 'Cannot interact with this user', 'FORBIDDEN');
-          }
-          const accepted = await repo.acceptFriendRequest(requesterId, userId);
-          if (!accepted) {
-            throw new AppError(404, 'Friend request not found', 'NOT_FOUND');
-          }
-          await privateRooms?.createPrivate(requesterId, userId);
-          res.status(200).json(accepted);
-        } else {
-          await repo.deleteFriendship(requesterId, userId);
-          res.status(200).json({ status: 'rejected' });
-        }
+        const result = await service.respondFriendRequest(userId, requesterId, body.status);
+        res.status(200).json(result);
       } catch (err) {
         if (err instanceof z.ZodError) {
           return next(new ValidationError(err.issues[0]?.message ?? 'Invalid request'));
@@ -94,7 +63,7 @@ export const makeFriendController = (
     async getFriends(req: Request, res: Response, next: NextFunction) {
       try {
         const userId = req.user!.userId;
-        const friends = await repo.getFriends(userId);
+        const friends = await service.getFriends(userId);
         res.status(200).json(friends);
       } catch (err) {
         next(err);
@@ -105,8 +74,7 @@ export const makeFriendController = (
       try {
         const userId = req.user!.userId;
         const friendId = req.params.id;
-        await repo.deleteFriendship(userId, friendId);
-        await privateRooms?.markPrivateReadOnly(userId, friendId);
+        await service.removeFriend(userId, friendId);
         res.status(204).send();
       } catch (err) {
         next(err);
@@ -118,11 +86,9 @@ export const makeFriendController = (
         const userId = req.user!.userId;
         const body = friendRequestSchema.parse(req.body);
 
-        await repo.blockUser(userId, body.target_user_id);
-        await repo.deleteFriendship(userId, body.target_user_id);
-        await privateRooms?.markPrivateReadOnly(userId, body.target_user_id);
+        const result = await service.blockUser(userId, body.target_user_id);
         
-        res.status(201).json({ status: 'blocked' });
+        res.status(201).json(result);
       } catch (err) {
         if (err instanceof z.ZodError) {
           return next(new ValidationError(err.issues[0]?.message ?? 'Invalid request'));
@@ -135,7 +101,7 @@ export const makeFriendController = (
       try {
         const userId = req.user!.userId;
         const blockedId = req.params.id;
-        await repo.unblockUser(userId, blockedId);
+        await service.unblockUser(userId, blockedId);
         res.status(204).send();
       } catch (err) {
         next(err);
