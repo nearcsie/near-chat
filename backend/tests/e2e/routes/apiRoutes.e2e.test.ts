@@ -45,6 +45,9 @@ describe('API routes E2E', () => {
       .post('/api/v1/auth/register')
       .send({ email, name: 'Auth User', password: 'password123' })
       .expect(201);
+    expect(register.headers['x-content-type-options']).toBe('nosniff');
+    expect(register.headers['x-frame-options']).toBe('SAMEORIGIN');
+    expect(register.headers['content-security-policy']).toContain("default-src 'self'");
     expect(register.body).toMatchObject({
       token: expect.any(String),
       user: { name: 'Auth User' },

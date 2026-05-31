@@ -5,6 +5,7 @@ import { Server } from "socket.io";
 import pool from "./db";
 import { signToken } from "./auth/jwt";
 import { errorHandler } from "./middlewares/errorHandler";
+import { makeAuthRateLimiter, makeGlobalRateLimiter, securityHeaders } from "./middlewares/securityMiddleware";
 import { UserRepository } from "./repositories/userRepository";
 import { EmergencyContactRepository } from "./repositories/emergencyContactRepository";
 import { RoomRepository } from "./repositories/roomRepository";
@@ -43,8 +44,10 @@ const io = new Server<ClientToServerEvents, ServerToClientEvents>(server, { cors
 
 const PORT = process.env.PORT || 4000;
 
+app.use(securityHeaders);
 app.use(cors());
 app.use(express.json());
+app.use("/api", makeGlobalRateLimiter());
 
 const userRepo = new UserRepository(pool);
 const emergencyContactRepo = new EmergencyContactRepository(pool);
@@ -74,7 +77,7 @@ const friendService = makeFriendService(friendRepo, (userId, eventName, payload)
 });
 const friendController = makeFriendController(friendService);
 
-app.use("/api/v1/auth", makeAuthRoutes(makeAuthController(userService)));
+app.use("/api/v1/auth", makeAuthRateLimiter(), makeAuthRoutes(makeAuthController(userService)));
 app.use("/api/v1/users", makeUserRoutes(makeUserController(userService)));
 app.use("/api/v1/rooms", makeRoomRoutes(makeRoomController(roomService)));
 app.use("/api/v1/rooms", makeMessageRoutes(makeMessageController(messageService)));
