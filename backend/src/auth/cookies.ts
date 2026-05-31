@@ -1,11 +1,7 @@
 import type { Response } from 'express';
+import { parsePositiveInt } from '../utils/parsePositiveInt';
 
 export const AUTH_COOKIE_NAME = 'auth_token';
-
-const parsePositiveInt = (value: string | undefined, fallback: number): number => {
-  const parsed = Number(value);
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
-};
 
 export const getAuthCookieMaxAgeMs = (): number =>
   parsePositiveInt(process.env.AUTH_COOKIE_MAX_AGE_MS, 15 * 60 * 1000);

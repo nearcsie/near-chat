@@ -1,10 +1,6 @@
 import rateLimit, { type Options } from 'express-rate-limit';
 import helmet from 'helmet';
-
-const parsePositiveInt = (value: string | undefined, fallback: number): number => {
-  const parsed = Number(value);
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
-};
+import { parsePositiveInt } from '../utils/parsePositiveInt';
 
 const rateLimitDisabled = (): boolean =>
   process.env.NODE_ENV === 'test' || process.env.RATE_LIMIT_DISABLED === 'true';
