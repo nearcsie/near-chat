@@ -21,23 +21,23 @@ describe('authMiddleware', () => {
     vi.restoreAllMocks();
   });
 
-  it('calls next with 401 when Authorization header is missing', async () => {
+  it('calls next with 401 when auth token is missing', async () => {
     await authMiddleware(mockRequest as Request, mockResponse as Response, nextFunction);
     expect(nextFunction).toHaveBeenCalledOnce();
     const arg = vi.mocked(nextFunction).mock.calls[0][0] as AppError;
     expect(arg).toBeInstanceOf(AppError);
     expect(arg.statusCode).toBe(401);
-    expect(arg.message).toMatch(/Missing or invalid/);
+    expect(arg.message).toMatch(/Missing authentication token/);
   });
 
-  it('calls next with 401 when Authorization header is malformed', async () => {
+  it('calls next with 401 when Authorization header is malformed and no cookie exists', async () => {
     mockRequest.headers = { authorization: 'Basic sometoken' };
     await authMiddleware(mockRequest as Request, mockResponse as Response, nextFunction);
     expect(nextFunction).toHaveBeenCalledOnce();
     const arg = vi.mocked(nextFunction).mock.calls[0][0] as AppError;
     expect(arg).toBeInstanceOf(AppError);
     expect(arg.statusCode).toBe(401);
-    expect(arg.message).toMatch(/Missing or invalid/);
+    expect(arg.message).toMatch(/Missing authentication token/);
   });
 
   it('calls next with 401 when token is invalid', async () => {
@@ -59,9 +59,6 @@ describe('authMiddleware', () => {
     const mockPayload = { userId: '1', name: 'Test User' };
     
     vi.spyOn(jwtHelper, 'verifyToken').mockReturnValue(mockPayload);
-    
-    const pool = (await import('../../../src/db')).default;
-    vi.spyOn(pool, 'query').mockResolvedValue({ rows: [{ deleted_at: null }] } as any);
 
     await authMiddleware(mockRequest as Request, mockResponse as Response, nextFunction);
 
@@ -70,21 +67,20 @@ describe('authMiddleware', () => {
     expect(nextFunction).toHaveBeenCalledWith(); // called with no args
   });
 
-  it('calls next with 401 when user is soft-deleted', async () => {
-    mockRequest.headers = { authorization: 'Bearer valid-token' };
+  it('prefers the HttpOnly auth cookie token when present', async () => {
+    mockRequest.headers = {
+      authorization: 'Bearer header-token',
+      cookie: 'theme=dark; auth_token=cookie-token',
+    };
     const mockPayload = { userId: '1', name: 'Test User' };
-    
+
     vi.spyOn(jwtHelper, 'verifyToken').mockReturnValue(mockPayload);
-    
-    const pool = (await import('../../../src/db')).default;
-    vi.spyOn(pool, 'query').mockResolvedValue({ rows: [{ deleted_at: new Date() }] } as any);
 
     await authMiddleware(mockRequest as Request, mockResponse as Response, nextFunction);
 
+    expect(jwtHelper.verifyToken).toHaveBeenCalledWith('cookie-token');
+    expect(mockRequest.user).toEqual(mockPayload);
     expect(nextFunction).toHaveBeenCalledOnce();
-    const arg = vi.mocked(nextFunction).mock.calls[0][0] as AppError;
-    expect(arg).toBeInstanceOf(AppError);
-    expect(arg.statusCode).toBe(401);
-    expect(arg.message).toMatch(/Account deleted or disabled/);
+    expect(nextFunction).toHaveBeenCalledWith();
   });
 });

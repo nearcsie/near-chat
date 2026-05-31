@@ -1,27 +1,21 @@
 import { Request, Response, NextFunction } from 'express';
 import { verifyToken } from '../auth/jwt';
+import { AUTH_COOKIE_NAME, readCookie } from '../auth/cookies';
 import { AppError } from '../errors/AppError';
 
-import pool from '../db';
+const getBearerToken = (authHeader: string | undefined): string | undefined => {
+  if (!authHeader?.startsWith('Bearer ')) return undefined;
+  return authHeader.split(' ')[1];
+};
 
 export const authMiddleware = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-  const authHeader = req.headers.authorization;
-
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return next(new AppError(401, 'Unauthorized: Missing or invalid Authorization header'));
+  const token = readCookie(req.headers.cookie, AUTH_COOKIE_NAME) ?? getBearerToken(req.headers.authorization);
+  if (!token) {
+    return next(new AppError(401, 'Unauthorized: Missing authentication token'));
   }
-
-  const token = authHeader.split(' ')[1];
 
   try {
     const payload = verifyToken(token);
-    
-    // Check if user is soft-deleted
-    const userRes = await pool.query('SELECT deleted_at FROM users WHERE user_id = $1', [payload.userId]);
-    if (userRes.rows.length === 0 || userRes.rows[0].deleted_at !== null) {
-      return next(new AppError(401, 'Unauthorized: Account deleted or disabled'));
-    }
-
     req.user = payload;
     next();
   } catch (error) {

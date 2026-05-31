@@ -1,7 +1,8 @@
 import { Request, Response, NextFunction } from 'express';
 import { registerSchema, loginSchema } from '../validators/userSchemas';
 import { ValidationError } from '../errors/AppError';
-import type { AuthResponse, PublicUser } from '../../../shared/types';
+import { clearAuthCookie, setAuthCookie } from '../auth/cookies';
+import type { AuthResponse } from '../../../shared/types';
 
 interface AuthService {
   register(data: { email: string; name: string; password: string }): Promise<AuthResponse>;
@@ -16,6 +17,7 @@ export const makeAuthController = (service: AuthService) => ({
         return next(new ValidationError(parsed.error.issues[0]?.message ?? 'Invalid payload'));
       }
       const result = await service.register(parsed.data);
+      setAuthCookie(res, result.token);
       res.status(201).json(result);
     } catch (err) {
       next(err);
@@ -29,6 +31,7 @@ export const makeAuthController = (service: AuthService) => ({
         return next(new ValidationError(parsed.error.issues[0]?.message ?? 'Invalid payload'));
       }
       const result = await service.login(parsed.data);
+      setAuthCookie(res, result.token);
       res.status(200).json(result);
     } catch (err) {
       next(err);
@@ -36,6 +39,7 @@ export const makeAuthController = (service: AuthService) => ({
   },
 
   logout(_req: Request, res: Response): void {
+    clearAuthCookie(res);
     res.status(204).send();
   },
 });
