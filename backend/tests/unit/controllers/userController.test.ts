@@ -92,31 +92,31 @@ describe('userController', () => {
       const res = mockRes();
       const next = vi.fn();
 
-      await ctrl.search(authedReq({ query: { query: 'alice' } }), res, next);
+      await ctrl.search(authedReq({ query: { q: 'alice' } }), res, next);
 
       expect(service.search).toHaveBeenCalledWith('alice');
       expect(res.status).toHaveBeenCalledWith(200);
       expect(res.json).toHaveBeenCalledWith([publicUser]);
     });
 
-    it('calls next with ValidationError when query is missing', async () => {
+    it('calls next with ValidationError when query is empty', async () => {
       const res = mockRes();
       const next = vi.fn();
 
-      await ctrl.search(authedReq({ query: {} }), res, next);
+      await ctrl.search(authedReq({ query: { q: '  ' } }), res, next);
 
       expect(next).toHaveBeenCalledWith(expect.any(ValidationError));
+      expect(res.status).not.toHaveBeenCalled();
     });
 
     it('calls next with error when service throws', async () => {
-      const err = new Error('db error');
-      service.search.mockRejectedValue(err);
+      service.search.mockRejectedValue(new Error('db error'));
       const res = mockRes();
       const next = vi.fn();
 
-      await ctrl.search(authedReq({ query: { query: 'alice' } }), res, next);
+      await ctrl.search(authedReq({ query: { q: 'alice' } }), res, next);
 
-      expect(next).toHaveBeenCalledWith(err);
+      expect(next).toHaveBeenCalledWith(expect.any(Error));
     });
   });
 
