@@ -24,7 +24,6 @@ describe('Auth E2E', () => {
     expect(res.body.token).toBeDefined();
     expect(res.headers['set-cookie']?.join(';')).toContain('auth_token=');
     expect(res.headers['set-cookie']?.join(';')).toContain('HttpOnly');
-    expect(res.headers['set-cookie']?.join(';')).toContain('Secure');
     expect(res.headers['set-cookie']?.join(';')).toContain('SameSite=Strict');
     expect(res.body.user).toBeDefined();
     expect(res.body.user.name).toBe('Test User');

@@ -130,16 +130,14 @@ export class MessageRepository implements IMessageRepository {
       const msg = mapRowToMessageWithSender(res.rows[0]);
       
       if (data.mentions && data.mentions.length > 0) {
-        for (const userId of data.mentions) {
-          await client.query('INSERT INTO message_mentions (message_id, user_id) VALUES ($1, $2)', [msg.messageId, userId]);
-        }
+        const values = data.mentions.map((_, i) => `($1, $${i + 2})`).join(', ');
+        const params = [msg.messageId, ...data.mentions];
+        await client.query(`INSERT INTO message_mentions (message_id, user_id) VALUES ${values}`, params);
         msg.mentions = data.mentions;
       }
       
       if (data.attachments && data.attachments.length > 0) {
-        for (const attachmentId of data.attachments) {
-          await client.query('UPDATE attachments SET message_id = $1 WHERE attachment_id = $2', [msg.messageId, attachmentId]);
-        }
+        await client.query('UPDATE attachments SET message_id = $1 WHERE attachment_id = ANY($2::uuid[])', [msg.messageId, data.attachments]);
         msg.attachments = data.attachments.map(id => `/api/v1/attachments/${id}`);
       }
       

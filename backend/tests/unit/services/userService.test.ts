@@ -149,6 +149,54 @@ describe('userService', () => {
     });
   });
 
+  describe('getMe', () => {
+    it('should return public user if found', async () => {
+      mockRepo.findById.mockResolvedValue({ userId: 'u1', name: 'Test User', avatarUrl: 'http://img.com' } as User);
+      const res = await userService.getMe('u1');
+      expect(res).toEqual({ userId: 'u1', name: 'Test User', avatarUrl: 'http://img.com' });
+      expect(mockRepo.findById).toHaveBeenCalledWith('u1');
+    });
+
+    it('should throw NotFoundError if user not found', async () => {
+      mockRepo.findById.mockResolvedValue(null);
+      await expect(userService.getMe('unknown')).rejects.toThrow();
+    });
+  });
+
+  describe('updateMe', () => {
+    it('should update user and return public profile', async () => {
+      mockRepo.update.mockResolvedValue({ userId: 'u1', name: 'New Name', avatarUrl: 'new.jpg' } as User);
+      const res = await userService.updateMe('u1', { name: 'New Name' });
+      expect(mockRepo.update).toHaveBeenCalledWith('u1', { name: 'New Name' });
+      expect(res).toEqual({ userId: 'u1', name: 'New Name', avatarUrl: 'new.jpg' });
+    });
+
+    it('should throw ValidationError on invalid payload', async () => {
+      await expect(userService.updateMe('u1', { name: '' })).rejects.toThrow();
+      expect(mockRepo.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('deleteMe', () => {
+    it('should set deletedAt', async () => {
+      await userService.deleteMe('u1');
+      expect(mockRepo.update).toHaveBeenCalledWith('u1', { deletedAt: expect.any(Date) });
+    });
+  });
+
+  describe('search', () => {
+    it('should return mapped public users', async () => {
+      mockRepo.search.mockResolvedValue([{ userId: 'u1', name: 'Test', avatarUrl: undefined } as User]);
+      const res = await userService.search('Test');
+      expect(res).toEqual([{ userId: 'u1', name: 'Test', avatarUrl: undefined }]);
+      expect(mockRepo.search).toHaveBeenCalledWith('Test');
+    });
+
+    it('should throw ValidationError if query is invalid', async () => {
+      await expect(userService.search('')).rejects.toThrow();
+    });
+  });
+
   describe('Zod schemas', () => {
     it('should validate registerSchema', () => {
       expect(registerSchema.safeParse({ email: 'valid@example.com', name: 'N', password: 'password123' }).success).toBe(true);

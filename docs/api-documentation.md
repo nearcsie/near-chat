@@ -37,7 +37,7 @@
 | 加入群組 (代碼) | POST | `/rooms/join/:code` | |
 | 退出聊天室 | DELETE | `/rooms/:id/leave` | |
 
-### D. 成員管理 (Member Management) (Planned / 尚未實作)
+### D. 成員管理 (Member Management)
 | 功能 | 方法 | 路徑 | 說明 |
 | :--- | :--- | :--- | :--- |
 | 列出成員 | GET | `/rooms/:id/members` | |

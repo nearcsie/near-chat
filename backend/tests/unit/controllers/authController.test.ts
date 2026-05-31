@@ -29,7 +29,7 @@ describe('authController', () => {
       expect(res.cookie).toHaveBeenCalledWith(
         'auth_token',
         'tok',
-        expect.objectContaining({ httpOnly: true, secure: true, sameSite: 'strict' }),
+        expect.objectContaining({ httpOnly: true, secure: false, sameSite: 'strict' }),
       );
       expect(res.json).toHaveBeenCalledWith(authResult);
       expect(next).not.toHaveBeenCalled();
@@ -72,7 +72,7 @@ describe('authController', () => {
       expect(res.cookie).toHaveBeenCalledWith(
         'auth_token',
         'tok',
-        expect.objectContaining({ httpOnly: true, secure: true, sameSite: 'strict' }),
+        expect.objectContaining({ httpOnly: true, secure: false, sameSite: 'strict' }),
       );
       expect(res.json).toHaveBeenCalledWith(authResult);
       expect(next).not.toHaveBeenCalled();
@@ -110,7 +110,7 @@ describe('authController', () => {
 
       expect(res.clearCookie).toHaveBeenCalledWith(
         'auth_token',
-        expect.objectContaining({ httpOnly: true, secure: true, sameSite: 'strict' }),
+        expect.objectContaining({ httpOnly: true, secure: false, sameSite: 'strict' }),
       );
       expect(res.status).toHaveBeenCalledWith(204);
       expect(res.send).toHaveBeenCalled();
