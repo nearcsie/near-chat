@@ -1,3 +1,4 @@
+--- Up migration
 -- v1 scope: users, chat_rooms, messages, room_members
 
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
@@ -47,3 +48,9 @@ CREATE TABLE room_members (
   join_time    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   PRIMARY KEY (room_id, user_id)
 );
+
+--- Down migration
+DROP TABLE IF EXISTS room_members;
+DROP TABLE IF EXISTS messages;
+DROP TABLE IF EXISTS chat_rooms;
+DROP TABLE IF EXISTS users;
