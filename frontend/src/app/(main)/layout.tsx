@@ -2,7 +2,6 @@
 
 import React from "react";
 import { ChatProvider, useChat } from "@/context/ChatContext";
-import AppRail from "@/components/layout/AppRail";
 import Sidebar from "@/components/layout/Sidebar";
 import { useTranslation } from "@/hooks/useTranslation";
 
@@ -20,7 +19,6 @@ function MainLayoutContent({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-background text-foreground font-sans transition-colors">
-      <AppRail />
       <Sidebar />
       {children}
     </div>
