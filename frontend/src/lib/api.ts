@@ -118,8 +118,8 @@ export const updateMe = (token: string, data: UpdateMeRequest): Promise<PublicUs
   );
 
 export const searchUsers = (token: string, params: { query: string }): Promise<PublicUser[]> => {
-  const query = new URLSearchParams({ query: params.query });
-  return requestJson<PublicUser[]>(`/users/search?${query.toString()}`, {}, { token });
+  const query = new URLSearchParams({ q: params.query });
+  return requestJson<PublicUser[]>(`/users?${query.toString()}`, {}, { token });
 };
 
 export const listRooms = (token: string): Promise<RoomSummary[]> =>
@@ -127,20 +127,20 @@ export const listRooms = (token: string): Promise<RoomSummary[]> =>
 
 export const createGroup = (token: string, data: CreateGroupRequest): Promise<Room> =>
   requestJson<Room>(
-    '/rooms/group',
+    '/rooms',
     {
       method: 'POST',
-      ...withJsonBody(data),
+      ...withJsonBody({ ...data, type: 'group' }),
     },
     { token },
   );
 
 export const createPrivateRoom = (token: string, data: CreatePrivateRequest): Promise<Room> =>
   requestJson<Room>(
-    '/rooms/private',
+    '/rooms',
     {
       method: 'POST',
-      ...withJsonBody(data),
+      ...withJsonBody({ ...data, type: 'private' }),
     },
     { token },
   );
@@ -160,7 +160,7 @@ export const updateRoom = (
   );
 
 export const leaveRoom = (token: string, roomId: string): Promise<void> =>
-  requestJson<void>(`/rooms/${roomId}/leave`, { method: 'DELETE' }, { token });
+  requestJson<void>(`/rooms/${roomId}/members/me`, { method: 'DELETE' }, { token });
 
 export const listRoomMembers = (token: string, roomId: string): Promise<RoomMember[]> =>
   requestJson<RoomMember[]>(`/rooms/${roomId}/members`, {}, { token });

@@ -114,11 +114,12 @@ export const makeUserController = (service: UserService) => ({
 
   async search(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const parsed = searchQuerySchema.safeParse({ query: req.query.query });
+      const parsed = searchQuerySchema.safeParse({ q: req.query.q });
       if (!parsed.success) {
+        console.error('SEARCH PARSE ERROR:', parsed.error.issues, 'QUERY:', req.query);
         return next(new ValidationError(parsed.error.issues[0]?.message ?? 'Invalid query'));
       }
-      const users = await service.search(parsed.data.query);
+      const users = await service.search(parsed.data.q);
       res.status(200).json(users);
     } catch (err) {
       next(err);

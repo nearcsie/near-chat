@@ -8,8 +8,7 @@
  *   - Repositories own the snake_case → camelCase mapping; nothing above the
  *     repo layer sees snake_case.
  *
- * v1 implementation scope: users, rooms, messages, room_members
- * Deferred (later phases): Folder, Attachment, Friendship, Block,
- *   EmergencyContact, MessageMention
+ * v1 implementation scope: users, rooms, messages, room_members, folders,
+ *   attachments, friendships, blocks, emergency_contacts, message_mentions
  */
 Object.defineProperty(exports, "__esModule", { value: true });

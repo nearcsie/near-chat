@@ -46,7 +46,7 @@ describe('Friendships & Blocks E2E', () => {
   describe('Friendships', () => {
     it('should send a friend request successfully', async () => {
       const res = await request(app)
-        .post('/api/v1/friends/requests')
+        .post('/api/v1/friend-requests')
         .set('Authorization', `Bearer ${tokenA}`)
         .send({ target_user_id: userB.userId });
 
@@ -56,7 +56,7 @@ describe('Friendships & Blocks E2E', () => {
 
     it('should fail if sending a request to oneself', async () => {
       const res = await request(app)
-        .post('/api/v1/friends/requests')
+        .post('/api/v1/friend-requests')
         .set('Authorization', `Bearer ${tokenA}`)
         .send({ target_user_id: userA.userId });
 
@@ -65,12 +65,12 @@ describe('Friendships & Blocks E2E', () => {
 
     it('should list pending friend requests', async () => {
       await request(app)
-        .post('/api/v1/friends/requests')
+        .post('/api/v1/friend-requests')
         .set('Authorization', `Bearer ${tokenA}`)
         .send({ target_user_id: userB.userId });
 
       const res = await request(app)
-        .get('/api/v1/friends/requests')
+        .get('/api/v1/friend-requests')
         .set('Authorization', `Bearer ${tokenB}`);
 
       expect(res.status).toBe(200);
@@ -82,13 +82,13 @@ describe('Friendships & Blocks E2E', () => {
     it('should accept a friend request', async () => {
       // A sends request to B
       await request(app)
-        .post('/api/v1/friends/requests')
+        .post('/api/v1/friend-requests')
         .set('Authorization', `Bearer ${tokenA}`)
         .send({ target_user_id: userB.userId });
 
       // B accepts
       const res = await request(app)
-        .patch(`/api/v1/friends/requests/${userA.userId}`)
+        .patch(`/api/v1/friend-requests/${userA.userId}`)
         .set('Authorization', `Bearer ${tokenB}`)
         .send({ status: 'accepted' });
 
@@ -114,11 +114,11 @@ describe('Friendships & Blocks E2E', () => {
 
     it('should mark the private room read-only when friendship is removed', async () => {
       await request(app)
-        .post('/api/v1/friends/requests')
+        .post('/api/v1/friend-requests')
         .set('Authorization', `Bearer ${tokenA}`)
         .send({ target_user_id: userB.userId });
       await request(app)
-        .patch(`/api/v1/friends/requests/${userA.userId}`)
+        .patch(`/api/v1/friend-requests/${userA.userId}`)
         .set('Authorization', `Bearer ${tokenB}`)
         .send({ status: 'accepted' });
 
@@ -136,25 +136,25 @@ describe('Friendships & Blocks E2E', () => {
     it('should reject a friend request and not affect accepted friendships', async () => {
       // C sends request to B
       await request(app)
-        .post('/api/v1/friends/requests')
+        .post('/api/v1/friend-requests')
         .set('Authorization', `Bearer ${tokenC}`)
         .send({ target_user_id: userB.userId });
 
       // B accepts C
       await request(app)
-        .patch(`/api/v1/friends/requests/${userC.userId}`)
+        .patch(`/api/v1/friend-requests/${userC.userId}`)
         .set('Authorization', `Bearer ${tokenB}`)
         .send({ status: 'accepted' });
 
       // A sends request to B
       await request(app)
-        .post('/api/v1/friends/requests')
+        .post('/api/v1/friend-requests')
         .set('Authorization', `Bearer ${tokenA}`)
         .send({ target_user_id: userB.userId });
 
       // B rejects A
       const res = await request(app)
-        .patch(`/api/v1/friends/requests/${userA.userId}`)
+        .patch(`/api/v1/friend-requests/${userA.userId}`)
         .set('Authorization', `Bearer ${tokenB}`)
         .send({ status: 'rejected' });
 
@@ -191,7 +191,7 @@ describe('Friendships & Blocks E2E', () => {
 
       // C tries to friend A
       const res = await request(app)
-        .post('/api/v1/friends/requests')
+        .post('/api/v1/friend-requests')
         .set('Authorization', `Bearer ${tokenC}`)
         .send({ target_user_id: userA.userId });
 
@@ -200,11 +200,11 @@ describe('Friendships & Blocks E2E', () => {
 
     it('should mark existing private room read-only when blocking a friend', async () => {
       await request(app)
-        .post('/api/v1/friends/requests')
+        .post('/api/v1/friend-requests')
         .set('Authorization', `Bearer ${tokenA}`)
         .send({ target_user_id: userB.userId });
       await request(app)
-        .patch(`/api/v1/friends/requests/${userA.userId}`)
+        .patch(`/api/v1/friend-requests/${userA.userId}`)
         .set('Authorization', `Bearer ${tokenB}`)
         .send({ status: 'accepted' });
 

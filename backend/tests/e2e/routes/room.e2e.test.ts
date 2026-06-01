@@ -44,19 +44,19 @@ describe('Room E2E', () => {
 
   const makeFriends = async () => {
     await request(app)
-      .post('/api/v1/friends/requests')
+      .post('/api/v1/friend-requests')
       .set('Authorization', `Bearer ${token}`)
       .send({ target_user_id: otherUserId });
 
     await request(app)
-      .patch(`/api/v1/friends/requests/${userId}`)
+      .patch(`/api/v1/friend-requests/${userId}`)
       .set('Authorization', `Bearer ${otherToken}`)
       .send({ status: 'accepted' });
   };
 
   it('should create a room', async () => {
     const res = await request(app)
-      .post('/api/v1/rooms/group')
+      .post('/api/v1/rooms')
       .set('Authorization', `Bearer ${token}`)
       .send({
         type: 'group',
@@ -70,7 +70,7 @@ describe('Room E2E', () => {
 
   it('should list rooms', async () => {
     await request(app)
-      .post('/api/v1/rooms/group')
+      .post('/api/v1/rooms')
       .set('Authorization', `Bearer ${token}`)
       .send({
         type: 'group',
@@ -89,9 +89,10 @@ describe('Room E2E', () => {
 
   it('should create a group with avatar and generated invite code, then join by code', async () => {
     const createRes = await request(app)
-      .post('/api/v1/rooms/group')
+      .post('/api/v1/rooms')
       .set('Authorization', `Bearer ${token}`)
       .send({
+        type: 'group',
         name: 'Invite Room',
         avatarUrl: 'https://example.com/group.png',
       });
@@ -101,8 +102,9 @@ describe('Room E2E', () => {
     expect(createRes.body.inviteCode).toEqual(expect.any(String));
 
     const joinRes = await request(app)
-      .post(`/api/v1/rooms/join/${createRes.body.inviteCode}`)
-      .set('Authorization', `Bearer ${otherToken}`);
+      .post(`/api/v1/rooms/${createRes.body.roomId}/members`)
+      .set('Authorization', `Bearer ${otherToken}`)
+      .send({ inviteCode: createRes.body.inviteCode });
 
     expect(joinRes.status).toBe(200);
     expect(joinRes.body.roomId).toBe(createRes.body.roomId);
@@ -112,18 +114,18 @@ describe('Room E2E', () => {
     await makeFriends();
 
     const first = await request(app)
-      .post('/api/v1/rooms/private')
+      .post('/api/v1/rooms')
       .set('Authorization', `Bearer ${token}`)
-      .send({ target_user_id: otherUserId });
+      .send({ type: 'private', target_user_id: otherUserId });
     const second = await request(app)
-      .post('/api/v1/rooms/private')
+      .post('/api/v1/rooms')
       .set('Authorization', `Bearer ${token}`)
-      .send({ target_user_id: otherUserId });
+      .send({ type: 'private', target_user_id: otherUserId });
 
-    expect(first.status).toBe(200);
+    expect(first.status).toBe(201);
     expect(first.body.type).toBe('private');
     expect(first.body.roomHash).toEqual(expect.any(String));
-    expect(second.status).toBe(200);
+    expect(second.status).toBe(201);
     expect(second.body.roomId).toBe(first.body.roomId);
 
     const ownerRooms = await request(app).get('/api/v1/rooms').set('Authorization', `Bearer ${token}`);
@@ -146,9 +148,9 @@ describe('Room E2E', () => {
       .send({ target_user_id: otherUserId });
 
     const res = await request(app)
-      .post('/api/v1/rooms/private')
+      .post('/api/v1/rooms')
       .set('Authorization', `Bearer ${token}`)
-      .send({ target_user_id: otherUserId });
+      .send({ type: 'private', target_user_id: otherUserId });
 
     expect(res.status).toBe(403);
   });

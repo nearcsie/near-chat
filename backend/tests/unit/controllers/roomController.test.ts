@@ -69,13 +69,13 @@ describe('roomController', () => {
     });
   });
 
-  describe('createGroup', () => {
+  describe('create (group)', () => {
     it('returns 201 with room on valid name', async () => {
       service.create.mockResolvedValue(room);
       const res = mockRes();
       const next = vi.fn();
 
-      await ctrl.createGroup(authedReq({ body: { name: 'Study Room' } }), res, next);
+      await ctrl.create(authedReq({ body: { type: 'group', name: 'Study Room' } }), res, next);
 
       expect(service.create).toHaveBeenCalledWith('user-1', {
         type: 'group',
@@ -92,7 +92,7 @@ describe('roomController', () => {
       const res = mockRes();
       const next = vi.fn();
 
-      await ctrl.createGroup(authedReq({ body: { name: '   ' } }), res, next);
+      await ctrl.create(authedReq({ body: { type: 'group', name: '   ' } }), res, next);
 
       expect(next).toHaveBeenCalledWith(expect.any(ValidationError));
       expect(res.status).not.toHaveBeenCalled();
@@ -102,7 +102,7 @@ describe('roomController', () => {
       const res = mockRes();
       const next = vi.fn();
 
-      await ctrl.createGroup(authedReq({ body: {} }), res, next);
+      await ctrl.create(authedReq({ body: { type: 'group' } }), res, next);
 
       expect(next).toHaveBeenCalledWith(expect.any(ValidationError));
     });
@@ -112,7 +112,7 @@ describe('roomController', () => {
       const res = mockRes();
       const next = vi.fn();
 
-      await ctrl.createGroup(authedReq({ body: { name: 'Study Room' } }), res, next);
+      await ctrl.create(authedReq({ body: { type: 'group', name: 'Study Room' } }), res, next);
 
       expect(next).toHaveBeenCalledWith(expect.any(Error));
     });
@@ -167,13 +167,13 @@ describe('roomController', () => {
     });
   });
 
-  describe('joinByCode', () => {
+  describe('join', () => {
     it('returns 200 with room', async () => {
       service.joinByCode.mockResolvedValue(room);
       const res = mockRes();
       const next = vi.fn();
 
-      await ctrl.joinByCode(authedReq({ params: { code: 'ABC123' } }), res, next);
+      await ctrl.join(authedReq({ body: { inviteCode: 'ABC123' } }), res, next);
 
       expect(service.joinByCode).toHaveBeenCalledWith('user-1', 'ABC123');
       expect(res.status).toHaveBeenCalledWith(200);
@@ -185,7 +185,7 @@ describe('roomController', () => {
       const res = mockRes();
       const next = vi.fn();
 
-      await ctrl.joinByCode(authedReq({ params: { code: 'BAD' } }), res, next);
+      await ctrl.join(authedReq({ body: { inviteCode: 'BAD' } }), res, next);
 
       expect(next).toHaveBeenCalledWith(expect.any(Error));
     });

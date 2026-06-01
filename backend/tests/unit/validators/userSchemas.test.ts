@@ -50,7 +50,7 @@ describe('user validation schemas', () => {
   });
 
   it('validates trimmed search queries', () => {
-    expect(searchQuerySchema.parse({ query: ' Alice ' })).toEqual({ query: 'Alice' });
-    expect(searchQuerySchema.safeParse({ query: '   ' }).success).toBe(false);
+    expect(searchQuerySchema.parse({ q: ' Alice ' })).toEqual({ q: 'Alice' });
+    expect(searchQuerySchema.safeParse({ q: '   ' }).success).toBe(false);
   });
 });

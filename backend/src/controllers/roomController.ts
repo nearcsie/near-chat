@@ -29,27 +29,26 @@ export const makeRoomController = (service: RoomService) => ({
     }
   },
 
-  async createGroup(req: Request, res: Response, next: NextFunction): Promise<void> {
+  async create(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const { name, avatarUrl, requireApproval, viewHistory } = req.body;
-      if (!name || !name.trim()) {
-        return next(new ValidationError('Room name cannot be empty'));
+      const { type } = req.body;
+      if (type === 'group') {
+        const { name, avatarUrl, requireApproval, viewHistory } = req.body;
+        if (!name || !name.trim()) {
+          return next(new ValidationError('Room name cannot be empty'));
+        }
+        const room = await service.create(req.user!.userId, { type: 'group', name, avatarUrl, requireApproval, viewHistory });
+        res.status(201).json(room);
+      } else if (type === 'private') {
+        const targetUserId = req.body.targetUserId ?? req.body.target_user_id;
+        if (!targetUserId) {
+          return next(new ValidationError('targetUserId is required'));
+        }
+        const room = await service.createPrivate(req.user!.userId, targetUserId);
+        res.status(201).json(room);
+      } else {
+        return next(new ValidationError('Invalid room type'));
       }
-      const room = await service.create(req.user!.userId, { type: 'group', name, avatarUrl, requireApproval, viewHistory });
-      res.status(201).json(room);
-    } catch (err) {
-      next(err);
-    }
-  },
-
-  async createPrivate(req: Request, res: Response, next: NextFunction): Promise<void> {
-    try {
-      const targetUserId = req.body.targetUserId ?? req.body.target_user_id;
-      if (!targetUserId) {
-        return next(new ValidationError('targetUserId is required'));
-      }
-      const room = await service.createPrivate(req.user!.userId, targetUserId);
-      res.status(200).json(room);
     } catch (err) {
       next(err);
     }
@@ -75,6 +74,12 @@ export const makeRoomController = (service: RoomService) => ({
 
   async update(req: Request<{ id: string }>, res: Response, next: NextFunction): Promise<void> {
     try {
+      const targetUserId = req.body.ownerId ?? req.body.owner_id;
+      if (targetUserId) {
+        await service.transferOwnership(req.params.id, req.user!.userId, targetUserId);
+        res.status(200).json({ message: 'Ownership transferred' });
+        return;
+      }
       const room = await service.update(req.params.id, req.user!.userId, req.body);
       res.status(200).json(room);
     } catch (err) {
@@ -82,9 +87,10 @@ export const makeRoomController = (service: RoomService) => ({
     }
   },
 
-  async joinByCode(req: Request<{ code: string }>, res: Response, next: NextFunction): Promise<void> {
+  async join(req: Request<{ id: string }>, res: Response, next: NextFunction): Promise<void> {
     try {
-      const room = await service.joinByCode(req.user!.userId, req.params.code);
+      const inviteCode = req.body.inviteCode ?? req.body.invite_code;
+      const room = await service.joinByCode(req.user!.userId, inviteCode);
       res.status(200).json(room);
     } catch (err) {
       next(err);
@@ -133,6 +139,11 @@ export const makeRoomController = (service: RoomService) => ({
 
   async updateMember(req: Request<{ id: string; userId: string }>, res: Response, next: NextFunction): Promise<void> {
     try {
+      if (req.body.status === 'approved') {
+        await service.approveMember(req.params.id, req.user!.userId, req.params.userId);
+        res.status(200).json({ message: 'Member approved' });
+        return;
+      }
       await service.updateMember(req.params.id, req.user!.userId, req.params.userId, req.body);
       res.status(200).json({ message: 'Member updated' });
     } catch (err) {
