@@ -78,13 +78,7 @@ export default function AppRail() {
 
   return (
     <nav className="h-full w-[84px] shrink-0 border-r border-border-primary bg-surface-muted flex flex-col items-stretch py-3 select-none">
-      <div className="px-3 pb-3">
-        <div className="h-10 border border-primary text-primary grid place-items-center font-mono text-sm font-bold">
-          9
-        </div>
-      </div>
-
-      <div className="flex flex-col gap-1 px-2">
+      <div className="flex flex-col">
         {items.map((item) => (
           <button
             key={item.key}
@@ -92,12 +86,13 @@ export default function AppRail() {
             title={item.label}
             aria-label={item.label}
             onClick={() => router.push(item.path)}
-            className={`relative flex min-h-[72px] flex-col items-center justify-center gap-1 border px-1 py-2 text-[10px] font-bold leading-tight transition-colors ${
+            className={`relative flex min-h-[72px] flex-col items-center justify-center gap-1 border border-transparent px-1 py-2 text-[10px] font-bold leading-tight transition-colors ${
               item.active
-                ? "border-border-primary bg-surface-card text-primary"
-                : "border-transparent text-text-muted hover:border-border-secondary hover:bg-surface-card hover:text-foreground"
+                ? "bg-surface-card text-primary"
+                : "text-text-muted hover:bg-surface-card hover:text-foreground"
             }`}
           >
+            {item.active && <span className="absolute left-0 top-0 bottom-0 w-1 bg-primary" />}
             <svg className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
               {item.icon}
             </svg>
