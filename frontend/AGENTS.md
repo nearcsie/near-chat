@@ -36,6 +36,7 @@ The Next.js 16 / React 19 client application. Styled with Tailwind CSS v4 and se
 - Socket.IO client should connect to `process.env.NEXT_PUBLIC_API_URL` with the JWT token in `auth: { token }`.
 - Run dev server: `pnpm dev` (requires Node, or use `docker compose up frontend`).
 - Package manager is **pnpm** — do not use npm or yarn.
+- No need to run Next.js production builds (`pnpm run build` or `next build`) during development. Verify via TypeScript checks (`pnpm exec tsc --noEmit`) and manual testing.
 
 ### Testing Requirements
 - No tests are currently set up for the frontend.
@@ -45,6 +46,7 @@ The Next.js 16 / React 19 client application. Styled with Tailwind CSS v4 and se
 - Server Components by default; add `"use client"` directive for interactive components that use hooks or browser APIs.
 - Font setup uses `next/font/google` (Geist Sans + Geist Mono) with CSS variables.
 - Tailwind classes are the primary styling mechanism — no CSS modules or styled-components.
+- **Centralized i18n**: UI translation strings are stored in `src/locales/zh-TW.json` and `src/locales/en.json`. Use the `useTranslation` hook from `@/hooks/useTranslation` in Client Components to look up text (`t("namespace.key", replacements?)`). Do not hardcode UI text strings or define local translation copy constants. Keep native language labels (`繁體中文` and `English`) statically set in select dropdowns.
 
 ## Dependencies
 
@@ -58,3 +60,4 @@ The Next.js 16 / React 19 client application. Styled with Tailwind CSS v4 and se
 - `typescript` ^5 — type safety
 
 <!-- MANUAL: Any manually added notes below this line are preserved on regeneration -->
+

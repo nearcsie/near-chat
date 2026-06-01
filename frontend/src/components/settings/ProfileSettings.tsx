@@ -9,55 +9,7 @@ import { Checkbox } from "@/components/ui/Checkbox";
 import { Input } from "@/components/ui/Input";
 import FeedbackMessage, { SettingsFeedback } from "@/components/settings/FeedbackMessage";
 import SectionTitle from "@/components/settings/SectionTitle";
-
-const profileCopy = {
-  "zh-TW": {
-    profile: "個人資料",
-    changeAvatar: "更換頭像",
-    username: "使用者名稱",
-    email: "Email",
-    notifications: "通知",
-    desktopNotifications: "桌面通知",
-    messageSounds: "訊息音效",
-    appearance: "外觀",
-    light: "淺色",
-    dark: "深色",
-    language: "語言",
-    traditionalChinese: "繁體中文",
-    english: "英文",
-    security: "安全性",
-    newPassword: "新密碼",
-    confirmPassword: "確認密碼",
-    cancel: "取消",
-    saveProfile: "儲存個人資料",
-    profileSaved: "個人設定已儲存。",
-    passwordTooShort: "密碼至少需要 8 個字元。",
-    passwordMismatch: "密碼確認不一致。",
-  },
-  en: {
-    profile: "Profile",
-    changeAvatar: "Change avatar",
-    username: "Username",
-    email: "Email",
-    notifications: "Notifications",
-    desktopNotifications: "Desktop notifications",
-    messageSounds: "Message sounds",
-    appearance: "Appearance",
-    light: "Light",
-    dark: "Dark",
-    language: "Language",
-    traditionalChinese: "Traditional Chinese",
-    english: "English",
-    security: "Security",
-    newPassword: "New password",
-    confirmPassword: "Confirm password",
-    cancel: "Cancel",
-    saveProfile: "Save profile",
-    profileSaved: "Profile settings saved.",
-    passwordTooShort: "Password must be at least 8 characters.",
-    passwordMismatch: "Password confirmation does not match.",
-  },
-} as const;
+import { useTranslation } from "@/hooks/useTranslation";
 
 export default function ProfileSettings() {
   const router = useRouter();
@@ -96,7 +48,7 @@ export default function ProfileSettings() {
     setMessageSounds(localStorage.getItem("notify-sound") !== "false");
   }, [uiLanguage, user]);
 
-  const t = profileCopy[personalLanguage];
+  const { t } = useTranslation();
 
   const handleBack = () => {
     router.push(rooms[0] ? `/chat/${rooms[0].id}` : "/");
@@ -128,12 +80,12 @@ export default function ProfileSettings() {
     setFeedback(null);
 
     if (personalNewPassword && personalNewPassword.length < 8) {
-      setFeedback({ type: "error", text: t.passwordTooShort });
+      setFeedback({ type: "error", text: t("profile.passwordTooShort") });
       return;
     }
 
     if (personalNewPassword !== personalConfirmPassword) {
-      setFeedback({ type: "error", text: t.passwordMismatch });
+      setFeedback({ type: "error", text: t("profile.passwordMismatch") });
       return;
     }
 
@@ -146,7 +98,7 @@ export default function ProfileSettings() {
       notifyDesktop: desktopNotifications,
       notifySound: messageSounds,
     });
-    setFeedback({ type: "success", text: t.profileSaved });
+    setFeedback({ type: "success", text: t("profile.profileSaved") });
   };
 
   return (
@@ -154,58 +106,58 @@ export default function ProfileSettings() {
       <FeedbackMessage feedback={feedback} />
 
       <form onSubmit={handleProfileSubmit} className="flex flex-col gap-6 max-w-4xl">
-        <SectionTitle title={t.profile} />
+        <SectionTitle title={t("profile.profile")} />
         <div className="flex items-center gap-6 py-2">
           <Avatar name={personalUsername} src={personalAvatar} size="lg" />
           <Button type="button" variant="secondary" onClick={handlePersonalAvatarChange}>
-            {t.changeAvatar}
+            {t("profile.changeAvatar")}
           </Button>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Input label={t.username} value={personalUsername} onChange={(event) => setPersonalUsername(event.target.value)} required />
-          <Input label={t.email} type="email" value={personalEmail} onChange={(event) => setPersonalEmail(event.target.value)} required />
+          <Input label={t("profile.username")} value={personalUsername} onChange={(event) => setPersonalUsername(event.target.value)} required />
+          <Input label={t("profile.email")} type="email" value={personalEmail} onChange={(event) => setPersonalEmail(event.target.value)} required />
         </div>
 
-        <SectionTitle title={t.notifications} />
+        <SectionTitle title={t("profile.notifications")} />
         <div className="flex flex-col gap-3">
-          <Checkbox label={t.desktopNotifications} checked={desktopNotifications} onChange={(event) => setDesktopNotifications(event.target.checked)} />
-          <Checkbox label={t.messageSounds} checked={messageSounds} onChange={(event) => setMessageSounds(event.target.checked)} />
+          <Checkbox label={t("profile.desktopNotifications")} checked={desktopNotifications} onChange={(event) => setDesktopNotifications(event.target.checked)} />
+          <Checkbox label={t("profile.messageSounds")} checked={messageSounds} onChange={(event) => setMessageSounds(event.target.checked)} />
         </div>
 
-        <SectionTitle title={t.appearance} />
+        <SectionTitle title={t("profile.appearance")} />
         <div className="flex gap-6">
           <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
             <input type="radio" name="theme" checked={personalTheme === "light"} onChange={() => handlePersonalThemeChange("light")} className="accent-primary" />
-            {t.light}
+            {t("profile.light")}
           </label>
           <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
             <input type="radio" name="theme" checked={personalTheme === "dark"} onChange={() => handlePersonalThemeChange("dark")} className="accent-primary" />
-            {t.dark}
+            {t("profile.dark")}
           </label>
         </div>
 
-        <SectionTitle title={t.language} />
+        <SectionTitle title={t("profile.language")} />
         <select
           value={personalLanguage}
           onChange={(event) => handleLanguageChange(event.target.value as UiLanguage)}
           className="bg-surface-card border border-border-secondary hover:border-border-primary focus:border-primary focus:outline-none rounded-sm px-3 py-2.5 text-sm text-foreground transition-colors max-w-xs cursor-pointer"
         >
-          <option value="zh-TW">{t.traditionalChinese}</option>
-          <option value="en">{t.english}</option>
+          <option value="zh-TW">繁體中文</option>
+          <option value="en">English</option>
         </select>
 
-        <SectionTitle title={t.security} />
+        <SectionTitle title={t("profile.security")} />
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Input label={t.newPassword} type="password" value={personalNewPassword} onChange={(event) => setPersonalNewPassword(event.target.value)} />
-          <Input label={t.confirmPassword} type="password" value={personalConfirmPassword} onChange={(event) => setPersonalConfirmPassword(event.target.value)} />
+          <Input label={t("profile.newPassword")} type="password" value={personalNewPassword} onChange={(event) => setPersonalNewPassword(event.target.value)} />
+          <Input label={t("profile.confirmPassword")} type="password" value={personalConfirmPassword} onChange={(event) => setPersonalConfirmPassword(event.target.value)} />
         </div>
 
         <div className="border-t border-border-primary pt-6 flex items-center justify-end gap-3">
           <Button type="button" variant="secondary" onClick={handleBack}>
-            {t.cancel}
+            {t("profile.cancel")}
           </Button>
           <Button type="submit" variant="primary">
-            {t.saveProfile}
+            {t("profile.saveProfile")}
           </Button>
         </div>
       </form>

@@ -8,61 +8,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
-
-const sidebarCopy = {
-  "zh-TW": {
-    newFolder: "新增資料夾",
-    newChat: "新增聊天室",
-    chats: "聊天室",
-    folders: "資料夾",
-    friends: "好友",
-    friendList: "好友列表",
-    friendsUnit: "位好友",
-    pending: "待處理",
-    backToChat: "返回聊天",
-    settings: "設定",
-    logout: "登出",
-    createChat: "建立聊天室",
-    chatName: "聊天室名稱",
-    chatNamePlaceholder: "好友或群組名稱",
-    directMessage: "私人訊息",
-    group: "群組",
-    folder: "資料夾",
-    rootChats: "根目錄聊天室",
-    cancel: "取消",
-    create: "建立",
-    createFolder: "建立資料夾",
-    folderName: "資料夾名稱",
-    folderNamePlaceholder: "課程專案",
-    noMessages: "尚無訊息",
-  },
-  en: {
-    newFolder: "New folder",
-    newChat: "New chat",
-    chats: "Chats",
-    folders: "Folders",
-    friends: "Friends",
-    friendList: "Friend list",
-    friendsUnit: "friends",
-    pending: "pending",
-    backToChat: "Back to chat",
-    settings: "Settings",
-    logout: "Logout",
-    createChat: "Create chat",
-    chatName: "Chat name",
-    chatNamePlaceholder: "Friend or group name",
-    directMessage: "Direct message",
-    group: "Group",
-    folder: "Folder",
-    rootChats: "Root chats",
-    cancel: "Cancel",
-    create: "Create",
-    createFolder: "Create folder",
-    folderName: "Folder name",
-    folderNamePlaceholder: "Course Work",
-    noMessages: "No messages yet",
-  },
-} as const;
+import { useTranslation } from "@/hooks/useTranslation";
 
 export default function Sidebar() {
   const router = useRouter();
@@ -72,7 +18,6 @@ export default function Sidebar() {
     rooms,
     folders,
     user,
-    uiLanguage,
     activeRoomNicknames,
     toggleFolder,
     handleCreateRoom,
@@ -97,7 +42,7 @@ export default function Sidebar() {
   const rootRooms = rooms.filter((room) => !room.folderId);
   const getFolderRooms = (folderId: string) => rooms.filter((room) => room.folderId === folderId);
   const activeUserDisplayName = (activeRoomId && activeRoomNicknames[activeRoomId]) || user.username;
-  const t = sidebarCopy[uiLanguage];
+  const { t } = useTranslation();
 
   const handleCreateRoomSubmit = (event: React.FormEvent) => {
     event.preventDefault();
@@ -174,17 +119,17 @@ export default function Sidebar() {
           <span className="font-mono text-sm font-bold uppercase tracking-wider">DB-9CHAT</span>
         </div>
         <div className="flex gap-1">
-          <IconButton label={t.newFolder} onClick={() => setIsCreateFolderOpen(true)}>
+          <IconButton label={t("sidebar.newFolder")} onClick={() => setIsCreateFolderOpen(true)}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M3 7h6l2 2h10v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" />
           </IconButton>
-          <IconButton label={t.newChat} onClick={() => setIsCreateRoomOpen(true)}>
+          <IconButton label={t("sidebar.newChat")} onClick={() => setIsCreateRoomOpen(true)}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
           </IconButton>
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto select-none">
-        <SectionLabel label={t.chats} />
+        <SectionLabel label={t("sidebar.chats")} />
         <div
           onDragOver={(event) => {
             if (!draggedRoomId) return;
@@ -207,14 +152,14 @@ export default function Sidebar() {
               onDragStart={(event) => handleRoomDragStart(event, room.id)}
               onDragEnd={resetDragState}
               avatarSrc={getAvatarForUser(room.name, user.avatar, user.username)}
-              noMessagesText={t.noMessages}
+              noMessagesText={t("sidebar.noMessages")}
             />
           ))}
         </div>
 
         {folders.length > 0 && (
           <>
-            <SectionLabel label={t.folders} />
+            <SectionLabel label={t("sidebar.folders")} />
             <div className="flex flex-col gap-0.5 pb-2">
               {folders.map((folder) => {
                 const folderRooms = getFolderRooms(folder.id);
@@ -253,7 +198,7 @@ export default function Sidebar() {
                             onDragStart={(event) => handleRoomDragStart(event, room.id)}
                             onDragEnd={resetDragState}
                             avatarSrc={getAvatarForUser(room.name, user.avatar, user.username)}
-                            noMessagesText={t.noMessages}
+                            noMessagesText={t("sidebar.noMessages")}
                           />
                         ))}
                       </div>
@@ -276,22 +221,22 @@ export default function Sidebar() {
         </div>
         <div className="flex items-center justify-between border-t border-border-secondary/40 pt-3">
           <Button variant="ghost" onClick={handleSettingsClick} className="text-xs">
-            {isSettingsPage ? t.backToChat : t.settings}
+            {isSettingsPage ? t("sidebar.backToChat") : t("sidebar.settings")}
           </Button>
           <Button variant="ghost" onClick={handleLogout} className="text-xs text-red-600 hover:text-red-700">
-            {t.logout}
+            {t("sidebar.logout")}
           </Button>
         </div>
       </div>
 
-      <Modal isOpen={isCreateRoomOpen} onClose={() => setIsCreateRoomOpen(false)} title={t.createChat}>
+      <Modal isOpen={isCreateRoomOpen} onClose={() => setIsCreateRoomOpen(false)} title={t("sidebar.createChat")}>
         <form onSubmit={handleCreateRoomSubmit} className="flex flex-col gap-5">
           <Input
-            label={t.chatName}
+            label={t("sidebar.chatName")}
             value={newRoomName}
             onChange={(event) => setNewRoomName(event.target.value)}
             required
-            placeholder={t.chatNamePlaceholder}
+            placeholder={t("sidebar.chatNamePlaceholder")}
           />
           <div className="flex gap-6">
             <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
@@ -302,7 +247,7 @@ export default function Sidebar() {
                 onChange={() => setNewRoomType("msg")}
                 className="accent-primary"
               />
-              {t.directMessage}
+              {t("sidebar.directMessage")}
             </label>
             <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
               <input
@@ -312,17 +257,17 @@ export default function Sidebar() {
                 onChange={() => setNewRoomType("group")}
                 className="accent-primary"
               />
-              {t.group}
+              {t("sidebar.group")}
             </label>
           </div>
           <label className="flex flex-col gap-1.5">
-              <span className="text-xs font-bold uppercase tracking-wider text-text-muted">{t.folder}</span>
+            <span className="text-xs font-bold uppercase tracking-wider text-text-muted">{t("sidebar.folder")}</span>
             <select
               value={newRoomFolder}
               onChange={(event) => setNewRoomFolder(event.target.value)}
               className="bg-surface-card border border-border-secondary hover:border-border-primary focus:border-primary focus:outline-none rounded-sm px-3 py-2.5 text-sm text-foreground transition-colors"
             >
-              <option value="">{t.rootChats}</option>
+              <option value="">{t("sidebar.rootChats")}</option>
               {folders.map((folder) => (
                 <option key={folder.id} value={folder.id}>
                   {folder.name}
@@ -332,30 +277,30 @@ export default function Sidebar() {
           </label>
           <div className="border-t border-border-primary pt-5 flex items-center justify-end gap-3">
             <Button type="button" variant="secondary" onClick={() => setIsCreateRoomOpen(false)}>
-              {t.cancel}
+              {t("sidebar.cancel")}
             </Button>
             <Button type="submit" variant="primary">
-              {t.create}
+              {t("sidebar.create")}
             </Button>
           </div>
         </form>
       </Modal>
 
-      <Modal isOpen={isCreateFolderOpen} onClose={() => setIsCreateFolderOpen(false)} title={t.createFolder}>
+      <Modal isOpen={isCreateFolderOpen} onClose={() => setIsCreateFolderOpen(false)} title={t("sidebar.createFolder")}>
         <form onSubmit={handleCreateFolderSubmit} className="flex flex-col gap-5">
           <Input
-            label={t.folderName}
+            label={t("sidebar.folderName")}
             value={newFolderName}
             onChange={(event) => setNewFolderName(event.target.value)}
             required
-            placeholder={t.folderNamePlaceholder}
+            placeholder={t("sidebar.folderNamePlaceholder")}
           />
           <div className="border-t border-border-primary pt-5 flex items-center justify-end gap-3">
             <Button type="button" variant="secondary" onClick={() => setIsCreateFolderOpen(false)}>
-              {t.cancel}
+              {t("sidebar.cancel")}
             </Button>
             <Button type="submit" variant="primary">
-              {t.create}
+              {t("sidebar.create")}
             </Button>
           </div>
         </form>

@@ -4,27 +4,15 @@ import type React from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useChat } from "@/context/ChatContext";
 import { Badge } from "@/components/ui/Badge";
-
-const railCopy = {
-  "zh-TW": {
-    chats: "聊天室",
-    friends: "好友列表",
-    emergency: "緊急聯絡設定",
-  },
-  en: {
-    chats: "Chats",
-    friends: "Friends",
-    emergency: "Emergency",
-  },
-} as const;
+import { useTranslation } from "@/hooks/useTranslation";
 
 type RailItemKey = "chats" | "friends" | "emergency";
 
 export default function AppRail() {
   const router = useRouter();
   const pathname = usePathname();
-  const { rooms, friendRequests, uiLanguage } = useChat();
-  const t = railCopy[uiLanguage];
+  const { rooms, friendRequests } = useChat();
+  const { t } = useTranslation();
 
   const pendingIncoming = friendRequests.filter((request) => request.direction === "incoming").length;
   const firstChatPath = rooms[0] ? `/chat/${rooms[0].id}` : "/";
@@ -39,7 +27,7 @@ export default function AppRail() {
   }[] = [
     {
       key: "chats",
-      label: t.chats,
+      label: t("rail.chats"),
       path: firstChatPath,
       active: pathname === "/" || pathname.startsWith("/chat"),
       icon: (
@@ -51,7 +39,7 @@ export default function AppRail() {
     },
     {
       key: "friends",
-      label: t.friends,
+      label: t("rail.friends"),
       path: "/friends",
       active: pathname === "/friends",
       badge: pendingIncoming,
@@ -64,7 +52,7 @@ export default function AppRail() {
     },
     {
       key: "emergency",
-      label: t.emergency,
+      label: t("rail.emergency"),
       path: "/emergency",
       active: pathname === "/emergency",
       icon: (

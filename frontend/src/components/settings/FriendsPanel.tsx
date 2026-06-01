@@ -6,78 +6,13 @@ import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
-
-const friendsCopy = {
-  "zh-TW": {
-    friendList: "好友列表",
-    accepted: "已接受",
-    search: "搜尋",
-    searchPlaceholder: "名稱或 email",
-    emergency: "緊急聯絡人",
-    remove: "移除",
-    block: "封鎖",
-    noMatch: "沒有符合搜尋的好友。",
-    addFriend: "新增好友",
-    mockRequest: "模擬邀請",
-    name: "名稱",
-    namePlaceholder: "課程夥伴",
-    email: "Email",
-    emailPlaceholder: "friend@example.com",
-    sendRequest: "送出邀請",
-    friendRequests: "好友邀請",
-    incoming: "收到",
-    outgoing: "送出",
-    incomingTitle: "收到的邀請",
-    outgoingTitle: "送出的邀請",
-    noIncoming: "沒有收到的邀請。",
-    noOutgoing: "沒有送出的邀請。",
-    accept: "接受",
-    reject: "拒絕",
-    cancel: "取消",
-    blockedUsers: "封鎖名單",
-    blocked: "已封鎖",
-    unblock: "解除封鎖",
-    noBlocked: "沒有封鎖使用者。",
-  },
-  en: {
-    friendList: "Friend list",
-    accepted: "accepted",
-    search: "Search",
-    searchPlaceholder: "Name or email",
-    emergency: "Emergency",
-    remove: "Remove",
-    block: "Block",
-    noMatch: "No friends match this search.",
-    addFriend: "Add friend",
-    mockRequest: "Mock request",
-    name: "Name",
-    namePlaceholder: "Course teammate",
-    email: "Email",
-    emailPlaceholder: "friend@example.com",
-    sendRequest: "Send request",
-    friendRequests: "Friend requests",
-    incoming: "incoming",
-    outgoing: "outgoing",
-    incomingTitle: "Incoming",
-    outgoingTitle: "Outgoing",
-    noIncoming: "No incoming requests.",
-    noOutgoing: "No outgoing requests.",
-    accept: "Accept",
-    reject: "Reject",
-    cancel: "Cancel",
-    blockedUsers: "Blocked users",
-    blocked: "blocked",
-    unblock: "Unblock",
-    noBlocked: "No blocked users.",
-  },
-} as const;
+import { useTranslation } from "@/hooks/useTranslation";
 
 export default function FriendsPanel() {
   const {
     friends,
     friendRequests,
     blockedUsers,
-    uiLanguage,
     sendFriendRequest,
     acceptFriendRequest,
     rejectFriendRequest,
@@ -101,7 +36,7 @@ export default function FriendsPanel() {
 
   const incomingRequests = friendRequests.filter((request) => request.direction === "incoming");
   const outgoingRequests = friendRequests.filter((request) => request.direction === "outgoing");
-  const t = friendsCopy[uiLanguage];
+  const { t } = useTranslation();
 
   const handleSendRequest = (event: React.FormEvent) => {
     event.preventDefault();
@@ -114,13 +49,13 @@ export default function FriendsPanel() {
     <div className="flex flex-col gap-6">
       <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_320px] gap-6">
         <section className="border border-border-primary rounded-sm bg-surface-card">
-          <PanelHeader title={t.friendList} meta={`${friends.length} ${t.accepted}`} />
+          <PanelHeader title={t("friends.friendList")} meta={`${friends.length} ${t("friends.accepted")}`} />
           <div className="p-4 border-b border-border-secondary">
             <Input
-              label={t.search}
+              label={t("friends.search")}
               value={searchText}
               onChange={(event) => setSearchText(event.target.value)}
-              placeholder={t.searchPlaceholder}
+              placeholder={t("friends.searchPlaceholder")}
             />
           </div>
           <div className="divide-y divide-border-secondary">
@@ -131,7 +66,7 @@ export default function FriendsPanel() {
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <p className="text-sm font-semibold text-foreground truncate">{friend.name}</p>
-                      {friend.isEmergencyContact && <Badge variant="secondary">{t.emergency}</Badge>}
+                      {friend.isEmergencyContact && <Badge variant="secondary">{t("friends.emergency")}</Badge>}
                     </div>
                     <p className="text-[10px] text-text-muted font-mono truncate">{friend.email}</p>
                   </div>
@@ -143,7 +78,7 @@ export default function FriendsPanel() {
                     className="text-xs py-1 px-2"
                     onClick={() => removeFriend(friend.id)}
                   >
-                    {t.remove}
+                    {t("friends.remove")}
                   </Button>
                   <Button
                     type="button"
@@ -151,67 +86,67 @@ export default function FriendsPanel() {
                     className="text-xs py-1 px-2 text-red-600"
                     onClick={() => blockFriend(friend.id)}
                   >
-                    {t.block}
+                    {t("friends.block")}
                   </Button>
                 </div>
               </div>
             ))}
             {filteredFriends.length === 0 && (
-              <div className="p-6 text-center text-xs text-text-muted">{t.noMatch}</div>
+              <div className="p-6 text-center text-xs text-text-muted">{t("friends.noMatch")}</div>
             )}
           </div>
         </section>
 
         <section className="border border-border-primary rounded-sm bg-surface-card">
-          <PanelHeader title={t.addFriend} meta={t.mockRequest} />
+          <PanelHeader title={t("friends.addFriend")} meta={t("friends.mockRequest")} />
           <form onSubmit={handleSendRequest} className="p-4 flex flex-col gap-4">
             <Input
-              label={t.name}
+              label={t("friends.name")}
               value={newFriendName}
               onChange={(event) => setNewFriendName(event.target.value)}
-              placeholder={t.namePlaceholder}
+              placeholder={t("friends.namePlaceholder")}
               required
             />
             <Input
-              label={t.email}
+              label={t("friends.email")}
               type="email"
               value={newFriendEmail}
               onChange={(event) => setNewFriendEmail(event.target.value)}
-              placeholder={t.emailPlaceholder}
+              placeholder={t("friends.emailPlaceholder")}
               required
             />
             <Button type="submit" variant="primary">
-              {t.sendRequest}
+              {t("friends.sendRequest")}
             </Button>
           </form>
         </section>
       </div>
 
       <section className="border border-border-primary rounded-sm bg-surface-card">
-        <PanelHeader title={t.friendRequests} meta={`${incomingRequests.length} ${t.incoming} / ${outgoingRequests.length} ${t.outgoing}`} />
+        <PanelHeader title={t("friends.friendRequests")} meta={`${incomingRequests.length} ${t("friends.incoming")} / ${outgoingRequests.length} ${t("friends.outgoing")}`} />
         <div className="grid grid-cols-1 lg:grid-cols-2 divide-y lg:divide-y-0 lg:divide-x divide-border-secondary">
           <RequestColumn
-            title={t.incomingTitle}
-            empty={t.noIncoming}
+            title={t("friends.incomingTitle")}
+            empty={t("friends.noIncoming")}
             requests={incomingRequests}
             renderActions={(requestId) => (
               <>
                 <Button type="button" variant="primary" className="text-xs py-1 px-2" onClick={() => acceptFriendRequest(requestId)}>
-                  {t.accept}
+                  {t("friends.accept")}
                 </Button>
                 <Button type="button" variant="secondary" className="text-xs py-1 px-2" onClick={() => rejectFriendRequest(requestId)}>
-                  {t.reject}
+                  {t("friends.reject")}
                 </Button>
               </>
             )}
           />
           <RequestColumn
-            title={t.outgoingTitle}
-            empty={t.noOutgoing}
+            title={t("friends.outgoingTitle")}
+            empty={t("friends.noOutgoing")}
             requests={outgoingRequests}
             renderActions={(requestId) => (
               <Button type="button" variant="secondary" className="text-xs py-1 px-2" onClick={() => rejectFriendRequest(requestId)}>
-                {t.cancel}
+                {t("friends.cancel")}
               </Button>
             )}
           />
@@ -219,7 +154,7 @@ export default function FriendsPanel() {
       </section>
 
       <section className="border border-border-primary rounded-sm bg-surface-card">
-        <PanelHeader title={t.blockedUsers} meta={`${blockedUsers.length} ${t.blocked}`} />
+        <PanelHeader title={t("friends.blockedUsers")} meta={`${blockedUsers.length} ${t("friends.blocked")}`} />
         <div className="divide-y divide-border-secondary">
           {blockedUsers.map((user) => (
             <div key={user.id} className="p-4 flex items-center justify-between gap-4">
@@ -228,12 +163,12 @@ export default function FriendsPanel() {
                 <p className="text-[10px] text-text-muted font-mono truncate">{user.email}</p>
               </div>
               <Button type="button" variant="secondary" className="text-xs py-1 px-2" onClick={() => unblockUser(user.id)}>
-                {t.unblock}
+                {t("friends.unblock")}
               </Button>
             </div>
           ))}
           {blockedUsers.length === 0 && (
-            <div className="p-6 text-center text-xs text-text-muted">{t.noBlocked}</div>
+            <div className="p-6 text-center text-xs text-text-muted">{t("friends.noBlocked")}</div>
           )}
         </div>
       </section>

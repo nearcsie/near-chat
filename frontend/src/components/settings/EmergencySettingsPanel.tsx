@@ -8,58 +8,24 @@ import { Checkbox } from "@/components/ui/Checkbox";
 import { Input } from "@/components/ui/Input";
 import FeedbackMessage, { SettingsFeedback } from "@/components/settings/FeedbackMessage";
 import SectionTitle from "@/components/settings/SectionTitle";
-
-const emergencyCopy = {
-  "zh-TW": {
-    emergencyReporting: "離線警示",
-    enableOfflineWarning: "啟用離線警示",
-    warningDays: "警示天數",
-    defaultAlertMessage: "預設警示訊息",
-    defaultMessage: "我已經離線好幾天，請協助確認我的狀況。",
-    emergencyContacts: "緊急聯絡人",
-    addFriendAsContact: "加入好友為緊急聯絡人",
-    selectFriend: "選擇好友",
-    alertMessage: "警示訊息",
-    remove: "移除",
-    noEmergencyContacts: "尚未選擇緊急聯絡人。",
-    cancel: "取消",
-    saveEmergency: "儲存緊急設定",
-    emergencySaved: "緊急聯絡設定已儲存。",
-  },
-  en: {
-    emergencyReporting: "Emergency reporting",
-    enableOfflineWarning: "Enable offline warning",
-    warningDays: "Warning days",
-    defaultAlertMessage: "Default alert message",
-    defaultMessage: "I have been offline for several days. Please check in with me.",
-    emergencyContacts: "Emergency contacts",
-    addFriendAsContact: "Add friend as contact",
-    selectFriend: "Select a friend",
-    alertMessage: "Alert message",
-    remove: "Remove",
-    noEmergencyContacts: "No emergency contacts selected.",
-    cancel: "Cancel",
-    saveEmergency: "Save emergency settings",
-    emergencySaved: "Emergency contact settings saved.",
-  },
-} as const;
+import { useTranslation } from "@/hooks/useTranslation";
 
 export default function EmergencySettingsPanel() {
   const router = useRouter();
-  const { rooms, friends, emergencySettings, uiLanguage, saveEmergencySettings } = useChat();
+  const { rooms, friends, emergencySettings, saveEmergencySettings } = useChat();
   const [warningEnabled, setWarningEnabled] = useState(true);
   const [warningDays, setWarningDays] = useState(7);
   const [emergencyContacts, setEmergencyContacts] = useState<EmergencyContact[]>([]);
   const [defaultEmergencyMessage, setDefaultEmergencyMessage] = useState("");
   const [feedback, setFeedback] = useState<SettingsFeedback | null>(null);
-  const t = emergencyCopy[uiLanguage];
+  const { t } = useTranslation();
 
   useEffect(() => {
     setWarningEnabled(emergencySettings.warningEnabled);
     setWarningDays(emergencySettings.warningDays);
     setEmergencyContacts(emergencySettings.contacts);
-    setDefaultEmergencyMessage(emergencySettings.contacts[0]?.message || emergencyCopy[uiLanguage].defaultMessage);
-  }, [emergencySettings, uiLanguage]);
+    setDefaultEmergencyMessage(emergencySettings.contacts[0]?.message || t("emergency.defaultMessage"));
+  }, [emergencySettings, t]);
 
   const availableEmergencyFriends = useMemo(
     () => friends.filter((friend) => !emergencyContacts.some((contact) => contact.contactId === friend.id)),
@@ -103,7 +69,7 @@ export default function EmergencySettingsPanel() {
       contacts: emergencyContacts,
     };
     saveEmergencySettings(settings);
-    setFeedback({ type: "success", text: t.emergencySaved });
+    setFeedback({ type: "success", text: t("emergency.emergencySaved") });
   };
 
   return (
@@ -111,34 +77,34 @@ export default function EmergencySettingsPanel() {
       <FeedbackMessage feedback={feedback} />
 
       <form onSubmit={handleEmergencySubmit} className="flex flex-col gap-6 max-w-5xl">
-        <SectionTitle title={t.emergencyReporting} />
+        <SectionTitle title={t("emergency.emergencyReporting")} />
         <div className="border border-border-primary rounded-sm bg-surface-card p-4 flex flex-col gap-4">
           <Checkbox
-            label={t.enableOfflineWarning}
+            label={t("emergency.enableOfflineWarning")}
             checked={warningEnabled}
             onChange={(event) => setWarningEnabled(event.target.checked)}
           />
           <div className="grid grid-cols-1 md:grid-cols-[180px_minmax(0,1fr)] gap-4">
             <Input
-              label={t.warningDays}
+              label={t("emergency.warningDays")}
               type="number"
               min={1}
               value={warningDays}
               onChange={(event) => setWarningDays(Number(event.target.value))}
             />
             <Input
-              label={t.defaultAlertMessage}
+              label={t("emergency.defaultAlertMessage")}
               value={defaultEmergencyMessage}
               onChange={(event) => setDefaultEmergencyMessage(event.target.value)}
             />
           </div>
         </div>
 
-        <SectionTitle title={t.emergencyContacts} />
+        <SectionTitle title={t("emergency.emergencyContacts")} />
         <div className="border border-border-primary rounded-sm bg-surface-card">
           <div className="p-4 border-b border-border-secondary flex flex-col md:flex-row md:items-end gap-4">
             <label className="flex flex-col gap-1.5 flex-1">
-              <span className="text-xs font-bold uppercase tracking-wider text-text-muted">{t.addFriendAsContact}</span>
+              <span className="text-xs font-bold uppercase tracking-wider text-text-muted">{t("emergency.addFriendAsContact")}</span>
               <select
                 className="bg-surface-card border border-border-secondary hover:border-border-primary focus:border-primary focus:outline-none rounded-sm px-3 py-2.5 text-sm text-foreground transition-colors"
                 defaultValue=""
@@ -149,7 +115,7 @@ export default function EmergencySettingsPanel() {
                   }
                 }}
               >
-                <option value="">{t.selectFriend}</option>
+                <option value="">{t("emergency.selectFriend")}</option>
                 {availableEmergencyFriends.map((friend) => (
                   <option key={friend.id} value={friend.id}>
                     {friend.name} ({friend.email})
@@ -167,27 +133,27 @@ export default function EmergencySettingsPanel() {
                   <p className="text-[10px] text-text-muted font-mono truncate">{contact.email}</p>
                 </div>
                 <Input
-                  label={t.alertMessage}
+                  label={t("emergency.alertMessage")}
                   value={contact.message}
                   onChange={(event) => updateEmergencyContactMessage(contact.id, event.target.value)}
                 />
                 <Button type="button" variant="secondary" className="text-xs py-2 px-3 text-red-600" onClick={() => removeEmergencyContact(contact.id)}>
-                  {t.remove}
+                  {t("emergency.remove")}
                 </Button>
               </div>
             ))}
             {emergencyContacts.length === 0 && (
-              <div className="p-6 text-center text-xs text-text-muted">{t.noEmergencyContacts}</div>
+              <div className="p-6 text-center text-xs text-text-muted">{t("emergency.noEmergencyContacts")}</div>
             )}
           </div>
         </div>
 
         <div className="border-t border-border-primary pt-6 flex items-center justify-end gap-3">
           <Button type="button" variant="secondary" onClick={handleBack}>
-            {t.cancel}
+            {t("emergency.cancel")}
           </Button>
           <Button type="submit" variant="primary">
-            {t.saveEmergency}
+            {t("emergency.saveEmergency")}
           </Button>
         </div>
       </form>
