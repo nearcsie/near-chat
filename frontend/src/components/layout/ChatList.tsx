@@ -269,7 +269,7 @@ function RoomItem({
           {room.unreadCount ? <Badge variant="danger">{room.unreadCount}</Badge> : null}
         </span>
       </span>
-      <Badge variant={room.type === "group" ? "secondary" : "default"} className="scale-75 font-mono">
+      <Badge variant="default" className="scale-75 font-mono">
         {room.type === "group" ? "G" : "DM"}
       </Badge>
     </button>
