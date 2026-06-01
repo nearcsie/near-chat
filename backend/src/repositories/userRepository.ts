@@ -22,13 +22,13 @@ export class UserRepository implements IUserRepository {
   constructor(private db: Pool) {}
 
   async findById(userId: string): Promise<User | null> {
-    const res = await this.db.query("SELECT * FROM users WHERE user_id = $1", [userId]);
+    const res = await this.db.query("SELECT * FROM users WHERE user_id = $1 AND deleted_at IS NULL", [userId]);
     if (res.rows.length === 0) return null;
     return mapRowToUser(res.rows[0]);
   }
 
   async findByEmail(email: string): Promise<User | null> {
-    const res = await this.db.query("SELECT * FROM users WHERE email = $1", [email]);
+    const res = await this.db.query("SELECT * FROM users WHERE email = $1 AND deleted_at IS NULL", [email]);
     if (res.rows.length === 0) return null;
     return mapRowToUser(res.rows[0]);
   }
