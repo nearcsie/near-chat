@@ -1,9 +1,25 @@
 import bcrypt from 'bcryptjs';
 import type { IUserRepository } from '../repositories/IUserRepository';
 import type { IEmergencyContactRepository, EmergencyContact } from '../repositories/IEmergencyContactRepository';
-import type { RegisterRequest, LoginRequest, AuthResponse, PublicUser, JwtPayload } from '../../../shared/types';
+import type {
+  RegisterRequest,
+  LoginRequest,
+  AuthResponse,
+  JwtPayload,
+  MyProfile,
+  PublicUser,
+  User,
+  UserProfile,
+  UserSettings,
+} from '../../../shared/types';
 import { ConflictError, NotFoundError, ValidationError } from '../errors/AppError';
-import { updateMeSchema, searchQuerySchema, type UpdateMeInput } from '../validators/userSchemas';
+import {
+  updateMeSchema,
+  updateSettingsSchema,
+  searchQuerySchema,
+  type UpdateMeInput,
+  type UpdateSettingsInput,
+} from '../validators/userSchemas';
 
 interface JwtHelper {
   signToken(payload: JwtPayload): string;
@@ -14,6 +30,34 @@ interface EmergencyAlertResult {
   recipients: string[];
   reason?: string;
 }
+
+const toPublicUser = (user: Pick<User, 'userId' | 'name' | 'avatarUrl'>): PublicUser => ({
+  userId: user.userId,
+  name: user.name,
+  avatarUrl: user.avatarUrl,
+});
+
+const toUserProfile = (user: Pick<User, 'userId' | 'name' | 'bio' | 'avatarUrl'>): UserProfile => ({
+  userId: user.userId,
+  name: user.name,
+  bio: user.bio,
+  avatarUrl: user.avatarUrl,
+});
+
+const toMyProfile = (
+  user: Pick<User, 'userId' | 'name' | 'email' | 'bio' | 'avatarUrl'>,
+): MyProfile => ({
+  ...toUserProfile(user),
+  email: user.email,
+});
+
+const toUserSettings = (
+  user: Pick<User, 'warningEnabled' | 'warningDays' | 'language'>,
+): UserSettings => ({
+  warningEnabled: user.warningEnabled,
+  warningDays: user.warningDays,
+  language: user.language,
+});
 
 export const makeUserService = (
   repo: IUserRepository,
@@ -58,12 +102,6 @@ export const makeUserService = (
         passwordHash
       });
 
-      const publicUser: PublicUser = {
-        userId: user.userId,
-        name: user.name,
-        avatarUrl: user.avatarUrl
-      };
-
       const token = jwt.signToken({
         userId: user.userId,
         name: user.name
@@ -71,7 +109,7 @@ export const makeUserService = (
 
       return {
         token,
-        user: publicUser
+        user: toPublicUser(user)
       };
     },
 
@@ -88,12 +126,6 @@ export const makeUserService = (
 
       await repo.update(user.userId, { lastActivity: new Date() });
 
-      const publicUser: PublicUser = {
-        userId: user.userId,
-        name: user.name,
-        avatarUrl: user.avatarUrl
-      };
-
       const token = jwt.signToken({
         userId: user.userId,
         name: user.name
@@ -101,23 +133,54 @@ export const makeUserService = (
 
       return {
         token,
-        user: publicUser
+        user: toPublicUser(user)
       };
     },
 
-    async getMe(userId: string): Promise<PublicUser> {
+    async getMe(userId: string): Promise<MyProfile> {
       const user = await repo.findById(userId);
       if (!user) throw new NotFoundError('user', userId);
-      return { userId: user.userId, name: user.name, avatarUrl: user.avatarUrl };
+      return toMyProfile(user);
     },
 
-    async updateMe(userId: string, data: UpdateMeInput): Promise<PublicUser> {
+    async getUserProfile(userId: string): Promise<UserProfile> {
+      const user = await repo.findById(userId);
+      if (!user) throw new NotFoundError('user', userId);
+      return toUserProfile(user);
+    },
+
+    async updateMe(userId: string, data: UpdateMeInput): Promise<MyProfile> {
       const parsed = updateMeSchema.safeParse(data);
       if (!parsed.success) {
         throw new ValidationError(parsed.error.issues[0]?.message ?? 'Invalid payload');
       }
       const updated = await repo.update(userId, parsed.data);
-      return { userId: updated.userId, name: updated.name, avatarUrl: updated.avatarUrl };
+      return toMyProfile(updated);
+    },
+
+    async getMySettings(userId: string): Promise<UserSettings> {
+      const user = await repo.findById(userId);
+      if (!user) throw new NotFoundError('user', userId);
+      return toUserSettings(user);
+    },
+
+    async updateMySettings(userId: string, data: UpdateSettingsInput): Promise<UserSettings> {
+      const parsed = updateSettingsSchema.safeParse(data);
+      if (!parsed.success) {
+        throw new ValidationError(parsed.error.issues[0]?.message ?? 'Invalid payload');
+      }
+
+      const current = await repo.findById(userId);
+      if (!current) throw new NotFoundError('user', userId);
+
+      const nextWarningEnabled = parsed.data.warningEnabled ?? current.warningEnabled;
+      const nextWarningDays = parsed.data.warningDays ?? current.warningDays;
+      if (nextWarningEnabled && nextWarningDays < 1) {
+        throw new ValidationError('warningDays must be at least 1 when warnings are enabled');
+      }
+
+      const updated = await repo.update(userId, parsed.data);
+      return toUserSettings(updated);
     },
 
     async deleteMe(userId: string): Promise<void> {
@@ -174,7 +237,7 @@ export const makeUserService = (
         throw new ValidationError(parsed.error.issues[0]?.message ?? 'Invalid query');
       }
       const users = await repo.search(parsed.data.q);
-      return users.map((u) => ({ userId: u.userId, name: u.name, avatarUrl: u.avatarUrl }));
+      return users.map(toPublicUser);
     },
   };
 };

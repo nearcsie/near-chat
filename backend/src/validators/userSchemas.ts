@@ -16,8 +16,22 @@ export const updateMeSchema = z
     name: z.string().trim().min(1, 'Name cannot be empty').optional(),
     bio: z.string().trim().optional(),
     avatarUrl: z.string().url('Invalid avatar URL').optional(),
+  })
+  .refine((v) => Object.keys(v).length > 0, {
+    message: 'At least one field must be provided',
+  });
+
+export const updateSettingsSchema = z
+  .object({
     warningEnabled: z.boolean().optional(),
-    warningDays: z.number().int().min(1).optional(),
+    warningDays: z.number().int().min(0).optional(),
+    language: z
+      .string()
+      .trim()
+      .min(2, 'language must be at least 2 characters')
+      .max(10, 'language must be at most 10 characters')
+      .regex(/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/, 'language must be a valid BCP 47 tag')
+      .optional(),
   })
   .refine((v) => Object.keys(v).length > 0, {
     message: 'At least one field must be provided',
@@ -30,6 +44,7 @@ export const searchQuerySchema = z.object({
 type RegisterSchema = z.infer<typeof registerSchema>;
 type LoginSchema = z.infer<typeof loginSchema>;
 export type UpdateMeInput = z.input<typeof updateMeSchema>;
+export type UpdateSettingsInput = z.input<typeof updateSettingsSchema>;
 type SearchQueryInput = z.input<typeof searchQuerySchema>;
 
 export const addEmergencyContactSchema = z.object({

@@ -3,20 +3,20 @@ import type {
   Folder as ApiFolder,
   LoginRequest,
   MessageWithSender,
+  MyProfile,
   PublicUser,
   RegisterRequest,
   Room,
   RoomMember,
   RoomSummary,
-  User,
+  UserSettings,
 } from '@shared/types';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 const API_PREFIX = '/api/v1';
 
-type UpdateMeRequest = Partial<
-  Pick<User, 'name' | 'bio' | 'avatarUrl' | 'warningEnabled' | 'warningDays'>
->;
+type UpdateMeRequest = Partial<Pick<MyProfile, 'name' | 'bio' | 'avatarUrl'>>;
+type UpdateMySettingsRequest = Partial<Pick<UserSettings, 'warningEnabled' | 'warningDays' | 'language'>>;
 
 type CreateGroupRequest = {
   name: string;
@@ -104,12 +104,28 @@ export const login = (data: LoginRequest): Promise<AuthResponse> =>
 export const logout = (token: string): Promise<void> =>
   requestJson<void>('/auth/logout', { method: 'POST' }, { token });
 
-export const getMe = (token: string): Promise<PublicUser> =>
-  requestJson<PublicUser>('/users/me', {}, { token });
+export const getMe = (token: string): Promise<MyProfile> =>
+  requestJson<MyProfile>('/users/me', {}, { token });
 
-export const updateMe = (token: string, data: UpdateMeRequest): Promise<PublicUser> =>
-  requestJson<PublicUser>(
+export const updateMe = (token: string, data: UpdateMeRequest): Promise<MyProfile> =>
+  requestJson<MyProfile>(
     '/users/me',
+    {
+      method: 'PATCH',
+      ...withJsonBody(data),
+    },
+    { token },
+  );
+
+export const getMySettings = (token: string): Promise<UserSettings> =>
+  requestJson<UserSettings>('/users/me/settings', {}, { token });
+
+export const updateMySettings = (
+  token: string,
+  data: UpdateMySettingsRequest,
+): Promise<UserSettings> =>
+  requestJson<UserSettings>(
+    '/users/me/settings',
     {
       method: 'PATCH',
       ...withJsonBody(data),

@@ -10,6 +10,7 @@ function mapRowToUser(row: any): User {
     passwordHash: row.password_hash,
     bio: row.bio ?? undefined,
     avatarUrl: row.avatar_url ?? undefined,
+    language: row.lang_preference,
     warningEnabled: row.warning_enabled,
     warningDays: row.warning_days,
     lastActivity: row.last_activity,
@@ -22,13 +23,13 @@ export class UserRepository implements IUserRepository {
   constructor(private db: Pool) {}
 
   async findById(userId: string): Promise<User | null> {
-    const res = await this.db.query("SELECT * FROM users WHERE user_id = $1", [userId]);
+    const res = await this.db.query("SELECT * FROM users WHERE user_id = $1 AND deleted_at IS NULL", [userId]);
     if (res.rows.length === 0) return null;
     return mapRowToUser(res.rows[0]);
   }
 
   async findByEmail(email: string): Promise<User | null> {
-    const res = await this.db.query("SELECT * FROM users WHERE email = $1", [email]);
+    const res = await this.db.query("SELECT * FROM users WHERE email = $1 AND deleted_at IS NULL", [email]);
     if (res.rows.length === 0) return null;
     return mapRowToUser(res.rows[0]);
   }
@@ -51,7 +52,7 @@ export class UserRepository implements IUserRepository {
     return mapRowToUser(res.rows[0]);
   }
 
-  async update(userId: string, data: Partial<Pick<User, "name" | "bio" | "avatarUrl" | "warningEnabled" | "warningDays" | "lastActivity" | "deletedAt">>): Promise<User> {
+  async update(userId: string, data: Partial<Pick<User, "name" | "bio" | "avatarUrl" | "language" | "warningEnabled" | "warningDays" | "lastActivity" | "deletedAt">>): Promise<User> {
     const fields: string[] = [];
     const values: any[] = [];
     let queryIdx = 1;
@@ -67,6 +68,10 @@ export class UserRepository implements IUserRepository {
     if (data.avatarUrl !== undefined) {
       fields.push(`avatar_url = $${queryIdx++}`);
       values.push(data.avatarUrl);
+    }
+    if (data.language !== undefined) {
+      fields.push(`lang_preference = $${queryIdx++}`);
+      values.push(data.language);
     }
     if (data.warningEnabled !== undefined) {
       fields.push(`warning_enabled = $${queryIdx++}`);

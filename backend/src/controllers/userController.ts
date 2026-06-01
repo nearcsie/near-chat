@@ -1,11 +1,19 @@
 import { Request, Response, NextFunction } from 'express';
-import { updateMeSchema, searchQuerySchema, addEmergencyContactSchema } from '../validators/userSchemas';
+import {
+  updateMeSchema,
+  updateSettingsSchema,
+  searchQuerySchema,
+  addEmergencyContactSchema,
+} from '../validators/userSchemas';
 import { ValidationError } from '../errors/AppError';
-import type { PublicUser } from '../../../shared/types';
+import type { MyProfile, PublicUser, UserProfile, UserSettings } from '../../../shared/types';
 
 interface UserService {
-  getMe(userId: string): Promise<PublicUser>;
-  updateMe(userId: string, data: unknown): Promise<PublicUser>;
+  getMe(userId: string): Promise<MyProfile>;
+  getUserProfile(userId: string): Promise<UserProfile>;
+  updateMe(userId: string, data: unknown): Promise<MyProfile>;
+  getMySettings(userId: string): Promise<UserSettings>;
+  updateMySettings(userId: string, data: unknown): Promise<UserSettings>;
   deleteMe(userId: string): Promise<void>;
   search(query: string): Promise<PublicUser[]>;
   getEmergencyContacts(userId: string): Promise<any>;
@@ -34,6 +42,39 @@ export const makeUserController = (service: UserService) => ({
       }
       const userId = req.user!.userId;
       const updated = await service.updateMe(userId, parsed.data);
+      res.status(200).json(updated);
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async getUserProfile(req: Request<{ id: string }>, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const user = await service.getUserProfile(req.params.id);
+      res.status(200).json(user);
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async getMySettings(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const userId = req.user!.userId;
+      const settings = await service.getMySettings(userId);
+      res.status(200).json(settings);
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async updateMySettings(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const parsed = updateSettingsSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return next(new ValidationError(parsed.error.issues[0]?.message ?? 'Invalid payload'));
+      }
+      const userId = req.user!.userId;
+      const updated = await service.updateMySettings(userId, parsed.data);
       res.status(200).json(updated);
     } catch (err) {
       next(err);

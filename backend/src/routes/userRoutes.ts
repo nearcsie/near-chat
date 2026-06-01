@@ -9,7 +9,10 @@ export const makeUserRoutes = (ctrl: ReturnType<typeof makeUserController>): Rou
 
   router.get('/me', ctrl.getMe.bind(ctrl));
   router.patch('/me', ctrl.updateMe.bind(ctrl));
+  router.get('/me/settings', ctrl.getMySettings.bind(ctrl));
+  router.patch('/me/settings', ctrl.updateMySettings.bind(ctrl));
   router.delete('/me', ctrl.deleteMe.bind(ctrl));
+  router.get('/:id', ctrl.getUserProfile.bind(ctrl));
   router.get('/', ctrl.search.bind(ctrl));
   router.get('/me/emergency-contacts', ctrl.getEmergencyContacts.bind(ctrl));
   router.post('/me/emergency-contacts', ctrl.addEmergencyContact.bind(ctrl));

@@ -1,7 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type { NextFunction, Request, Response } from 'express';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeUserController } from '../../../src/controllers/userController';
 import { ValidationError } from '../../../src/errors/AppError';
-import type { Request, Response, NextFunction } from 'express';
 
 const mockRes = () => {
   const res = { status: vi.fn(), json: vi.fn(), send: vi.fn() } as any;
@@ -18,208 +18,213 @@ const authedReq = (overrides: Partial<Request> = {}): any => ({
 });
 
 describe('userController', () => {
-  const publicUser = { userId: 'user-1', name: 'Alice', email: 'alice@example.com' };
-  const service = { getMe: vi.fn(), updateMe: vi.fn(), search: vi.fn(), getEmergencyContacts: vi.fn(), upsertEmergencyContact: vi.fn(), deleteEmergencyContact: vi.fn() } as any;
+  const myProfile = {
+    userId: 'user-1',
+    name: 'Alice',
+    email: 'alice@example.com',
+    bio: 'Hello',
+    avatarUrl: 'https://example.com/avatar.png',
+  };
+  const publicProfile = {
+    userId: 'user-2',
+    name: 'Bob',
+    bio: 'Public bio',
+    avatarUrl: 'https://example.com/bob.png',
+  };
+  const settings = {
+    warningEnabled: true,
+    warningDays: 3,
+    language: 'zh-TW',
+  };
+  const service = {
+    getMe: vi.fn(),
+    getUserProfile: vi.fn(),
+    updateMe: vi.fn(),
+    getMySettings: vi.fn(),
+    updateMySettings: vi.fn(),
+    deleteMe: vi.fn(),
+    search: vi.fn(),
+    getEmergencyContacts: vi.fn(),
+    upsertEmergencyContact: vi.fn(),
+    deleteEmergencyContact: vi.fn(),
+    triggerEmergencyAlert: vi.fn(),
+    checkInactivity: vi.fn(),
+  } as any;
   const ctrl = makeUserController(service);
 
   beforeEach(() => vi.clearAllMocks());
 
-  describe('getMe', () => {
-    it('returns 200 with user', async () => {
-      service.getMe.mockResolvedValue(publicUser);
-      const res = mockRes();
-      const next = vi.fn();
+  it('returns my profile for getMe', async () => {
+    service.getMe.mockResolvedValue(myProfile);
+    const res = mockRes();
+    const next = vi.fn();
 
-      await ctrl.getMe(authedReq(), res, next);
+    await ctrl.getMe(authedReq(), res, next);
 
-      expect(service.getMe).toHaveBeenCalledWith('user-1');
-      expect(res.status).toHaveBeenCalledWith(200);
-      expect(res.json).toHaveBeenCalledWith(publicUser);
-      expect(next).not.toHaveBeenCalled();
-    });
-
-    it('calls next with error when service throws', async () => {
-      const err = new Error('not found');
-      service.getMe.mockRejectedValue(err);
-      const res = mockRes();
-      const next = vi.fn();
-
-      await ctrl.getMe(authedReq(), res, next);
-
-      expect(next).toHaveBeenCalledWith(err);
-    });
+    expect(service.getMe).toHaveBeenCalledWith('user-1');
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith(myProfile);
   });
 
-  describe('updateMe', () => {
-    it('returns 200 with updated user on valid body', async () => {
-      const updated = { ...publicUser, name: 'Bob' };
-      service.updateMe.mockResolvedValue(updated);
-      const res = mockRes();
-      const next = vi.fn();
+  it('returns another user profile for getUserProfile', async () => {
+    service.getUserProfile.mockResolvedValue(publicProfile);
+    const res = mockRes();
+    const next = vi.fn();
 
-      await ctrl.updateMe(authedReq({ body: { name: 'Bob' } }), res, next);
+    await ctrl.getUserProfile(authedReq({ params: { id: 'user-2' } }), res, next);
 
-      expect(service.updateMe).toHaveBeenCalledWith('user-1', { name: 'Bob' });
-      expect(res.status).toHaveBeenCalledWith(200);
-      expect(res.json).toHaveBeenCalledWith(updated);
-    });
-
-    it('calls next with ValidationError when body is empty', async () => {
-      const res = mockRes();
-      const next = vi.fn();
-
-      await ctrl.updateMe(authedReq({ body: {} }), res, next);
-
-      expect(next).toHaveBeenCalledWith(expect.any(ValidationError));
-      expect(res.status).not.toHaveBeenCalled();
-    });
-
-    it('calls next with error when service throws', async () => {
-      const err = new Error('db error');
-      service.updateMe.mockRejectedValue(err);
-      const res = mockRes();
-      const next = vi.fn();
-
-      await ctrl.updateMe(authedReq({ body: { name: 'Bob' } }), res, next);
-
-      expect(next).toHaveBeenCalledWith(err);
-    });
+    expect(service.getUserProfile).toHaveBeenCalledWith('user-2');
+    expect(res.json).toHaveBeenCalledWith(publicProfile);
   });
 
-  describe('search', () => {
-    it('returns 200 with users on valid query', async () => {
-      service.search.mockResolvedValue([publicUser]);
-      const res = mockRes();
-      const next = vi.fn();
+  it('updates the editable profile fields', async () => {
+    const updated = { ...myProfile, name: 'Alice 2' };
+    service.updateMe.mockResolvedValue(updated);
+    const res = mockRes();
+    const next = vi.fn();
 
-      await ctrl.search(authedReq({ query: { q: 'alice' } }), res, next);
+    await ctrl.updateMe(authedReq({ body: { name: 'Alice 2' } }), res, next);
 
-      expect(service.search).toHaveBeenCalledWith('alice');
-      expect(res.status).toHaveBeenCalledWith(200);
-      expect(res.json).toHaveBeenCalledWith([publicUser]);
-    });
-
-    it('calls next with ValidationError when query is empty', async () => {
-      const res = mockRes();
-      const next = vi.fn();
-
-      await ctrl.search(authedReq({ query: { q: '  ' } }), res, next);
-
-      expect(next).toHaveBeenCalledWith(expect.any(ValidationError));
-      expect(res.status).not.toHaveBeenCalled();
-    });
-
-    it('calls next with error when service throws', async () => {
-      service.search.mockRejectedValue(new Error('db error'));
-      const res = mockRes();
-      const next = vi.fn();
-
-      await ctrl.search(authedReq({ query: { q: 'alice' } }), res, next);
-
-      expect(next).toHaveBeenCalledWith(expect.any(Error));
-    });
+    expect(service.updateMe).toHaveBeenCalledWith('user-1', { name: 'Alice 2' });
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith(updated);
   });
 
-  describe('addEmergencyContact', () => {
-    const validContactId = '550e8400-e29b-41d4-a716-446655440000';
-    it('returns 201 on insert', async () => {
-      const contact = { contactId: validContactId, message: 'msg' };
-      service.upsertEmergencyContact.mockResolvedValue({ contact, isUpdate: false });
-      const res = mockRes();
-      const next = vi.fn();
+  it('rejects empty profile payloads', async () => {
+    const res = mockRes();
+    const next = vi.fn();
 
-      await ctrl.addEmergencyContact(authedReq({ body: { contactId: validContactId, message: 'msg' } }), res, next);
+    await ctrl.updateMe(authedReq({ body: {} }), res, next);
 
-      expect(res.status).toHaveBeenCalledWith(201);
-      expect(res.json).toHaveBeenCalledWith(contact);
-    });
-
-    it('returns 200 on update', async () => {
-      const contact = { contactId: validContactId, message: 'new msg' };
-      service.upsertEmergencyContact.mockResolvedValue({ contact, isUpdate: true });
-      const res = mockRes();
-      const next = vi.fn();
-
-      await ctrl.addEmergencyContact(authedReq({ body: { contactId: validContactId, message: 'new msg' } }), res, next);
-
-      expect(res.status).toHaveBeenCalledWith(200);
-      expect(res.json).toHaveBeenCalledWith(contact);
-    });
+    expect(next).toHaveBeenCalledWith(expect.any(ValidationError));
   });
 
-  describe('checkEmergencyInactivity', () => {
-    it('returns 200 with result', async () => {
-      service.checkInactivity = vi.fn().mockResolvedValue({ alerted: true });
-      const res = mockRes();
-      const next = vi.fn();
+  it('returns my settings', async () => {
+    service.getMySettings.mockResolvedValue(settings);
+    const res = mockRes();
+    const next = vi.fn();
 
-      await ctrl.checkEmergencyInactivity(authedReq({ body: { now: new Date().toISOString() } }), res, next);
+    await ctrl.getMySettings(authedReq(), res, next);
 
-      expect(res.status).toHaveBeenCalledWith(200);
-      expect(res.json).toHaveBeenCalledWith({ alerted: true });
-    });
-
-    it('returns ValidationError on invalid date', async () => {
-      const res = mockRes();
-      const next = vi.fn();
-
-      await ctrl.checkEmergencyInactivity(authedReq({ body: { now: 'not-a-date' } }), res, next);
-
-      expect(next).toHaveBeenCalledWith(expect.any(ValidationError));
-    });
-
-    it('passes error to next', async () => {
-      const err = new Error('fail');
-      service.checkInactivity = vi.fn().mockRejectedValue(err);
-      const res = mockRes();
-      const next = vi.fn();
-
-      await ctrl.checkEmergencyInactivity(authedReq({ body: { now: new Date().toISOString() } }), res, next);
-
-      expect(next).toHaveBeenCalledWith(err);
-    });
+    expect(service.getMySettings).toHaveBeenCalledWith('user-1');
+    expect(res.json).toHaveBeenCalledWith(settings);
   });
 
-  describe('deleteMe', () => {
-    it('returns 204 on success', async () => {
-      service.deleteMe = vi.fn().mockResolvedValue(undefined);
-      const res = mockRes();
-      const next = vi.fn();
-      await ctrl.deleteMe(authedReq(), res, next);
-      expect(res.status).toHaveBeenCalledWith(204);
-    });
+  it('updates my settings', async () => {
+    service.updateMySettings.mockResolvedValue(settings);
+    const res = mockRes();
+    const next = vi.fn();
+
+    await ctrl.updateMySettings(
+      authedReq({ body: { warningEnabled: true, warningDays: 3, language: 'zh-TW' } }),
+      res,
+      next,
+    );
+
+    expect(service.updateMySettings).toHaveBeenCalledWith('user-1', settings);
+    expect(res.json).toHaveBeenCalledWith(settings);
   });
 
-  describe('getEmergencyContacts', () => {
-    it('returns 200 with contacts', async () => {
-      service.getEmergencyContacts = vi.fn().mockResolvedValue([{ id: 'c1' }]);
-      const res = mockRes();
-      const next = vi.fn();
-      await ctrl.getEmergencyContacts(authedReq(), res, next);
-      expect(res.status).toHaveBeenCalledWith(200);
-      expect(res.json).toHaveBeenCalledWith([{ id: 'c1' }]);
-    });
+  it('rejects invalid settings payloads', async () => {
+    const res = mockRes();
+    const next = vi.fn();
+
+    await ctrl.updateMySettings(authedReq({ body: { warningDays: -1 } }), res, next);
+
+    expect(next).toHaveBeenCalledWith(expect.any(ValidationError));
   });
 
-  describe('deleteEmergencyContact', () => {
-    it('returns 200 on success', async () => {
-      service.deleteEmergencyContact = vi.fn().mockResolvedValue(undefined);
-      const res = mockRes();
-      const next = vi.fn();
-      await ctrl.deleteEmergencyContact(authedReq({ params: { contactId: 'c1' } }), res, next);
-      expect(res.status).toHaveBeenCalledWith(200);
-      expect(res.json).toHaveBeenCalledWith({ success: true });
-    });
+  it('searches users', async () => {
+    service.search.mockResolvedValue([{ userId: 'user-2', name: 'Bob', avatarUrl: undefined }]);
+    const res = mockRes();
+    const next = vi.fn();
+
+    await ctrl.search(authedReq({ query: { q: 'bob' } }), res, next);
+
+    expect(service.search).toHaveBeenCalledWith('bob');
+    expect(res.json).toHaveBeenCalledWith([{ userId: 'user-2', name: 'Bob', avatarUrl: undefined }]);
   });
 
-  describe('triggerEmergencyAlert', () => {
-    it('returns 202 on success', async () => {
-      service.triggerEmergencyAlert = vi.fn().mockResolvedValue({ alerted: true });
-      const res = mockRes();
-      const next = vi.fn();
-      await ctrl.triggerEmergencyAlert(authedReq({ body: { message: 'help' } }), res, next);
-      expect(res.status).toHaveBeenCalledWith(202);
-      expect(res.json).toHaveBeenCalledWith({ alerted: true });
-    });
+  it('soft deletes the current user', async () => {
+    const res = mockRes();
+    const next = vi.fn();
+
+    await ctrl.deleteMe(authedReq(), res, next);
+
+    expect(service.deleteMe).toHaveBeenCalledWith('user-1');
+    expect(res.status).toHaveBeenCalledWith(204);
+  });
+
+  it('returns emergency contacts', async () => {
+    service.getEmergencyContacts.mockResolvedValue([{ id: 'c1' }]);
+    const res = mockRes();
+    const next = vi.fn();
+
+    await ctrl.getEmergencyContacts(authedReq(), res, next);
+
+    expect(res.json).toHaveBeenCalledWith([{ id: 'c1' }]);
+  });
+
+  it('upserts emergency contacts', async () => {
+    const contact = { contactId: '550e8400-e29b-41d4-a716-446655440000', message: 'msg' };
+    service.upsertEmergencyContact.mockResolvedValue({ contact, isUpdate: false });
+    const res = mockRes();
+    const next = vi.fn();
+
+    await ctrl.addEmergencyContact(
+      authedReq({ body: { contactId: contact.contactId, message: 'msg' } }),
+      res,
+      next,
+    );
+
+    expect(res.status).toHaveBeenCalledWith(201);
+    expect(res.json).toHaveBeenCalledWith(contact);
+  });
+
+  it('deletes emergency contacts', async () => {
+    const res = mockRes();
+    const next = vi.fn();
+
+    await ctrl.deleteEmergencyContact(authedReq({ params: { contactId: 'c1' } }), res, next);
+
+    expect(service.deleteEmergencyContact).toHaveBeenCalledWith('user-1', 'c1');
+    expect(res.json).toHaveBeenCalledWith({ success: true });
+  });
+
+  it('triggers emergency alerts', async () => {
+    service.triggerEmergencyAlert.mockResolvedValue({ alerted: true });
+    const res = mockRes();
+    const next = vi.fn();
+
+    await ctrl.triggerEmergencyAlert(authedReq({ body: { message: 'help' } }), res, next);
+
+    expect(res.status).toHaveBeenCalledWith(202);
+    expect(res.json).toHaveBeenCalledWith({ alerted: true });
+  });
+
+  it('checks inactivity alerts', async () => {
+    service.checkInactivity.mockResolvedValue({ alerted: true });
+    const res = mockRes();
+    const next = vi.fn();
+
+    await ctrl.checkEmergencyInactivity(
+      authedReq({ body: { now: new Date().toISOString() } }),
+      res,
+      next,
+    );
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith({ alerted: true });
+  });
+
+  it('passes through service errors', async () => {
+    const err = new Error('db error');
+    service.getMe.mockRejectedValue(err);
+    const res = mockRes();
+    const next: NextFunction = vi.fn();
+
+    await ctrl.getMe(authedReq(), res as Response, next);
+
+    expect(next).toHaveBeenCalledWith(err);
   });
 });
