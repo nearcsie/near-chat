@@ -9,7 +9,7 @@ A real-time group chat application built as an NTNU database course project. The
 
 | File | Description |
 |------|-------------|
-| `docker-compose.yml` | Defines the three-service stack: `db` (Postgres 18), `backend` (Express, port 4000), `frontend` (Next.js, port 3000) |
+| `docker-compose.yml` | Defines the three-service stack: `db` (Postgres 18, host 5435 -> container 5432), `backend` (Express, host 4005 -> container 4000), `frontend` (Next.js, host 3005 -> container 3000) |
 | `.env.example` | Template for required environment variables — copy to `.env` before running locally |
 | `.gitignore` | Excludes `.env`, `node_modules`, build artifacts |
 | `LICENSE` | Project licence |
@@ -28,7 +28,7 @@ A real-time group chat application built as an NTNU database course project. The
 ### Working In This Directory
 - All services run via `docker compose up` from the project root; the `db` service must start before `backend`.
 - Copy `.env.example` to `.env` and fill in real values before starting any service locally.
-- The `DATABASE_URL` format is `postgresql://USER:PASS@localhost:5432/DBNAME` — used by `pg` and `node-pg-migrate`.
+- In Docker Compose, `DATABASE_URL` should point at `db:5432`; from the host machine, connect to Postgres on `localhost:5435`.
 - The current git branch is `dev`.
 
 ### Testing Requirements
@@ -43,7 +43,7 @@ A real-time group chat application built as an NTNU database course project. The
 
 ### Internal
 - `backend/` depends on the `db` service defined in `docker-compose.yml`.
-- `frontend/` depends on `backend/` (set via `NEXT_PUBLIC_API_URL`).
+- `frontend/` depends on `backend/` (set via `NEXT_PUBLIC_API_URL`; for browser use with Docker Compose, use `http://localhost:4005`).
 
 ### External
 - Docker + Docker Compose — container orchestration
