@@ -125,8 +125,35 @@ describe('roomService', () => {
 
     const result = await roomService.createPrivate('user-1', 'user-2');
 
-    expect(result).toBe(privateRoom);
+    expect(result).toEqual({ room: privateRoom, created: false });
     expect(mockRepo.create).not.toHaveBeenCalled();
+  });
+
+  it('createPrivate reopens an archived private room instead of creating a duplicate', async () => {
+    const socialRepo = {
+      isBlocked: vi.fn().mockResolvedValue(false),
+      areFriends: vi.fn().mockResolvedValue(true),
+    };
+    const archivedPrivate = {
+      ...room,
+      type: 'private' as const,
+      roomHash: 'hash',
+      isArchived: true,
+      isReadonly: true,
+    };
+    const reopenedPrivate = {
+      ...archivedPrivate,
+      isArchived: false,
+      isReadonly: false,
+    };
+    mockRepo.findByRoomHash.mockResolvedValue(archivedPrivate as Room);
+    mockRepo.update.mockResolvedValue(reopenedPrivate as Room);
+    roomService = makeRoomService(mockRepo, mockMemberRepo, undefined, socialRepo);
+
+    const result = await roomService.createPrivate('user-1', 'user-2');
+
+    expect(mockRepo.update).toHaveBeenCalledWith('room-1', { isReadonly: false, isArchived: false });
+    expect(result).toEqual({ room: reopenedPrivate, created: false });
   });
 
   it('createPrivate rejects non-friends', async () => {
@@ -138,6 +165,15 @@ describe('roomService', () => {
 
     await expect(roomService.createPrivate('user-1', 'user-2')).rejects.toThrow(ForbiddenError);
     expect(mockRepo.create).not.toHaveBeenCalled();
+  });
+
+  it('markPrivateReadOnly archives the private room', async () => {
+    const privateRoom = { ...room, type: 'private' as const, roomHash: 'hash' };
+    mockRepo.findByRoomHash.mockResolvedValue(privateRoom as Room);
+
+    await roomService.markPrivateReadOnly('user-1', 'user-2');
+
+    expect(mockRepo.update).toHaveBeenCalledWith('room-1', { isReadonly: true, isArchived: true });
   });
   describe('joinByCode', () => {
     it('joins room using invite code', async () => {

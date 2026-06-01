@@ -52,10 +52,7 @@ export const makeMessageService = (
       }
 
       const { room, member } = await assertRoomMembership(userId, parsed.data.roomId);
-      if (room.isReadonly) {
-        throw new ForbiddenError('This room is read-only');
-      }
-      if (room.isArchived) {
+      if (room.isArchived || room.isReadonly) {
         throw new ForbiddenError('This room is archived');
       }
       if (member.isMuted) {

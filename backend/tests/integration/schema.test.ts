@@ -12,11 +12,12 @@ describe('Database Schema & Constraints', () => {
       const res = await testPool.query(
         `INSERT INTO users (name, email, password_hash) 
          VALUES ('Alice', 'alice@test.com', 'hashedpassword') 
-         RETURNING user_id, warning_enabled, warning_days`
+         RETURNING user_id, warning_enabled, warning_days, lang_preference`
       );
       expect(res.rows[0].user_id).toBeDefined();
       expect(res.rows[0].warning_enabled).toBe(false); // Default value
       expect(res.rows[0].warning_days).toBe(0); // Default value
+      expect(res.rows[0].lang_preference).toBe('en'); // Default value
     });
 
     it('should prevent inserting duplicate emails', async () => {

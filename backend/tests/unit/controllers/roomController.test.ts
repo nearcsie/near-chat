@@ -142,6 +142,33 @@ describe('roomController', () => {
     });
   });
 
+  describe('create (private)', () => {
+    it('returns 201 when a private room is newly created', async () => {
+      const privateRoom = { ...room, type: 'private' as const, name: undefined };
+      service.createPrivate.mockResolvedValue({ room: privateRoom, created: true });
+      const res = mockRes();
+      const next = vi.fn();
+
+      await ctrl.create(authedReq({ body: { type: 'private', targetUserId: 'user-2' } }), res, next);
+
+      expect(service.createPrivate).toHaveBeenCalledWith('user-1', 'user-2');
+      expect(res.status).toHaveBeenCalledWith(201);
+      expect(res.json).toHaveBeenCalledWith(privateRoom);
+    });
+
+    it('returns 200 when an existing private room is reused', async () => {
+      const privateRoom = { ...room, type: 'private' as const, name: undefined };
+      service.createPrivate.mockResolvedValue({ room: privateRoom, created: false });
+      const res = mockRes();
+      const next = vi.fn();
+
+      await ctrl.create(authedReq({ body: { type: 'private', targetUserId: 'user-2' } }), res, next);
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith(privateRoom);
+    });
+  });
+
   describe('update', () => {
     it('returns 200 with updated room', async () => {
       const updated = { ...room, name: 'New Name' };

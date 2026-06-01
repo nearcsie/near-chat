@@ -60,7 +60,7 @@ export const makeRoomService = (
       return repo.findByMember(userId);
     },
 
-    async createPrivate(creatorId: string, targetUserId: string): Promise<Room> {
+    async createPrivate(creatorId: string, targetUserId: string): Promise<{ room: Room; created: boolean }> {
       if (creatorId === targetUserId) {
         throw new ValidationError('Cannot create a private room with yourself');
       }
@@ -78,9 +78,10 @@ export const makeRoomService = (
       const existing = await repo.findByRoomHash(roomHash);
       if (existing) {
         if (existing.isReadonly || existing.isArchived) {
-          return repo.update(existing.roomId, { isReadonly: false, isArchived: false });
+          const room = await repo.update(existing.roomId, { isReadonly: false, isArchived: false });
+          return { room, created: false };
         }
-        return existing;
+        return { room: existing, created: false };
       }
 
       const room = await repo.create({
@@ -93,13 +94,13 @@ export const makeRoomService = (
       });
       await ensureMember(room.roomId, creatorId);
       await ensureMember(room.roomId, targetUserId);
-      return room;
+      return { room, created: true };
     },
 
     async markPrivateReadOnly(userA: string, userB: string): Promise<void> {
       const existing = await repo.findByRoomHash(privateRoomHash(userA, userB));
       if (existing) {
-        await repo.update(existing.roomId, { isReadonly: true });
+        await repo.update(existing.roomId, { isReadonly: true, isArchived: true });
       }
     },
 

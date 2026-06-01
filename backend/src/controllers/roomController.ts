@@ -6,7 +6,7 @@ import type { UpdateRoomInput } from '../validators/roomSchemas';
 interface RoomService {
   list(userId: string): Promise<RoomSummary[]>;
   create(creatorId: string, data: { type: 'group'; name: string; avatarUrl?: string; requireApproval?: boolean; viewHistory?: boolean }): Promise<Room>;
-  createPrivate(creatorId: string, targetUserId: string): Promise<Room>;
+  createPrivate(creatorId: string, targetUserId: string): Promise<{ room: Room; created: boolean }>;
   getById(roomId: string, callerId: string): Promise<Room>;
   listMembers(roomId: string, callerId: string): Promise<RoomMember[]>;
   update(roomId: string, callerId: string, data: UpdateRoomInput): Promise<Room>;
@@ -44,8 +44,8 @@ export const makeRoomController = (service: RoomService) => ({
         if (!targetUserId) {
           return next(new ValidationError('targetUserId is required'));
         }
-        const room = await service.createPrivate(req.user!.userId, targetUserId);
-        res.status(201).json(room);
+        const result = await service.createPrivate(req.user!.userId, targetUserId);
+        res.status(result.created ? 201 : 200).json(result.room);
       } else {
         return next(new ValidationError('Invalid room type'));
       }

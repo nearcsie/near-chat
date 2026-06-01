@@ -21,6 +21,7 @@ describe("UserRepository (pg)", () => {
     expect(user.name).toBe("Test User");
     expect(user.email).toBe("test@example.com");
     expect(user.passwordHash).toBe("hash123");
+    expect(user.language).toBe("en");
     expect(user.createdAt).toBeInstanceOf(Date);
 
     const fetched = await repo.findById(user.userId);
@@ -49,12 +50,14 @@ describe("UserRepository (pg)", () => {
     const updated = await repo.update(user.userId, {
       name: "New Name",
       bio: "Hello world",
-      warningEnabled: true
+      warningEnabled: true,
+      language: "zh-TW",
     });
 
     expect(updated.name).toBe("New Name");
     expect(updated.bio).toBe("Hello world");
     expect(updated.warningEnabled).toBe(true);
+    expect(updated.language).toBe("zh-TW");
     expect(updated.email).toBe("update@example.com");
 
     const fetched = await repo.findById(user.userId);

@@ -24,6 +24,7 @@ export interface User {
   passwordHash: string;
   bio?: string;
   avatarUrl?: string;
+  language: string;
   warningEnabled: boolean;
   warningDays: number;
   lastActivity: Date;
@@ -36,6 +37,23 @@ export interface PublicUser {
   userId: string;
   name: string;
   avatarUrl?: string;
+}
+
+export interface UserProfile {
+  userId: string;
+  name: string;
+  bio?: string;
+  avatarUrl?: string;
+}
+
+export interface MyProfile extends UserProfile {
+  email: string;
+}
+
+export interface UserSettings {
+  warningEnabled: boolean;
+  warningDays: number;
+  language: string;
 }
 
 // ---------------------------------------------------------------------------

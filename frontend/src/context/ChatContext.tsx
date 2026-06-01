@@ -5,9 +5,10 @@ import { useRouter } from "next/navigation";
 import type {
   Folder as ApiFolder,
   MessageWithSender,
-  PublicUser,
+  MyProfile,
   Room,
   RoomSummary,
+  UserSettings,
 } from "@shared/types";
 import {
   attachmentDownloadUrl,
@@ -15,6 +16,7 @@ import {
   createGroup,
   createPrivateRoom,
   getMe,
+  getMySettings,
   leaveRoom as leaveRoomApi,
   listFolders,
   listMessages,
@@ -23,6 +25,7 @@ import {
   searchUsers,
   updateFolderRooms,
   updateMe,
+  updateMySettings,
   updateRoom,
   uploadAttachment,
 } from "@/lib/api";
@@ -84,12 +87,17 @@ export interface Folder {
 }
 
 export interface User {
+  userId?: string;
   username: string;
   email: string;
   avatar: string;
+  bio?: string;
+  language?: string;
+  warningEnabled?: boolean;
+  warningDays?: number;
 }
 
-type StoredUser = User & { userId?: string };
+type StoredUser = User;
 
 export const getAvatarForUser = (
   username: string,
@@ -136,6 +144,9 @@ interface ChatContextType {
     theme: string;
     notifyDesktop: boolean;
     notifySound: boolean;
+    language: string;
+    warningEnabled: boolean;
+    warningDays: number;
   }) => Promise<void>;
   saveGroupSettings: (roomId: string, settings: {
     name: string;
@@ -151,11 +162,18 @@ interface ChatContextType {
 
 const ChatContext = createContext<ChatContextType | undefined>(undefined);
 
-const toStoredUser = (user: PublicUser, email = ""): StoredUser => ({
-  userId: user.userId,
-  username: user.name,
-  email,
-  avatar: user.avatarUrl ?? "",
+const toStoredUser = (
+  profile: MyProfile,
+  settings?: Partial<UserSettings>,
+): StoredUser => ({
+  userId: profile.userId,
+  username: profile.name,
+  email: profile.email,
+  avatar: profile.avatarUrl ?? "",
+  bio: profile.bio ?? "",
+  language: settings?.language ?? "en",
+  warningEnabled: settings?.warningEnabled ?? false,
+  warningDays: settings?.warningDays ?? 0,
 });
 
 const formatMessageTime = (value: Date | string): string => {
@@ -306,9 +324,12 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     let cancelled = false;
     void (async () => {
       try {
-        const profile = await getMe(savedToken);
+        const [profile, settings] = await Promise.all([
+          getMe(savedToken),
+          getMySettings(savedToken),
+        ]);
         if (cancelled) return;
-        const stored = toStoredUser(profile, savedUser ? (JSON.parse(savedUser) as StoredUser).email : "");
+        const stored = toStoredUser(profile, settings);
         localStorage.setItem("user", JSON.stringify(stored));
         setUser(stored);
         setCurrentUserId(profile.userId);
@@ -524,20 +545,34 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     theme: string;
     notifyDesktop: boolean;
     notifySound: boolean;
+    language: string;
+    warningEnabled: boolean;
+    warningDays: number;
   }) => {
     let nextUser: StoredUser = {
+      userId: currentUserId,
       username: settings.username,
       email: settings.email,
       avatar: settings.avatar,
-      userId: currentUserId,
+      bio: user.bio ?? "",
+      language: settings.language,
+      warningEnabled: settings.warningEnabled,
+      warningDays: settings.warningDays,
     };
 
     if (token) {
-      const updated = await updateMe(token, {
-        name: settings.username,
-        avatarUrl: settings.avatar,
-      });
-      nextUser = toStoredUser(updated, settings.email);
+      const [updatedProfile, updatedSettings] = await Promise.all([
+        updateMe(token, {
+          name: settings.username,
+          avatarUrl: settings.avatar,
+        }),
+        updateMySettings(token, {
+          language: settings.language,
+          warningEnabled: settings.warningEnabled,
+          warningDays: settings.warningDays,
+        }),
+      ]);
+      nextUser = toStoredUser(updatedProfile, updatedSettings);
     }
 
     localStorage.setItem("user", JSON.stringify(nextUser));

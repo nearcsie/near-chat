@@ -4,6 +4,7 @@ import {
   registerSchema,
   searchQuerySchema,
   updateMeSchema,
+  updateSettingsSchema,
 } from '../../../src/validators/userSchemas';
 
 describe('user validation schemas', () => {
@@ -41,12 +42,20 @@ describe('user validation schemas', () => {
     }).success).toBe(false);
   });
 
-  it('requires at least one valid update field', () => {
+  it('requires at least one valid profile update field', () => {
     expect(updateMeSchema.parse({ name: '  Alice  ' })).toEqual({ name: 'Alice' });
     expect(updateMeSchema.safeParse({}).success).toBe(false);
     expect(updateMeSchema.safeParse({ name: '   ' }).success).toBe(false);
     expect(updateMeSchema.safeParse({ avatarUrl: 'not-a-url' }).success).toBe(false);
     expect(updateMeSchema.safeParse({ warningDays: 0 }).success).toBe(false);
+  });
+
+  it('requires at least one valid settings field', () => {
+    expect(updateSettingsSchema.parse({ warningDays: 0 })).toEqual({ warningDays: 0 });
+    expect(updateSettingsSchema.parse({ language: ' zh-TW ' })).toEqual({ language: 'zh-TW' });
+    expect(updateSettingsSchema.safeParse({}).success).toBe(false);
+    expect(updateSettingsSchema.safeParse({ warningDays: -1 }).success).toBe(false);
+    expect(updateSettingsSchema.safeParse({ language: 'bad_tag!' }).success).toBe(false);
   });
 
   it('validates trimmed search queries', () => {
