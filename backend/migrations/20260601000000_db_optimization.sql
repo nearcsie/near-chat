@@ -4,6 +4,11 @@
 ALTER TABLE attachments ALTER COLUMN uploaded_at TYPE TIMESTAMPTZ USING uploaded_at AT TIME ZONE 'UTC';
 
 -- 2. Self-reference prevention constraints
+-- Remove any pre-existing self-referencing rows so ADD CONSTRAINT does not fail
+DELETE FROM friendships WHERE requester_id = addressee_id;
+DELETE FROM blocks WHERE blocker_id = blocked_id;
+DELETE FROM emergency_contacts WHERE user_id = contact_id;
+
 ALTER TABLE friendships ADD CONSTRAINT friendships_no_self_friendship
   CHECK (requester_id <> addressee_id);
 

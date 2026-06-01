@@ -130,6 +130,9 @@ export const makeUserService = (
     },
 
     async upsertEmergencyContact(userId: string, contactId: string, message: string): Promise<{ contact: EmergencyContact, isUpdate: boolean }> {
+      if (userId === contactId) {
+        throw new ValidationError('Cannot add yourself as an emergency contact');
+      }
       const contact = await repo.findById(contactId);
       if (!contact) throw new NotFoundError('user', contactId);
       return await emergencyContactRepo.upsert(userId, contactId, message);
