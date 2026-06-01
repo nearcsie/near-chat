@@ -14,9 +14,11 @@
 | bio | TEXT | 個人簡介 | |
 | avatar_url | VARCHAR(255) | 頭像路徑 | |
 | warning_enabled | BOOLEAN | 是否開啟遺言模式 | NOT NULL, DEFAULT FALSE |
-| warning_days | INT | 觸發遺言的天數 | DEFAULT 7 |
+| warning_days | INT | 觸發遺言的天數；`0` 代表關閉 | NOT NULL, DEFAULT 0 |
 | last_activity | TIMESTAMP | 最後活躍時間 | NOT NULL, DEFAULT CURRENT_TIMESTAMP |
 | created_at | TIMESTAMP | 註冊時間 | NOT NULL, DEFAULT CURRENT_TIMESTAMP |
+| deleted_at | TIMESTAMP | 軟刪除時間 | NULLABLE |
+| lang_preference | VARCHAR(10) | 語言偏好（對外 API 欄位名為 `language`） | NOT NULL, DEFAULT 'en' |
 
 ### chat_rooms (聊天室)
 | 欄位名 | 型別 | 說明 | 限制 |
@@ -28,7 +30,7 @@
 | invite_code | VARCHAR(20) | 群組邀請代碼 | UNIQUE |
 | require_approval | BOOLEAN | 加入是否須審核 | DEFAULT FALSE |
 | view_history | BOOLEAN | 新成員可見歷史訊息 | DEFAULT TRUE |
-| is_archived | BOOLEAN | 是否已封存 | DEFAULT FALSE |
+| is_archived | BOOLEAN | 是否已封存（封存後唯讀） | NOT NULL, DEFAULT FALSE |
 | created_at | TIMESTAMP | 建立時間 | NOT NULL, DEFAULT CURRENT_TIMESTAMP |
 
 ### messages (訊息)
@@ -46,7 +48,8 @@
 | 欄位名 | 型別 | 說明 | 限制 |
 | :--- | :--- | :--- | :--- |
 | attachment_id | UUID | 附件唯一識別碼 | PK, Default: gen_random_uuid() |
-| message_id | UUID | 所屬訊息 | FK(messages), CASCADE DELETE, NOT NULL |
+| message_id | UUID | 所屬訊息；未綁定前可為空，綁定後只屬於單一訊息 | FK(messages), CASCADE DELETE |
+| uploaded_by | UUID | 上傳者 | FK(users), SET NULL |
 | file_path | VARCHAR(255) | 儲存路徑 | NOT NULL |
 | file_type | VARCHAR(50) | MIME type | NOT NULL |
 | original_name | VARCHAR(255) | 原始檔名 | NOT NULL |
@@ -109,3 +112,11 @@
 | :--- | :--- | :--- | :--- |
 | message_id | UUID | 訊息 ID | PK, FK(messages), CASCADE DELETE |
 | user_id | UUID | 被提及者 ID | PK, FK(users), CASCADE DELETE |
+
+## 3. 業務規則
+
+- `private` 聊天室僅限一對一；若需三人以上對話，必須建立 `group`。
+- 同一對使用者只允許存在一個 `private` 聊天室。好友列表中的「傳送訊息」應採用「開啟或建立私聊」語意：已有私聊則直接使用，沒有才建立。
+- 需要有資料庫或其他後端層級的唯一性保證，避免雙方同時操作時重複建立 `private` 聊天室。
+- `is_archived = true` 表示聊天室已封存，封存後保留歷史資料，但不可再發送新訊息。
+- `attachments` 與 `messages` 的關係為多對一：單一附件最終只屬於一則訊息，但一則訊息可擁有多個附件。

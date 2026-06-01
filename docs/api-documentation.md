@@ -55,6 +55,36 @@ JWT 預設有效期為 `15m`，可透過環境變數 `JWT_EXPIRES_IN` 調整。T
 }
 ```
 
+### UserProfile
+```json
+{
+  "userId": "string (UUID)",
+  "name": "string",
+  "bio": "string | null",
+  "avatarUrl": "string (URL) | null"
+}
+```
+
+### MyProfile
+```json
+{
+  "userId": "string (UUID)",
+  "name": "string",
+  "email": "string",
+  "bio": "string | null",
+  "avatarUrl": "string (URL) | null"
+}
+```
+
+### UserSettings
+```json
+{
+  "warningEnabled": "boolean",
+  "warningDays": "number (integer, min 0)",
+  "language": "string (BCP 47 tag, e.g. zh-TW, en)"
+}
+```
+
 ### AuthResponse
 ```json
 {
@@ -74,10 +104,10 @@ JWT 預設有效期為 `15m`，可透過環境變數 `JWT_EXPIRES_IN` 調整。T
   "requireApproval": "boolean",
   "viewHistory": "boolean",
   "isArchived": "boolean",
-  "isReadonly": "boolean",
   "createdAt": "string (ISO 8601)"
 }
 ```
+> `isArchived = true` 表示聊天室已封存，封存後唯讀。
 
 ### RoomSummary _(extends Room)_
 ```json
@@ -117,7 +147,7 @@ JWT 預設有效期為 `15m`，可透過環境變數 `JWT_EXPIRES_IN` 調整。T
   "replyToId": "string (UUID) | null",
   "isRecalled": "boolean",
   "sentAt": "string (ISO 8601)",
-  "attachments": ["string (UUID)"],
+  "attachments": ["Attachment"],
   "sender": "PublicUser | null  (null 表示發送者帳號已刪除)",
   "mentions": ["string (userId)"]
 }
@@ -132,6 +162,18 @@ JWT 預設有效期為 `15m`，可透過環境變數 `JWT_EXPIRES_IN` 調整。T
   "createdAt": "string (ISO 8601)",
   "requester": "PublicUser (optional)",
   "addressee": "PublicUser (optional)"
+}
+```
+
+### Attachment
+```json
+{
+  "attachmentId": "string (UUID)",
+  "messageId": "string (UUID) | null",
+  "fileUrl": "string (URL)",
+  "originalName": "string",
+  "fileType": "string (MIME type)",
+  "uploadedAt": "string (ISO 8601)"
 }
 ```
 
@@ -206,25 +248,57 @@ JWT 預設有效期為 `15m`，可透過環境變數 `JWT_EXPIRES_IN` 調整。T
 
 #### `GET /users/me`
 
-**Response `200`:** `PublicUser`
+取得目前登入者的個人資料檢視結果。
+
+**Response `200`:** `MyProfile`
+
+---
+
+#### `GET /users/:id`
+
+取得公開個人資料頁所需資訊。
+
+**Response `200`:** `UserProfile`
 
 ---
 
 #### `PATCH /users/me`
 
-至少需提供一個欄位。
+更新目前登入者的個人資料欄位（不含偏好設定）。
 
 **Request Body:**
 ```json
 {
   "name": "string (min 1 char)  [optional]",
   "bio": "string  [optional]",
-  "avatarUrl": "string (valid URL)  [optional]",
-  "warningEnabled": "boolean  [optional]",
-  "warningDays": "number (integer, min 1)  [optional]"
+  "avatarUrl": "string (valid URL)  [optional]"
 }
 ```
-**Response `200`:** `PublicUser`
+**Response `200`:** `MyProfile`
+
+---
+
+#### `GET /users/me/settings`
+
+取得目前登入者的設定頁資料。
+
+**Response `200`:** `UserSettings`
+
+---
+
+#### `PATCH /users/me/settings`
+
+更新目前登入者的設定頁欄位。
+
+**Request Body:**
+```json
+{
+  "warningEnabled": "boolean  [optional]",
+  "warningDays": "number (integer, min 0)  [optional]",
+  "language": "string (BCP 47 tag)  [optional]"
+}
+```
+**Response `200`:** `UserSettings`
 
 ---
 
@@ -277,7 +351,7 @@ JWT 預設有效期為 `15m`，可透過環境變數 `JWT_EXPIRES_IN` 調整。T
 **Request Body:**
 ```json
 {
-  "target_user_id": "string (UUID, required)"
+  "targetUserId": "string (UUID, required)"
 }
 ```
 **Response `201`:** `FriendRequestResponse`
@@ -306,7 +380,7 @@ JWT 預設有效期為 `15m`，可透過環境變數 `JWT_EXPIRES_IN` 調整。T
 **Request Body:**
 ```json
 {
-  "target_user_id": "string (UUID, required)"
+  "targetUserId": "string (UUID, required)"
 }
 ```
 **Response `201`**
@@ -352,7 +426,10 @@ JWT 預設有效期為 `15m`，可透過環境變數 `JWT_EXPIRES_IN` 調整。T
 }
 ```
 
-**Response `201`:** `Room`
+**Response `201`:** `Room`（建立新的私聊）
+**Response `200`:** `Room`（已存在既有私聊時直接回傳該房間）
+
+> `private` 聊天室僅限一對一。若同一對好友已存在私聊，伺服器不得重複建立第二個 `private` 聊天室。
 
 ---
 
@@ -416,7 +493,7 @@ JWT 預設有效期為 `15m`，可透過環境變數 `JWT_EXPIRES_IN` 調整。T
 
 #### `DELETE /rooms/:id`
 
-封存 / 刪除聊天室，需為 owner。
+封存聊天室，需為 owner。封存後保留歷史資料，但聊天室進入唯讀狀態。
 
 **Response `204`**
 
@@ -485,9 +562,14 @@ JWT 預設有效期為 `15m`，可透過環境變數 `JWT_EXPIRES_IN` 調整。T
 
 上傳附件。
 
-**Request:** `multipart/form-data`，欄位名稱為 `file`
+**Request:** `multipart/form-data`
 
-**Response `201`:** 附件物件（含 `id`、檔案資訊等欄位）
+| 欄位 | 型別 | 必填 | 說明 |
+| :--- | :--- | :---: | :--- |
+| `file` | binary | ✅ | 附件檔案 |
+| `messageId` | string (UUID) | ❌ | 若提供則立即綁定到指定訊息；若未提供則為待綁定附件 |
+
+**Response `201`:** `Attachment`
 
 ---
 
@@ -615,7 +697,7 @@ JWT 預設有效期為 `15m`，可透過環境變數 `JWT_EXPIRES_IN` 調整。T
 | :--- | :--- | :--- |
 | `join_room` | `{ roomId: string }` | 訂閱特定聊天室的訊息推播（需為成員） |
 | `leave_room` | `{ roomId: string }` | 取消訂閱 |
-| `send_message` | `{ roomId: string, content: string, replyTo?: string, attachments?: string[] }` | 發送訊息；`replyTo` 為引用的 `messageId`；`attachments` 為 UUID 陣列 |
+| `send_message` | `{ roomId: string, content: string, replyTo?: string, attachmentIds?: string[] }` | 發送訊息；`replyTo` 為引用的 `messageId`；`attachmentIds` 為待綁定附件 ID 陣列 |
 | `recall_message` | `{ messageId: string }` | 收回訊息（僅限原發送者） |
 | `typing` | `{ roomId: string, isTyping: boolean }` | 廣播輸入中狀態 |
 | `read_receipt` | `{ roomId: string, messageId: string }` | 更新已讀游標至指定訊息 |
