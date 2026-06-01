@@ -1,43 +1,38 @@
-<!-- Parent: ../AGENTS.md -->
-<!-- Generated: 2026-05-22 | Updated: 2026-05-24 -->
+<!-- Parent: ../../AGENTS.md -->
+<!-- Updated: 2026-06-01 -->
 
-# app
+# src/app
 
 ## Purpose
-Next.js App Router directory. Contains the root layout, global styles, and the home page. The chat UI is **not yet implemented** — `page.tsx` is currently the default Next.js boilerplate template.
+Next.js App Router directory for the implemented frontend. It contains public auth routes plus the authenticated main app shell, chat route, and settings route.
 
 ## Key Files
 
 | File | Description |
 |------|-------------|
-| `layout.tsx` | Root layout component — loads Geist Sans and Geist Mono fonts via `next/font/google`, applies CSS variable classes, sets page `<html>` and `<body>` wrappers with full-height flex layout |
-| `page.tsx` | Home page (`/`) — currently the default Next.js boilerplate template; the chat UI is not yet implemented here |
-| `globals.css` | Tailwind CSS v4 base styles and custom CSS variables (color tokens for `surface`, `border`, `text`, `primary`) imported by `layout.tsx` |
-| `favicon.ico` | Browser tab icon |
+| `layout.tsx` | Root layout and global CSS import |
+| `globals.css` | Tailwind CSS v4 setup and custom design tokens |
+| `login/page.tsx` | Login form |
+| `register/page.tsx` | Registration form |
+| `(main)/layout.tsx` | Authenticated layout with sidebar |
+| `(main)/page.tsx` | Main route redirect/entry behavior |
+| `(main)/chat/[chatId]/page.tsx` | Chat room page |
+| `(main)/settings/page.tsx` | Personal settings page |
 
 ## For AI Agents
 
 ### Working In This Directory
-- When implementing the chat UI in `page.tsx`, add `"use client"` at the top (it will need hooks and Socket.IO).
-- New routes (e.g., `/login`, `/register`) are created by adding a `page.tsx` inside a named subdirectory under `app/`.
-- Custom Tailwind color tokens (e.g., `bg-surface-card`, `text-text-muted`, `border-border-primary`, `text-primary`) are defined in `globals.css` — use these instead of raw Tailwind colors for consistency.
+- Add `"use client"` to route components that use hooks, context, localStorage, Socket.IO, or browser APIs.
+- New authenticated routes should generally live under `(main)/` so they share the sidebar layout.
+- Import shared frontend state through `@/context/ChatContext` where appropriate.
+- Use UI primitives from `@/components/ui/*` rather than duplicating button/input/modal styling.
 
 ### Testing Requirements
-- No automated tests for the frontend yet.
-- Verify changes by running `pnpm dev` and opening `http://localhost:3000` in a browser.
+- For Docker Compose, verify browser behavior at `http://localhost:3005`.
+- For local non-Docker `pnpm dev`, the Next.js dev server still listens on its configured local port.
 
 ### Common Patterns
-- Import path alias `@/` maps to the project root (configured in `tsconfig.json`).
-- Font CSS variables (`--font-geist-sans`, `--font-geist-mono`) are available globally via the root layout's class names.
-
-## Dependencies
-
-### Internal
-- `globals.css` — imported by `layout.tsx`
-
-### External
-- `next/font/google` — Geist font loading
-- `next/image` — optimized image component (used in `page.tsx`)
-- Tailwind CSS — styling
+- Import path alias `@/` maps to `frontend/src`.
+- Custom color classes such as `bg-surface-card`, `border-border-primary`, `text-text-muted`, and `text-primary` come from `globals.css`.
 
 <!-- MANUAL: Any manually added notes below this line are preserved on regeneration -->

@@ -84,9 +84,15 @@ docker compose exec backend pnpm run migrate:up
 
 ## Service URLs
 
-- Frontend: http://localhost:3000
-- Backend API: http://localhost:4000
-- Database connection: localhost:5432
+Docker Compose exposes different host ports from the container-internal ports:
+
+| Service | Host URL / port | Container port |
+|---------|------------------|----------------|
+| Frontend | http://localhost:3005 | 3000 |
+| Backend API | http://localhost:4005 | 4000 |
+| Database | localhost:5435 | 5432 |
+
+Use `NEXT_PUBLIC_API_URL=http://localhost:4005` for browser-facing frontend requests when running through Docker Compose.
 
 ---
 

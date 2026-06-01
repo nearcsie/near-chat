@@ -73,7 +73,7 @@
 ```bash
 cp .env.example .env
 ```
-*(前端會自動抓取 `NEXT_PUBLIC_API_URL=http://localhost:4000` 作為後端位址)*
+*(前端會自動抓取 `NEXT_PUBLIC_API_URL=http://localhost:4005` 作為 Docker Compose host 後端位址)*
 
 **2. 啟動 Docker 服務**
 
@@ -82,9 +82,9 @@ cp .env.example .env
 docker compose up -d
 ```
 這會啟動三個容器：
-- `db` (PostgreSQL, Port: 5432)
-- `backend` (Express API, Port: 4000)
-- `frontend` (Next.js, Port: 3000)
+- `db` (PostgreSQL, Host Port: 5435, Container Port: 5432)
+- `backend` (Express API, Host Port: 4005, Container Port: 4000)
+- `frontend` (Next.js, Host Port: 3005, Container Port: 3000)
 
 **3. 建立資料庫資料表 (Migration)**
 
@@ -96,10 +96,10 @@ docker compose exec backend pnpm run migrate:up
 
 **4. 驗證服務狀態**
 
-- **前端**：開啟瀏覽器前往 [http://localhost:3000](http://localhost:3000)
+- **前端**：開啟瀏覽器前往 [http://localhost:3005](http://localhost:3005)
 - **後端**：使用 Postman 或 cURL 測試。例如測試註冊：
   ```bash
-  curl -X POST http://localhost:4000/auth/register \
+  curl -X POST http://localhost:4005/api/v1/auth/register \
     -H "Content-Type: application/json" \
     -d '{"name": "testuser", "email": "test@example.com", "password": "password123"}'
   ```
@@ -109,7 +109,7 @@ docker compose exec backend pnpm run migrate:up
 後端 Socket 支援 JWT 認證，連線時請於 `auth.token` 參數帶上登入取得的 JWT：
 
 ```ts
-const socket = io('http://localhost:4000', {
+const socket = io('http://localhost:4005', {
   auth: { token: '<JWT from /auth/login>' }
 });
 ```

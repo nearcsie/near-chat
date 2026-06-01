@@ -1,60 +1,71 @@
 <!-- Parent: ../AGENTS.md -->
-<!-- Generated: 2026-05-22 | Updated: 2026-05-24 -->
+<!-- Updated: 2026-06-01 -->
 
 # frontend
 
 ## Purpose
-The Next.js 16 / React 19 client application. Styled with Tailwind CSS v4 and served on port 3000. The frontend is **not yet implemented** — `app/page.tsx` is currently the default Next.js boilerplate template. The component library (`components/ui/`) is planned but no component files exist yet.
+The Next.js 16 / React 19 client application for the chat system. It is no longer a boilerplate app: it includes login/register flows, the main chat layout, chat rooms, personal settings, group settings, UI primitives, REST API wrappers, and Socket.IO helpers.
+
+Docker Compose exposes the frontend on host port 3005 while the container still listens on port 3000.
 
 ## Key Files
 
 | File | Description |
 |------|-------------|
-| `app/layout.tsx` | Root layout — sets up Geist font variables, global CSS import, and the full-height flex body wrapper |
-| `app/page.tsx` | Home page — currently the default Next.js welcome page (placeholder for chat UI) |
-| `app/globals.css` | Global Tailwind CSS base styles |
-| `next.config.ts` | Next.js configuration |
-| `tsconfig.json` | TypeScript configuration (strict mode) |
-| `eslint.config.mjs` | ESLint configuration using `eslint-config-next` |
-| `postcss.config.mjs` | PostCSS config for Tailwind v4 (`@tailwindcss/postcss`) |
-| `Dockerfile` | Container image for docker-compose deployment |
-| `package.json` | Dependencies and scripts (`dev`, `build`, `start`, `lint`) |
+| `src/app/layout.tsx` | Root layout and global CSS import |
+| `src/app/(main)/layout.tsx` | Authenticated app shell with sidebar and chat/settings content |
+| `src/app/(main)/chat/[chatId]/page.tsx` | Chat room page and group member sidebar |
+| `src/app/(main)/settings/page.tsx` | Personal settings page |
+| `src/app/login/page.tsx` | Login form wired to the backend auth API |
+| `src/app/register/page.tsx` | Register form wired to the backend auth API |
+| `src/context/ChatContext.tsx` | Central client state for auth, rooms, messages, folders, sockets, and settings |
+| `src/lib/api.ts` | Typed REST API helpers |
+| `src/lib/socket.ts` | Socket.IO client helpers |
+| `src/components/chat/Chatroom.tsx` | Main chat room UI |
+| `src/components/settings/` | Personal and group settings components |
+| `src/components/ui/` | Reusable UI primitives |
 
 ## Subdirectories
 
 | Directory | Purpose |
 |-----------|---------|
-| `app/` | Next.js App Router pages and layouts (see `app/AGENTS.md`) |
-| `components/` | Reusable UI component library (see `components/AGENTS.md`) |
-| `public/` | Static assets served at `/` — SVG icons and images |
+| `src/app/` | Next.js App Router routes and layouts |
+| `src/components/` | Implemented React components used by the app |
+| `src/context/` | Client-side React context/state |
+| `src/lib/` | API, socket, and utility helpers |
+| `components/` | Legacy AGENTS metadata only; do not add production components there |
+| `public/` | Static assets served at `/` |
 
 ## For AI Agents
 
 ### Working In This Directory
-- Uses the **App Router** (`app/` directory), not the older `pages/` router.
-- Backend API URL is injected via `NEXT_PUBLIC_API_URL` environment variable — prefix all browser-exposed env vars with `NEXT_PUBLIC_`.
-- Socket.IO client should connect to `process.env.NEXT_PUBLIC_API_URL` with the JWT token in `auth: { token }`.
-- Run dev server: `pnpm dev` (requires Node, or use `docker compose up frontend`).
-- Package manager is **pnpm** — do not use npm or yarn.
+- Uses the App Router under `src/app/`.
+- Components that use hooks or browser APIs must include `"use client"`.
+- Browser-exposed environment variables must start with `NEXT_PUBLIC_`.
+- With Docker Compose, set `NEXT_PUBLIC_API_URL=http://localhost:4005` because the browser connects through the backend host port.
+- Socket.IO uses the same `NEXT_PUBLIC_API_URL` and passes JWT data in `auth: { token }`.
+- Package manager is pnpm; do not use npm or yarn.
 
 ### Testing Requirements
-- No tests are currently set up for the frontend.
-- Visual/functional testing requires `pnpm dev` running and a browser.
+- Run frontend type-checks with `pnpm exec tsc --noEmit` from `frontend/`, or through the frontend container.
+- Visual/functional testing requires a running frontend at `http://localhost:3005` when using Docker Compose.
 
 ### Common Patterns
-- Server Components by default; add `"use client"` directive for interactive components that use hooks or browser APIs.
-- Font setup uses `next/font/google` (Geist Sans + Geist Mono) with CSS variables.
-- Tailwind classes are the primary styling mechanism — no CSS modules or styled-components.
+- Import path alias `@/` maps to `frontend/src`.
+- UI styling uses Tailwind CSS classes and the project color tokens from `src/app/globals.css`.
+- Prefer existing UI primitives in `src/components/ui/` before adding new component styles.
 
 ## Dependencies
 
 ### Internal
-- Communicates with `backend/` via REST (`NEXT_PUBLIC_API_URL`) and Socket.IO WebSocket.
+- Communicates with `backend/` via REST (`NEXT_PUBLIC_API_URL`) and Socket.IO.
+- Shares contracts from `shared/` through the root TypeScript config mount.
 
 ### External
-- `next` 16.2.6 — framework
-- `react` / `react-dom` 19.2.6 — UI library
-- `tailwindcss` ^4 — utility-first CSS framework
-- `typescript` ^6.0.3 — type safety
+- `next` 16.2.6
+- `react` / `react-dom` 19.2.6
+- `socket.io-client`
+- `tailwindcss` v4
+- `typescript` 6
 
 <!-- MANUAL: Any manually added notes below this line are preserved on regeneration -->
