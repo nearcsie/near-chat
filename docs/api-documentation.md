@@ -4,6 +4,8 @@
 
 ## 1. RESTful API (HTTP)
 
+> Authentication note: `POST /auth/register` and `POST /auth/login` return a JWT in the JSON body and set an `auth_token` HttpOnly cookie. The JWT default lifetime is `15m` via `JWT_EXPIRES_IN`; Bearer-token clients must re-authenticate after expiry or set `JWT_EXPIRES_IN` explicitly in deployment config if a longer lifetime is required.
+
 所有 API 路徑以 `/api/v1` 開頭。
 
 ### A. 認證與帳號 (Authentication & Profile)
@@ -14,15 +16,16 @@
 | 登出 | POST | `/auth/logout` | 清除 Session/Token |
 | 取得個人資訊 | GET | `/users/me` | |
 | 更新個人資訊 | PATCH | `/users/me` | name, bio, avatar_url, warning_config |
-| 搜尋使用者 | GET | `/users/search` | query (by name or ID) |
+| 刪除個人帳號 | DELETE | `/users/me` | 標記帳號為已刪除 (軟刪除) |
+| 搜尋使用者 | GET | `/users` | q (by name or ID) |
 
-### B. 好友管理 (Friend Management)
+### B. 好友與封鎖 (Friends & Blocks)
 | 功能 | 方法 | 路徑 | 說明 |
 | :--- | :--- | :--- | :--- |
 | 列出好友 | GET | `/friends` | 取得已接受的好友列表 |
-| 列出好友邀請 | GET | `/friends/requests` | 取得待處理邀請 |
-| 發送好友邀請 | POST | `/friends/requests` | target_user_id |
-| 回覆好友邀請 | PATCH | `/friends/requests/:id` | status ('accepted', 'rejected') |
+| 列出好友邀請 | GET | `/friend-requests` | 取得待處理邀請 |
+| 發送好友邀請 | POST | `/friend-requests` | target_user_id |
+| 回覆好友邀請 | PATCH | `/friend-requests/:id` | status ('accepted', 'rejected') |
 | 刪除好友 | DELETE | `/friends/:id` | |
 | 封鎖使用者 | POST | `/blocks` | target_user_id |
 | 取消封鎖 | DELETE | `/blocks/:id` | |
@@ -31,24 +34,24 @@
 | 功能 | 方法 | 路徑 | 說明 |
 | :--- | :--- | :--- | :--- |
 | 列出所有聊天室 | GET | `/rooms` | 包含最後一則訊息片段 |
-| 建立群組 | POST | `/rooms/group` | name, avatar_url |
+| 建立聊天室 | POST | `/rooms` | type ('group'｜'private'), name, avatar_url, target_user_id |
 | 取得聊天室詳情 | GET | `/rooms/:id` | |
-| 更新群組設定 | PATCH | `/rooms/:id` | name, avatar, settings (owner/admin) |
-| 加入群組 (代碼) | POST | `/rooms/join/:code` | |
-| 退出聊天室 | DELETE | `/rooms/:id/leave` | |
+| 更新群組設定 | PATCH | `/rooms/:id` | name, avatar, settings (owner/admin), ownerId (轉讓擁有者) |
+| 加入群組 (代碼) | POST | `/rooms/:id/members` | invite_code |
+| 退出聊天室 | DELETE | `/rooms/:id/members/me` | |
+| 封存/刪除聊天室 | DELETE | `/rooms/:id` | 僅擁有者可操作 |
 
 ### D. 成員管理 (Member Management)
 | 功能 | 方法 | 路徑 | 說明 |
 | :--- | :--- | :--- | :--- |
 | 列出成員 | GET | `/rooms/:id/members` | |
-| 審核成員 | PATCH | `/rooms/:id/members/:userId/approve` | |
-| 修改權限/暱稱 | PATCH | `/rooms/:id/members/:userId` | role, nickname, is_muted |
+| 審核/修改成員 | PATCH | `/rooms/:id/members/:userId` | role, nickname, is_muted, status ('approved') |
 | 踢出成員 | DELETE | `/rooms/:id/members/:userId` | |
 
 ### E. 訊息與附件 (Messages & Attachments)
 | 功能 | 方法 | 路徑 | 說明 |
 | :--- | :--- | :--- | :--- |
-| 取得歷史訊息 | GET | `/rooms/:id/messages` | cursor pagination (before_id, limit) |
+| 取得歷史訊息 | GET | `/rooms/:roomId/messages` | cursor pagination (before_id, limit) |
 | 上傳附件 | POST | `/attachments` | multipart/form-data |
 | 下載附件 | GET | `/attachments/:id` | |
 
@@ -58,7 +61,16 @@
 | 列出資料夾 | GET | `/folders` | 包含收納的 room_ids |
 | 建立資料夾 | POST | `/folders` | name |
 | 刪除資料夾 | DELETE | `/folders/:id` | |
-| 移動房間至資料夾 | PUT | `/folders/:id/rooms` | room_ids (array) |
+| 更新資料夾房間 | PUT | `/folders/:id/rooms` | room_ids (array) |
+
+### G. 緊急聯絡 (Emergency Contacts)
+| 功能 | 方法 | 路徑 | 說明 |
+| :--- | :--- | :--- | :--- |
+| 取得緊急聯絡人 | GET | `/users/me/emergency-contacts` | |
+| 新增緊急聯絡人 | POST | `/users/me/emergency-contacts` | name, phone_number |
+| 刪除緊急聯絡人 | DELETE | `/users/me/emergency-contacts/:contactId` | |
+| 觸發緊急求救 | POST | `/users/me/emergency-alert` | message (optional) |
+| 檢查不活躍狀態 | POST | `/users/me/emergency-alert/check-inactivity`| 觸發長時間未活躍的求救 |
 
 ---
 
@@ -86,3 +98,4 @@
 | `room_update` | `{ type: string, data: any }` | 房間設定變更、成員變動、被踢出通知 |
 | `friend_request` | `RequestObject` | 收到新的好友邀請通知 |
 | `emergency_alert` | `{ userId: string, message: string }` | 收到緊急聯絡通知 |
+| `error` | `ApiError` | 錯誤回報 |
