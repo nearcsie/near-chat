@@ -1,17 +1,23 @@
 "use client";
 
+import React, { useState } from "react";
 import { ChatRoom, Member, getAvatarForUser, useChat } from "@/context/ChatContext";
 import { Avatar } from "@/components/ui/Avatar";
+import ProfilePopover from "./ProfilePopover";
+import { useTranslation } from "@/hooks/useTranslation";
 
 export default function RoomMembersPanel({ room, members }: { room: ChatRoom; members: Member[] }) {
   const { user, activeRoomNicknames } = useChat();
   const activeUserDisplayName = activeRoomNicknames[room.id] || user.username;
+  const [selectedMemberName, setSelectedMemberName] = useState<string | null>(null);
+  const [popoverTop, setPopoverTop] = useState<number>(0);
+  const { t } = useTranslation();
 
   return (
-    <div className="w-[240px] shrink-0 border-l border-border-primary bg-surface-card flex flex-col h-full select-none">
+    <div className="members-panel-root w-[240px] shrink-0 border-l border-border-primary bg-surface-card flex flex-col h-full select-none relative">
       <div className="h-14 border-b border-border-primary px-4 flex items-center select-none shrink-0 bg-surface-muted">
         <span className="text-[10px] font-bold text-text-muted uppercase tracking-widest block">
-          成員列表 ({members.length})
+          {t("chatroom.membersList", { count: members.length })}
         </span>
       </div>
 
@@ -19,7 +25,32 @@ export default function RoomMembersPanel({ room, members }: { room: ChatRoom; me
         {members.map((member, index) => {
           const displayNick = member.name === user.username ? activeUserDisplayName : member.name;
           return (
-            <div key={`${member.name}-${index}`} className="p-3.5 flex items-center justify-between hover:bg-surface-muted/50 transition-colors">
+            <div
+              key={`${member.name}-${index}`}
+              onClick={(e) => {
+                const rect = e.currentTarget.getBoundingClientRect();
+                const parentEl = e.currentTarget.closest(".members-panel-root");
+                if (parentEl) {
+                  const parentRect = parentEl.getBoundingClientRect();
+                  const halfPopover = 170; // Half of estimated popover height (340px)
+                  const padding = 12;      // Top/bottom margins
+                  let topVal = rect.top - parentRect.top + rect.height / 2;
+
+                  if (parentRect.height <= (halfPopover * 2 + padding * 2)) {
+                    topVal = parentRect.height / 2;
+                  } else {
+                    if (topVal - halfPopover < padding) {
+                      topVal = halfPopover + padding;
+                    } else if (topVal + halfPopover > parentRect.height - padding) {
+                      topVal = parentRect.height - halfPopover - padding;
+                    }
+                  }
+                  setPopoverTop(topVal);
+                }
+                setSelectedMemberName(selectedMemberName === member.name ? null : member.name);
+              }}
+              className="p-3.5 flex items-center justify-between hover:bg-surface-muted/50 transition-colors cursor-pointer relative avatar-click-target"
+            >
               <div className="flex items-center gap-3 min-w-0">
                 <Avatar name={member.name} src={getAvatarForUser(member.name, user.avatar, user.username)} size="sm" />
                 <div className="min-w-0">
@@ -32,13 +63,27 @@ export default function RoomMembersPanel({ room, members }: { room: ChatRoom; me
           );
         })}
       </div>
+
+      {selectedMemberName && (
+        <ProfilePopover
+          username={selectedMemberName}
+          onClose={(e) => {
+            e.stopPropagation();
+            setSelectedMemberName(null);
+          }}
+          position="custom"
+          className="absolute right-full mr-3 -translate-y-1/2"
+          style={{ top: `${popoverTop}px` }}
+        />
+      )}
     </div>
   );
 }
 
 function MutedIcon() {
+  const { t } = useTranslation();
   return (
-    <span title="已靜音" className="text-red-500 scale-90">
+    <span title={t("chatroom.muted")} className="text-red-500 scale-90">
       <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
         <path strokeLinecap="round" strokeLinejoin="round" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
         <path strokeLinecap="round" strokeLinejoin="round" d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />

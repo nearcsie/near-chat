@@ -145,6 +145,10 @@ interface ChatContextType {
   uiLanguage: UiLanguage;
   isAuthenticated: boolean;
   isMounted: boolean;
+  selectedFriendForSidebar: Friend | null;
+  setSelectedFriendForSidebar: React.Dispatch<React.SetStateAction<Friend | null>>;
+  showRightPanel: boolean;
+  setShowRightPanel: React.Dispatch<React.SetStateAction<boolean>>;
 
   setRooms: React.Dispatch<React.SetStateAction<ChatRoom[]>>;
   setFolders: React.Dispatch<React.SetStateAction<Folder[]>>;
@@ -304,6 +308,9 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       },
     ],
   });
+
+  const [selectedFriendForSidebar, setSelectedFriendForSidebar] = useState<Friend | null>(null);
+  const [showRightPanel, setShowRightPanel] = useState<boolean>(true);
 
   useEffect(() => {
     setIsMounted(true);
@@ -657,6 +664,10 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         unblockUser,
         saveEmergencySettings,
         setUiLanguage,
+        selectedFriendForSidebar,
+        setSelectedFriendForSidebar,
+        showRightPanel,
+        setShowRightPanel,
       }}
     >
       {children}

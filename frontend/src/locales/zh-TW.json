@@ -1,6 +1,8 @@
 {
   "common": {
-    "loading": "載入中..."
+    "loading": "載入中...",
+    "online": "線上",
+    "offline": "離線"
   },
   "rail": {
     "chats": "聊天室",
@@ -139,6 +141,22 @@
     "readOnlyOrBlocked": "此聊天室已被封鎖或唯讀，無法發送訊息。",
     "uploadAttachment": "上傳附件檔案",
     "inputPlaceholder": "輸入訊息...",
-    "send": "發送"
+    "send": "發送",
+    "membersList": "成員列表 ({count})",
+    "hideInfoPanel": "隱藏資訊欄",
+    "showInfoPanel": "顯示資訊欄",
+    "muted": "已靜音"
+  },
+  "profileCard": {
+    "myInfo": "我的資訊",
+    "friendInfo": "好友資訊",
+    "memberInfo": "成員資訊",
+    "status": "狀態",
+    "bio": "個人簡介",
+    "setEmergency": "設為緊急聯絡人",
+    "sendMessage": "傳送訊息",
+    "selectPrompt": "點選好友以查看詳細資訊",
+    "defaultBio": "資料庫專案組員。讓我們一起合作！",
+    "emergencyMessage": "系統偵測到 Hank 疑似已失聯。這是一封自動發送的緊急求助郵件。"
   }
 }

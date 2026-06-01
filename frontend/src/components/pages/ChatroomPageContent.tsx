@@ -6,10 +6,11 @@ import { useChat } from "@/context/ChatContext";
 import Chatroom from "@/components/chat/Chatroom";
 import GroupSettings from "@/components/settings/GroupSettings";
 import RoomMembersPanel from "@/components/chat/RoomMembersPanel";
+import FriendInfoPanel from "@/components/chat/FriendInfoPanel";
 
 export default function ChatroomPageContent() {
   const params = useParams();
-  const { rooms } = useChat();
+  const { rooms, showRightPanel } = useChat();
   const [showSettings, setShowSettings] = useState(false);
 
   const chatId = params?.chatId as string;
@@ -38,8 +39,14 @@ export default function ChatroomPageContent() {
         />
       )}
 
-      {activeRoom.type === "group" && activeRoom.members && (
-        <RoomMembersPanel room={activeRoom} members={activeRoom.members} />
+      {showRightPanel && (
+        activeRoom.type === "group" && activeRoom.members ? (
+          <RoomMembersPanel room={activeRoom} members={activeRoom.members} />
+        ) : activeRoom.type === "msg" ? (
+          <div className="w-[240px] shrink-0 border-l border-border-primary bg-surface-card h-full">
+            <FriendInfoPanel friendName={activeRoom.name} />
+          </div>
+        ) : null
       )}
     </div>
   );

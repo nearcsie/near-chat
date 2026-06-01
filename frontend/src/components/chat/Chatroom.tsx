@@ -9,6 +9,7 @@ import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
 import { ChatBubble } from "@/components/ui/ChatBubble";
 import { useTranslation } from "@/hooks/useTranslation";
+import ProfilePopover from "./ProfilePopover";
 
 interface ChatroomProps {
   roomId: string;
@@ -30,10 +31,13 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
     handleModifyNickname,
     handleLeaveOrBlock,
     getReadAvatarsForMessage,
+    showRightPanel,
+    setShowRightPanel,
   } = useChat();
 
   const [inputText, setInputText] = useState("");
   const [replyTarget, setReplyTarget] = useState<Message | null>(null);
+  const [showHeaderPopover, setShowHeaderPopover] = useState(false);
   const messageEndRef = useRef<HTMLDivElement>(null);
   const { t } = useTranslation();
 
@@ -94,7 +98,16 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
     <div className="flex-1 flex flex-col bg-background h-full overflow-hidden">
       {/* Chat Panel Header */}
       <div className="h-14 border-b border-border-primary px-6 flex items-center justify-between select-none shrink-0 bg-surface-card z-10">
-        <div className="flex items-center gap-3">
+        <div
+          className={`flex items-center gap-3 relative avatar-click-target ${
+            activeRoom.type === "msg" ? "cursor-pointer hover:opacity-85 transition-opacity" : ""
+          }`}
+          onClick={() => {
+            if (activeRoom.type === "msg") {
+              setShowHeaderPopover(!showHeaderPopover);
+            }
+          }}
+        >
           <Avatar
             name={activeRoom.name}
             src={getAvatarForUser(activeRoom.name, user.avatar, user.username)}
@@ -114,10 +127,37 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
               </span>
             )}
           </div>
+
+          {showHeaderPopover && activeRoom.type === "msg" && (
+            <ProfilePopover
+              username={activeRoom.name}
+              onClose={(e) => {
+                e.stopPropagation();
+                setShowHeaderPopover(false);
+              }}
+              position="bottom"
+            />
+          )}
         </div>
 
         {/* Header Action Elements */}
         <div className="flex items-center gap-3">
+          {/* Panel Toggle Button */}
+          <button
+            onClick={() => setShowRightPanel(!showRightPanel)}
+            className={`p-1.5 border rounded-sm transition-colors cursor-pointer ${
+              showRightPanel
+                ? "bg-primary/10 border-primary/30 text-primary"
+                : "border-border-secondary hover:border-border-primary text-text-muted hover:text-foreground"
+            }`}
+            title={showRightPanel ? t("chatroom.hideInfoPanel") : t("chatroom.showInfoPanel")}
+          >
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v14a1 1 0 01-1 1H5a1 1 0 01-1-1V5z" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M16 4v16" />
+            </svg>
+          </button>
+
           {/* Group Settings Button */}
           {activeRoom.type === "group" && onOpenGroupSettings && (
             <Button

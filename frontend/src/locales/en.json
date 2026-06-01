@@ -1,6 +1,8 @@
 {
   "common": {
-    "loading": "Loading..."
+    "loading": "Loading...",
+    "online": "Online",
+    "offline": "Offline"
   },
   "rail": {
     "chats": "Chats",
@@ -139,6 +141,22 @@
     "readOnlyOrBlocked": "This chatroom is blocked or read-only; messages cannot be sent.",
     "uploadAttachment": "Upload Attachment",
     "inputPlaceholder": "Type a message...",
-    "send": "Send"
+    "send": "Send",
+    "membersList": "Members ({count})",
+    "hideInfoPanel": "Hide Info Panel",
+    "showInfoPanel": "Show Info Panel",
+    "muted": "Muted"
+  },
+  "profileCard": {
+    "myInfo": "My Info",
+    "friendInfo": "Friend Info",
+    "memberInfo": "Member Info",
+    "status": "Status",
+    "bio": "Bio",
+    "setEmergency": "Set as Emergency Contact",
+    "sendMessage": "Send Message",
+    "selectPrompt": "Select a friend to view details",
+    "defaultBio": "Database chat project member. Let's work together!",
+    "emergencyMessage": "System detected Hank is offline. This is an auto message."
   }
 }

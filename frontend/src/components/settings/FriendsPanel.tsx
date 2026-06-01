@@ -19,6 +19,7 @@ export default function FriendsPanel() {
     removeFriend,
     blockFriend,
     unblockUser,
+    setSelectedFriendForSidebar,
   } = useChat();
   const [searchText, setSearchText] = useState("");
   const [newFriendName, setNewFriendName] = useState("");
@@ -61,7 +62,10 @@ export default function FriendsPanel() {
           <div className="divide-y divide-border-secondary">
             {filteredFriends.map((friend) => (
               <div key={friend.id} className="p-4 flex items-center justify-between gap-4">
-                <div className="flex items-center gap-3 min-w-0">
+                <div
+                  onClick={() => setSelectedFriendForSidebar(friend)}
+                  className="flex items-center gap-3 min-w-0 cursor-pointer hover:opacity-85 active:scale-98 transition-all"
+                >
                   <Avatar name={friend.name} size="sm" isOnline={friend.status === "online"} />
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">

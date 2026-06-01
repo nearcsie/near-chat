@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import { useParams, usePathname, useRouter } from "next/navigation";
-import { useChat } from "@/context/ChatContext";
+import { useChat, Friend, getAvatarForUser } from "@/context/ChatContext";
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { useTranslation } from "@/hooks/useTranslation";
 import ChatList from "./ChatList";
+import FriendInfoPanel from "@/components/chat/FriendInfoPanel";
 
 export default function Sidebar() {
   const router = useRouter();
@@ -27,6 +28,8 @@ export default function Sidebar() {
     handleLogout,
     friendRequests,
     uiLanguage,
+    selectedFriendForSidebar,
+    setSelectedFriendForSidebar,
   } = useChat();
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -83,7 +86,10 @@ export default function Sidebar() {
     {
       label: t("rail.friends"),
       active: pathname === "/friends",
-      onClick: () => router.push("/friends"),
+      onClick: () => {
+        setSelectedFriendForSidebar(null);
+        router.push("/friends");
+      },
       badge: pendingIncoming,
       icon: (
         <svg className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
@@ -155,12 +161,36 @@ export default function Sidebar() {
             </IconButton>
           </div>
         </div>
+      ) : pathname === "/friends" && selectedFriendForSidebar ? (
+        <div className="h-14 border-b border-border-primary px-4 flex items-center justify-between select-none shrink-0 bg-surface-muted">
+          <span className="text-[10px] font-bold text-text-muted uppercase tracking-widest block">
+            {t("profileCard.friendInfo")}
+          </span>
+        </div>
       ) : (
         <div className="h-14 border-b border-border-primary px-4 flex items-center justify-between select-none shrink-0" />
       )}
 
-      <div className="flex-1 overflow-y-auto select-none">
-        {isChatPage && <ChatList searchQuery={searchQuery} />}
+      <div className="flex-1 overflow-y-auto select-none flex flex-col">
+        {isChatPage ? (
+          <ChatList searchQuery={searchQuery} />
+        ) : pathname === "/friends" ? (
+          selectedFriendForSidebar ? (
+            <FriendInfoPanel
+              friendName={selectedFriendForSidebar.name}
+              showChatButton={true}
+              hideHeader={true}
+            />
+          ) : (
+            <div className="flex flex-col items-center justify-center h-full text-text-muted text-xs text-center p-4">
+              <svg className="h-10 w-10 text-text-muted/30 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M16 11a4 4 0 10-8 0 4 4 0 008 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 20a8 8 0 0116 0" />
+              </svg>
+              <p>{t("profileCard.selectPrompt")}</p>
+            </div>
+          )
+        ) : null}
       </div>
 
       <div className="border-t border-border-primary bg-surface-muted select-none shrink-0 flex flex-col">
