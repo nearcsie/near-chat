@@ -13,6 +13,7 @@ import type {
   Room,
   RoomMember,
   RoomSummary,
+  UserProfile,
   UserSettings,
 } from '@shared/types';
 
@@ -38,6 +39,20 @@ type CreatePrivateRequest = {
 type UpdateRoomRequest = Partial<
   Pick<Room, 'name' | 'avatarUrl' | 'requireApproval' | 'viewHistory' | 'isArchived'>
 >;
+
+type TransferOwnerResponse = {
+  message: string;
+};
+
+type UpdateRoomMemberRequest = {
+  role?: 'admin' | 'member';
+  nickname?: string;
+  isMuted?: boolean;
+};
+
+type RoomMemberMutationResponse = {
+  message: string;
+};
 
 type ListMessagesRequest = {
   beforeId?: string;
@@ -116,6 +131,9 @@ export const logout = (token: string): Promise<void> =>
 
 export const getMe = (token: string): Promise<MyProfile> =>
   requestJson<MyProfile>('/users/me', {}, { token });
+
+export const getUserProfile = (token: string, userId: string): Promise<UserProfile> =>
+  requestJson<UserProfile>(`/users/${userId}`, {}, { token });
 
 export const updateMe = (token: string, data: UpdateMeRequest): Promise<MyProfile> =>
   requestJson<MyProfile>(
@@ -239,6 +257,52 @@ export const leaveRoom = (token: string, roomId: string): Promise<void> =>
 
 export const listRoomMembers = (token: string, roomId: string): Promise<RoomMember[]> =>
   requestJson<RoomMember[]>(`/rooms/${roomId}/members`, {}, { token });
+
+export const approveRoomMember = (
+  token: string,
+  roomId: string,
+  userId: string,
+): Promise<RoomMemberMutationResponse> =>
+  requestJson<RoomMemberMutationResponse>(
+    `/rooms/${roomId}/members/${userId}`,
+    {
+      method: 'PATCH',
+      ...withJsonBody({ status: 'approved' }),
+    },
+    { token },
+  );
+
+export const updateRoomMember = (
+  token: string,
+  roomId: string,
+  userId: string,
+  data: UpdateRoomMemberRequest,
+): Promise<RoomMemberMutationResponse> =>
+  requestJson<RoomMemberMutationResponse>(
+    `/rooms/${roomId}/members/${userId}`,
+    {
+      method: 'PATCH',
+      ...withJsonBody(data),
+    },
+    { token },
+  );
+
+export const kickRoomMember = (token: string, roomId: string, userId: string): Promise<void> =>
+  requestJson<void>(`/rooms/${roomId}/members/${userId}`, { method: 'DELETE' }, { token });
+
+export const transferRoomOwner = (
+  token: string,
+  roomId: string,
+  ownerId: string,
+): Promise<TransferOwnerResponse> =>
+  requestJson<TransferOwnerResponse>(
+    `/rooms/${roomId}`,
+    {
+      method: 'PATCH',
+      ...withJsonBody({ ownerId }),
+    },
+    { token },
+  );
 
 export const listMessages = (
   token: string,

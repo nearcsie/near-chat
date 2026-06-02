@@ -1,12 +1,12 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useChat, getAvatarForUser, Member, ChatRoom } from "@/context/ChatContext";
-import { Button } from "@/components/ui/Button";
-import { Input } from "@/components/ui/Input";
-import { Checkbox } from "@/components/ui/Checkbox";
+import { useChat, getAvatarForUser, Member } from "@/context/ChatContext";
 import { Avatar } from "@/components/ui/Avatar";
+import { Button } from "@/components/ui/Button";
+import { Checkbox } from "@/components/ui/Checkbox";
+import { Input } from "@/components/ui/Input";
 
 interface GroupSettingsProps {
   roomId: string;
@@ -15,228 +15,370 @@ interface GroupSettingsProps {
 
 export default function GroupSettings({ roomId, onClose }: GroupSettingsProps) {
   const router = useRouter();
-  const { rooms, user, saveGroupSettings, handleDeleteGroupRoom } = useChat();
+  const {
+    rooms,
+    user,
+    loadGroupMembers,
+    saveGroupSettings,
+    approveGroupMember,
+    updateGroupMember,
+    kickGroupMember,
+    transferGroupOwner,
+    handleDeleteGroupRoom,
+  } = useChat();
 
-  const activeRoom = rooms.find((r) => r.id === roomId);
+  const activeRoom = rooms.find((room) => room.id === roomId);
+  const [name, setName] = useState("");
+  const [requireApproval, setRequireApproval] = useState(false);
+  const [viewHistory, setViewHistory] = useState(true);
+  const [members, setMembers] = useState<Member[]>([]);
+  const [feedback, setFeedback] = useState<string>("");
+  const [isSaving, setIsSaving] = useState(false);
 
-  const [groupSettingsName, setGroupSettingsName] = useState("");
-  const [groupSettingsDesc, setGroupSettingsDesc] = useState("");
-  const [groupSettingsPublic, setGroupSettingsPublic] = useState(false);
-  const [groupSettingsInvite, setGroupSettingsInvite] = useState(false);
-  const [groupSettingsUpload, setGroupSettingsUpload] = useState(false);
-  const [groupSettingsMembers, setGroupSettingsMembers] = useState<Member[]>([]);
+  const currentMember = useMemo(
+    () => members.find((member) => member.userId === user.userId || member.name === user.username),
+    [members, user.userId, user.username],
+  );
+  const canManageMembers = currentMember?.role === "owner" || currentMember?.role === "admin";
+  const canTransferOwner = currentMember?.role === "owner";
 
   useEffect(() => {
-    if (activeRoom) {
-      setGroupSettingsName(activeRoom.name);
-      setGroupSettingsDesc(activeRoom.description || "");
-      setGroupSettingsPublic(!!activeRoom.isPublic);
-      setGroupSettingsInvite(!!activeRoom.allowInvite);
-      setGroupSettingsUpload(!!activeRoom.allowUpload);
-      setGroupSettingsMembers(activeRoom.members || []);
+    if (!activeRoom) return;
+    setName(activeRoom.name);
+    setRequireApproval(Boolean(activeRoom.requireApproval));
+    setViewHistory(activeRoom.viewHistory ?? true);
+  }, [activeRoom?.id, activeRoom?.name, activeRoom?.requireApproval, activeRoom?.viewHistory]);
+
+  useEffect(() => {
+    if (activeRoom?.members) {
+      setMembers(activeRoom.members);
     }
-  }, [activeRoom]);
+  }, [activeRoom?.members]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setFeedback("");
+    void loadGroupMembers(roomId)
+      .then((loaded) => {
+        if (!cancelled) setMembers(loaded);
+      })
+      .catch((error) => {
+        if (!cancelled) setFeedback(error instanceof Error ? error.message : "Failed to load members");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [roomId]);
 
   if (!activeRoom) {
     return (
       <div className="flex-1 flex items-center justify-center bg-background text-foreground font-sans">
-        找不到此群組
+        找不到聊天室
       </div>
     );
   }
 
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSave = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setIsSaving(true);
+    setFeedback("");
     try {
       await saveGroupSettings(roomId, {
-        name: groupSettingsName,
-        description: groupSettingsDesc,
-        isPublic: groupSettingsPublic,
-        allowInvite: groupSettingsInvite,
-        allowUpload: groupSettingsUpload,
-        members: groupSettingsMembers,
+        name,
+        requireApproval,
+        viewHistory,
       });
-      onClose();
+      setFeedback("群組設定已儲存");
     } catch (error) {
-      console.error(error);
-      alert(error instanceof Error ? error.message : "Failed to save group settings");
+      setFeedback(error instanceof Error ? error.message : "Failed to save group settings");
+    } finally {
+      setIsSaving(false);
     }
   };
 
-  const handleDelete = async () => {
-    if (confirm("警告！刪除群組聊天室將無法復原，所有訊息及成員資料都將被永久刪除。確認刪除嗎？")) {
-      const nextActiveId = await handleDeleteGroupRoom(roomId);
-      if (nextActiveId) {
-        router.push(`/chat/${nextActiveId}`);
-      } else {
-        router.push("/");
-      }
+  const refreshMembers = async () => {
+    setMembers(await loadGroupMembers(roomId));
+  };
+
+  const handleApprove = async (member: Member) => {
+    try {
+      await approveGroupMember(roomId, member.userId);
+      await refreshMembers();
+      setFeedback(`${member.name} 已通過審核`);
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : "Failed to approve member");
     }
   };
 
-  const handleInvite = () => {
-    const name = prompt("請輸入欲邀請的成員名稱：");
-    if (!name) return;
-    setGroupSettingsMembers([...groupSettingsMembers, { name, role: "member" }]);
-  };
-
-  const handleKick = (memberName: string) => {
-    if (memberName === "我") {
-      alert("您無法踢出自己！");
-      return;
+  const handleRoleChange = async (member: Member, role: "admin" | "member") => {
+    try {
+      await updateGroupMember(roomId, member.userId, { role });
+      await refreshMembers();
+      setFeedback(`${member.name} 的角色已更新`);
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : "Failed to update member role");
     }
-    setGroupSettingsMembers(groupSettingsMembers.filter((m) => m.name !== memberName));
   };
 
-  const handleToggleMute = (memberName: string) => {
-    setGroupSettingsMembers(
-      groupSettingsMembers.map((m) =>
-        m.name === memberName ? { ...m, isMuted: !m.isMuted } : m
-      )
-    );
+  const handleNickname = async (member: Member) => {
+    const nickname = window.prompt("輸入群組暱稱，留空則清除暱稱：", member.nickname ?? "");
+    if (nickname === null) return;
+    try {
+      await updateGroupMember(roomId, member.userId, { nickname: nickname.trim() });
+      await refreshMembers();
+      setFeedback(`${member.name} 的暱稱已更新`);
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : "Failed to update nickname");
+    }
+  };
+
+  const handleToggleMute = async (member: Member) => {
+    try {
+      await updateGroupMember(roomId, member.userId, { isMuted: !member.isMuted });
+      await refreshMembers();
+      setFeedback(`${member.name} 的禁言狀態已更新`);
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : "Failed to update mute status");
+    }
+  };
+
+  const handleKick = async (member: Member) => {
+    if (!window.confirm(`確定要移除 ${member.name} 嗎？`)) return;
+    try {
+      await kickGroupMember(roomId, member.userId);
+      await refreshMembers();
+      setFeedback(`${member.name} 已被移除`);
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : "Failed to remove member");
+    }
+  };
+
+  const handleTransferOwner = async (member: Member) => {
+    if (!window.confirm(`確定要將群主轉讓給 ${member.name} 嗎？`)) return;
+    try {
+      await transferGroupOwner(roomId, member.userId);
+      await refreshMembers();
+      setFeedback(`群主已轉讓給 ${member.name}`);
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : "Failed to transfer owner");
+    }
+  };
+
+  const handleArchive = async () => {
+    if (!window.confirm("確定要封存這個群組嗎？封存後聊天室會變成唯讀。")) return;
+    const nextActiveId = await handleDeleteGroupRoom(roomId);
+    if (nextActiveId) {
+      router.push(`/chat/${nextActiveId}`);
+    } else {
+      router.push("/");
+    }
   };
 
   return (
     <div className="flex-1 flex flex-col bg-background h-full overflow-hidden">
-      {/* Header */}
       <div className="h-14 border-b border-border-primary px-6 flex items-center justify-between select-none shrink-0 bg-surface-card z-10">
-        <h1 className="text-sm font-bold text-foreground tracking-wider">群組設定 - {groupSettingsName}</h1>
+        <div>
+          <h1 className="text-sm font-bold text-foreground tracking-wider">群組設定 - {activeRoom.name}</h1>
+          <p className="text-[10px] text-text-muted font-mono mt-0.5">Room API settings and members</p>
+        </div>
         <div className="flex gap-2">
           <Button type="button" variant="secondary" onClick={onClose} className="text-xs py-1 px-3">
-            取消
+            關閉
           </Button>
-          <Button type="button" variant="primary" onClick={handleSave} className="text-xs py-1 px-3">
-            儲存變更
+          <Button type="button" variant="primary" onClick={() => void refreshMembers()} className="text-xs py-1 px-3">
+            重新載入成員
           </Button>
         </div>
       </div>
 
-      {/* Centered Scrollable Content */}
       <div className="flex-1 overflow-y-auto p-6 bg-surface-card">
         <form onSubmit={handleSave} className="flex flex-col gap-6">
-            {/* Section: Basic Info */}
-            <div className="flex flex-col gap-4">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-primary border-b border-border-secondary pb-1">
-                基本資訊
-              </h3>
-              <Input
-                label="聊天室名稱"
-                value={groupSettingsName}
-                onChange={(e) => setGroupSettingsName(e.target.value)}
-                required
-              />
-              <div className="flex flex-col gap-1.5 w-full">
-                <label className="text-xs font-bold uppercase tracking-wider text-text-muted select-none">
-                  描述
-                </label>
-                <textarea
-                  value={groupSettingsDesc}
-                  onChange={(e) => setGroupSettingsDesc(e.target.value)}
-                  className="w-full bg-surface-card border border-border-secondary hover:border-border-primary focus:border-primary focus:outline-none rounded-sm px-3 py-2 text-sm text-foreground transition-colors min-h-[60px]"
-                />
-              </div>
+          {feedback && (
+            <div className="border border-border-secondary bg-surface-muted px-3 py-2 text-xs text-foreground">
+              {feedback}
+            </div>
+          )}
+
+          <section className="flex flex-col gap-4">
+            <SectionTitle title="基本設定" />
+            <Input
+              label="群組名稱"
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              required
+            />
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               <Checkbox
-                label="公開聊天室"
-                description="允許任何人加入此聊天室"
-                checked={groupSettingsPublic}
-                onChange={(e) => setGroupSettingsPublic(e.target.checked)}
+                label="加入前需要審核"
+                description="開啟後，新成員會以 pending 身分加入，需由 owner/admin 審核。"
+                checked={requireApproval}
+                onChange={(event) => setRequireApproval(event.target.checked)}
+              />
+              <Checkbox
+                label="允許新成員查看歷史訊息"
+                description="關閉時，新成員只能看到加入後的訊息。"
+                checked={viewHistory}
+                onChange={(event) => setViewHistory(event.target.checked)}
               />
             </div>
-
-            {/* Section: Member Management */}
-            <div className="flex flex-col gap-3">
-              <div className="flex items-center justify-between border-b border-border-secondary pb-1">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-primary">
-                  成員管理
-                </h3>
-                <Button type="button" variant="ghost" onClick={handleInvite} className="text-xs select-none">
-                  邀請成員
-                </Button>
+            <div className="flex items-center justify-between border border-border-secondary bg-surface-muted px-3 py-2">
+              <div>
+                <p className="text-xs font-semibold text-foreground">邀請碼</p>
+                <p className="text-[10px] text-text-muted mt-1">使用 `POST /rooms/:id/members` 加入群組時需要。</p>
               </div>
-              <span className="text-[10px] text-text-muted font-bold font-mono">
-                共 {groupSettingsMembers.length} 位成員
+              <code className="text-xs font-mono text-primary">{activeRoom.inviteCode ?? "尚未產生"}</code>
+            </div>
+            <div className="flex justify-end">
+              <Button type="submit" variant="primary" disabled={isSaving}>
+                {isSaving ? "儲存中..." : "儲存設定"}
+              </Button>
+            </div>
+          </section>
+
+          <section className="flex flex-col gap-3">
+            <SectionTitle title={`成員管理 (${members.length})`} />
+            <div className="flex flex-col border border-border-primary divide-y divide-border-secondary rounded-sm overflow-hidden bg-surface-card">
+              {members.map((member) => (
+                <MemberRow
+                  key={member.userId}
+                  member={member}
+                  currentUser={user}
+                  canManageMembers={canManageMembers}
+                  canTransferOwner={canTransferOwner}
+                  onApprove={handleApprove}
+                  onRoleChange={handleRoleChange}
+                  onNickname={handleNickname}
+                  onToggleMute={handleToggleMute}
+                  onKick={handleKick}
+                  onTransferOwner={handleTransferOwner}
+                />
+              ))}
+              {members.length === 0 && (
+                <div className="p-6 text-center text-xs text-text-muted">目前沒有可顯示的成員</div>
+              )}
+            </div>
+          </section>
+
+          <section className="flex flex-col gap-3 border border-red-500/20 p-4 bg-red-500/5 rounded-sm">
+            <SectionTitle title="危險區" danger />
+            <div className="flex flex-col items-start gap-2">
+              <Button type="button" variant="secondary" onClick={handleArchive} className="text-red-600 border-red-600 hover:bg-red-500/10">
+                封存群組
+              </Button>
+              <span className="text-[10px] text-red-600/70 leading-normal">
+                封存後群組會保留歷史資料，但不可再發送新訊息。
               </span>
-              <div className="flex flex-col border border-border-primary divide-y divide-border-secondary rounded-sm overflow-hidden bg-surface-card max-h-[160px] overflow-y-auto">
-                {groupSettingsMembers.map((member, idx) => (
-                  <div key={idx} className="flex items-center justify-between p-2.5 text-xs">
-                    <div className="flex items-center gap-2">
-                      <Avatar name={member.name} src={getAvatarForUser(member.name, user.avatar, user.username)} size="sm" />
-                      <span className="font-semibold">{member.name}</span>
-                      <span className="text-[9px] text-text-muted capitalize font-mono">
-                        ({member.role})
-                      </span>
-                    </div>
-                    {member.name !== "我" && (
-                      <div className="flex gap-2">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          onClick={() => handleToggleMute(member.name)}
-                          className={`text-[10px] font-sans ${member.isMuted ? "text-green-600" : "text-text-muted"}`}
-                        >
-                          {member.isMuted ? "解禁" : "禁言"}
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          onClick={() => handleKick(member.name)}
-                          className="text-[10px] text-red-600 font-sans"
-                        >
-                          踢出
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
             </div>
+          </section>
+        </form>
+      </div>
+    </div>
+  );
+}
 
-            {/* Section: Permissions */}
-            <div className="flex flex-col gap-4">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-primary border-b border-border-secondary pb-1">
-                權限設定
-              </h3>
-              <div className="flex flex-col gap-3.5">
-                <Checkbox
-                  label="允許成員邀請他人"
-                  description="成員可以邀請新成員加入聊天室"
-                  checked={groupSettingsInvite}
-                  onChange={(e) => setGroupSettingsInvite(e.target.checked)}
-                />
-                <Checkbox
-                  label="允許成員上傳檔案"
-                  description="成員可以在聊天室中上傳檔案"
-                  checked={groupSettingsUpload}
-                  onChange={(e) => setGroupSettingsUpload(e.target.checked)}
-                />
-              </div>
-            </div>
+function SectionTitle({ title, danger = false }: { title: string; danger?: boolean }) {
+  return (
+    <h3 className={`text-xs font-bold uppercase tracking-wider border-b pb-1 ${danger ? "text-red-600 border-red-500/30" : "text-primary border-border-secondary"}`}>
+      {title}
+    </h3>
+  );
+}
 
-            {/* Section: Danger Zone */}
-            <div className="flex flex-col gap-3 border border-red-500/20 p-4 bg-red-500/5 rounded-sm">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-red-600">
-                危險區域
-              </h3>
-              <div className="flex flex-col items-start gap-2">
-                <Button type="button" variant="secondary" onClick={handleDelete} className="text-red-600 border-red-600 hover:bg-red-500/10">
-                  刪除聊天室
-                </Button>
-                <span className="text-[10px] text-red-600/70 leading-normal">
-                  刪除後將無法復原，所有訊息和成員資料都會被永久刪除。
-                </span>
-              </div>
-            </div>
+function MemberRow({
+  member,
+  currentUser,
+  canManageMembers,
+  canTransferOwner,
+  onApprove,
+  onRoleChange,
+  onNickname,
+  onToggleMute,
+  onKick,
+  onTransferOwner,
+}: {
+  member: Member;
+  currentUser: { userId?: string; username: string; avatar: string };
+  canManageMembers: boolean;
+  canTransferOwner: boolean;
+  onApprove: (member: Member) => Promise<void>;
+  onRoleChange: (member: Member, role: "admin" | "member") => Promise<void>;
+  onNickname: (member: Member) => Promise<void>;
+  onToggleMute: (member: Member) => Promise<void>;
+  onKick: (member: Member) => Promise<void>;
+  onTransferOwner: (member: Member) => Promise<void>;
+}) {
+  const isSelf = member.userId === currentUser.userId || member.name === currentUser.username;
+  const isOwner = member.role === "owner";
+  const isPending = member.role === "pending";
+  const canEditMember = canManageMembers && !isOwner;
 
-            {/* Footer Actions */}
-            <div className="border-t border-border-primary pt-5 mt-2 flex items-center justify-end gap-3">
-              <Button type="button" variant="secondary" onClick={onClose}>
-                取消
-              </Button>
-              <Button type="submit" variant="primary">
-                儲存變更
-              </Button>
-            </div>
-          </form>
+  return (
+    <div className="flex flex-col gap-3 p-3 text-xs md:flex-row md:items-center md:justify-between">
+      <div className="flex items-center gap-3 min-w-0">
+        <Avatar
+          name={member.name}
+          src={getAvatarForUser(member.name, currentUser.avatar, currentUser.username)}
+          size="sm"
+        />
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <p className="font-semibold text-foreground truncate">{member.name}</p>
+            {isSelf && <span className="text-[9px] text-primary font-mono">YOU</span>}
+            {member.isMuted && <span className="text-[9px] text-red-600 font-mono">MUTED</span>}
+          </div>
+          <p className="text-[10px] text-text-muted font-mono">{member.userId}</p>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 md:justify-end">
+        {isPending ? (
+          <span className="text-[10px] text-amber-600 font-mono">PENDING</span>
+        ) : (
+          <select
+            value={member.role}
+            disabled={!canTransferOwner || isOwner}
+            onChange={(event) => void onRoleChange(member, event.target.value as "admin" | "member")}
+            className="bg-surface-card border border-border-secondary rounded-sm px-2 py-1 text-[11px] text-foreground disabled:opacity-60"
+          >
+            {isOwner && <option value="owner">owner</option>}
+            <option value="admin">admin</option>
+            <option value="member">member</option>
+          </select>
+        )}
+
+        {isPending && canManageMembers && (
+          <Button type="button" variant="secondary" className="text-[10px] py-1 px-2" onClick={() => void onApprove(member)}>
+            審核通過
+          </Button>
+        )}
+        {!isPending && (
+          <Button type="button" variant="ghost" className="text-[10px]" onClick={() => void onNickname(member)}>
+            暱稱
+          </Button>
+        )}
+        <Button
+          type="button"
+          variant="ghost"
+          className="text-[10px]"
+          disabled={!canEditMember || isSelf}
+          onClick={() => void onToggleMute(member)}
+        >
+          {member.isMuted ? "解除禁言" : "禁言"}
+        </Button>
+        {canTransferOwner && !isOwner && !isPending && (
+          <Button type="button" variant="ghost" className="text-[10px]" onClick={() => void onTransferOwner(member)}>
+            轉讓群主
+          </Button>
+        )}
+        <Button
+          type="button"
+          variant="ghost"
+          className="text-[10px] text-red-600"
+          disabled={!canEditMember || isSelf}
+          onClick={() => void onKick(member)}
+        >
+          移除
+        </Button>
       </div>
     </div>
   );

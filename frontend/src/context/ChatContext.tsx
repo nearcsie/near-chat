@@ -12,10 +12,14 @@ import type {
   MyProfile,
   PublicUser,
   Room,
+  RoomMember as ApiRoomMember,
+  RoomMemberRole,
   RoomSummary,
+  UserProfile,
   UserSettings,
 } from "@shared/types";
 import {
+  approveRoomMember,
   attachmentDownloadUrl,
   blockUser as blockUserApi,
   createFolder,
@@ -25,12 +29,15 @@ import {
   deleteFriend,
   getMe,
   getMySettings,
+  getUserProfile,
+  kickRoomMember,
   leaveRoom as leaveRoomApi,
   listEmergencyContacts,
   listFolders,
   listFriendRequests,
   listFriends,
   listMessages,
+  listRoomMembers,
   listRooms,
   logout,
   respondFriendRequest,
@@ -41,6 +48,8 @@ import {
   updateMe,
   updateMySettings,
   updateRoom,
+  updateRoomMember,
+  transferRoomOwner,
   upsertEmergencyContact,
   uploadAttachment,
 } from "@/lib/api";
@@ -60,8 +69,10 @@ import {
 } from "@/lib/socket";
 
 export interface Member {
+  userId: string;
   name: string;
-  role: "owner" | "admin" | "member";
+  role: RoomMemberRole;
+  nickname?: string;
   isMuted?: boolean;
 }
 
@@ -71,10 +82,9 @@ export interface ChatRoom {
   name: string;
   isOnline?: boolean;
   folderId?: string | null;
-  description?: string;
-  isPublic?: boolean;
-  allowInvite?: boolean;
-  allowUpload?: boolean;
+  inviteCode?: string;
+  requireApproval?: boolean;
+  viewHistory?: boolean;
   members?: Member[];
   isArchived?: boolean;
   unreadCount?: number;
@@ -183,11 +193,8 @@ interface PersonalSettingsInput {
 
 interface GroupSettingsInput {
   name: string;
-  description: string;
-  isPublic: boolean;
-  allowInvite: boolean;
-  allowUpload: boolean;
-  members: Member[];
+  requireApproval: boolean;
+  viewHistory: boolean;
 }
 
 interface ChatContextType {
@@ -228,7 +235,16 @@ interface ChatContextType {
   handleModifyNickname: (roomId: string, nickname: string) => void;
   handleLeaveOrBlock: (roomId: string) => Promise<{ isDeleted: boolean; newActiveId?: string }>;
   handleSavePersonalSettings: (settings: PersonalSettingsInput) => Promise<void>;
+  loadGroupMembers: (roomId: string) => Promise<Member[]>;
   saveGroupSettings: (roomId: string, settings: GroupSettingsInput) => Promise<void>;
+  approveGroupMember: (roomId: string, userId: string) => Promise<void>;
+  updateGroupMember: (
+    roomId: string,
+    userId: string,
+    data: { role?: "admin" | "member"; nickname?: string; isMuted?: boolean },
+  ) => Promise<void>;
+  kickGroupMember: (roomId: string, userId: string) => Promise<void>;
+  transferGroupOwner: (roomId: string, userId: string) => Promise<void>;
   handleDeleteGroupRoom: (roomId: string) => Promise<string | null>;
   getReadAvatarsForMessage: (room: ChatRoom, msg: Message) => string[];
 
@@ -306,10 +322,9 @@ const mapRooms = (
     type: room.type === "group" ? "group" : "msg",
     name: room.name || `Private ${room.roomId.slice(0, 8)}`,
     folderId: folderByRoom.get(room.roomId) ?? collapsedById.get(room.roomId) ?? null,
-    description: room.inviteCode ? `Invite code: ${room.inviteCode}` : undefined,
-    isPublic: !room.requireApproval,
-    allowInvite: Boolean(room.inviteCode),
-    allowUpload: true,
+    inviteCode: room.inviteCode,
+    requireApproval: room.requireApproval,
+    viewHistory: room.viewHistory,
     isArchived: room.isArchived,
     members: room.type === "group" ? [] : undefined,
   }));
@@ -352,6 +367,25 @@ const mapEmergencyContact = (item: EmergencyContactResponse): EmergencyContact =
   email: item.contact?.email ?? "",
   message: item.message,
 });
+
+const mapRoomMember = (member: ApiRoomMember, profile?: UserProfile): Member => ({
+  userId: member.userId,
+  name: member.nickname || profile?.name || member.userId,
+  role: member.role,
+  nickname: member.nickname,
+  isMuted: member.isMuted,
+});
+
+const fetchRoomMembers = async (authToken: string, roomId: string): Promise<Member[]> => {
+  const apiMembers = await listRoomMembers(authToken, roomId);
+  const profiles = await Promise.all(
+    apiMembers.map((member) =>
+      getUserProfile(authToken, member.userId).catch(() => undefined),
+    ),
+  );
+
+  return apiMembers.map((member, index) => mapRoomMember(member, profiles[index]));
+};
 
 const findRequestedUser = (
   candidates: PublicUser[],
@@ -419,14 +453,30 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     setMessages(roomMessages.flat());
   };
 
+  const refreshGroupMembersForRooms = async (authToken: string, nextRooms: ChatRoom[]) => {
+    const groupRooms = nextRooms.filter((room) => room.type === "group");
+    const entries = await Promise.all(
+      groupRooms.map(async (room) => [room.id, await fetchRoomMembers(authToken, room.id)] as const),
+    );
+    const membersByRoomId = new Map(entries);
+
+    setRooms((current) =>
+      current.map((room) =>
+        membersByRoomId.has(room.id)
+          ? { ...room, members: membersByRoomId.get(room.id) }
+          : room,
+      ),
+    );
+  };
+
   const refreshRoomsAndFolders = async (authToken: string, userId = currentUserId) => {
     const [apiRooms, apiFolders] = await Promise.all([listRooms(authToken), listFolders(authToken)]);
+    const nextRooms = mapRooms(apiRooms, apiFolders, roomsRef.current);
+
     setFolders((current) => mapFolders(apiFolders, current));
-    setRooms((current) => {
-      const nextRooms = mapRooms(apiRooms, apiFolders, current);
-      void loadMessagesForRooms(authToken, nextRooms, userId);
-      return nextRooms;
-    });
+    setRooms(nextRooms);
+    void loadMessagesForRooms(authToken, nextRooms, userId);
+    void refreshGroupMembersForRooms(authToken, nextRooms);
   };
 
   const refreshSocialData = async (authToken: string, settings?: UserSettings) => {
@@ -771,29 +821,68 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     }));
   };
 
+  const loadGroupMembers = async (roomId: string): Promise<Member[]> => {
+    if (!token) return [];
+    const members = await fetchRoomMembers(token, roomId);
+    setRooms((current) =>
+      current.map((room) =>
+        room.id === roomId ? { ...room, members } : room,
+      ),
+    );
+    return members;
+  };
+
   const saveGroupSettings = async (roomId: string, settings: GroupSettingsInput) => {
-    if (token) {
-      await updateRoom(token, roomId, {
-        name: settings.name,
-        requireApproval: !settings.isPublic,
-      });
-    }
+    if (!token) return;
+
+    const updated = await updateRoom(token, roomId, {
+      name: settings.name,
+      requireApproval: settings.requireApproval,
+      viewHistory: settings.viewHistory,
+    });
 
     setRooms((current) =>
       current.map((room) =>
         room.id === roomId
           ? {
               ...room,
-              name: settings.name,
-              description: settings.description,
-              isPublic: settings.isPublic,
-              allowInvite: settings.allowInvite,
-              allowUpload: settings.allowUpload,
-              members: settings.members,
+              name: updated.name ?? settings.name,
+              inviteCode: updated.inviteCode,
+              requireApproval: updated.requireApproval,
+              viewHistory: updated.viewHistory,
+              isArchived: updated.isArchived,
             }
           : room,
       ),
     );
+  };
+
+  const approveGroupMember = async (roomId: string, userId: string) => {
+    if (!token) return;
+    await approveRoomMember(token, roomId, userId);
+    await loadGroupMembers(roomId);
+  };
+
+  const updateGroupMember = async (
+    roomId: string,
+    userId: string,
+    data: { role?: "admin" | "member"; nickname?: string; isMuted?: boolean },
+  ) => {
+    if (!token) return;
+    await updateRoomMember(token, roomId, userId, data);
+    await loadGroupMembers(roomId);
+  };
+
+  const kickGroupMember = async (roomId: string, userId: string) => {
+    if (!token) return;
+    await kickRoomMember(token, roomId, userId);
+    await loadGroupMembers(roomId);
+  };
+
+  const transferGroupOwner = async (roomId: string, userId: string) => {
+    if (!token) return;
+    await transferRoomOwner(token, roomId, userId);
+    await loadGroupMembers(roomId);
   };
 
   const handleDeleteGroupRoom = async (roomId: string) => {
@@ -974,7 +1063,12 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         handleModifyNickname,
         handleLeaveOrBlock,
         handleSavePersonalSettings,
+        loadGroupMembers,
         saveGroupSettings,
+        approveGroupMember,
+        updateGroupMember,
+        kickGroupMember,
+        transferGroupOwner,
         handleDeleteGroupRoom,
         getReadAvatarsForMessage,
         sendFriendRequest,
