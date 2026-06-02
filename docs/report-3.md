@@ -322,9 +322,7 @@ flowchart TD
     SendAlert --> LoopContacts
 ```
 
----
-
-### 2. 介面設計規劃 (UI Design & Wireframe Layout)
+### 2. 介面設計規劃
 
 本系統介面遵循 **Border UI (線框極簡主義)** 視覺規範設計，強調高對比度、清晰的 1px 實線網格分割與資訊密度，完全摒棄漸層與陰影：
 
@@ -342,14 +340,11 @@ flowchart TD
 - **C. 設定頁面 (Settings Page)**
   - 獨立的大型卡片區塊，分成個人資料（顯示名稱、簡介、頭像變更）、外觀與語言設定（明暗主題切換、繁中/英文切換）以及安全性（密碼修改、自動聯絡天數與緊急聯絡人增刪）。
 
----
-
 ### 3. 連結資料庫與分層實作技術 (Database Connection & Implementation Technologies)
 
 為了兼顧資料庫操作的透明度、查詢優化、以及高併發效能，本專案採用以下技術進行資料庫連結與後端架構開發：
 
-#### A. PostgreSQL 與無 ORM Raw SQL 設計 (Raw SQL Philosophy)
-- 本系統**不使用任何 ORM**（如 Prisma 或 Sequelize），以避免 ORM 帶來的隱性效能開銷與 SQL 產生器的不可控性。
+#### A. 資料庫連線、操作
 - 使用 Node.js PostgreSQL 官方客戶端 `pg` 驅動，在 `src/db.ts` 中建立共享的 `pg.Pool` 連線池。透過連線池管理機制（設定最大連線數、閒置釋放時間），可高併發地複用資料庫連線，降低頻繁建立連線所產生的 TCP 握手延遲。
 - 所有資料異動一律以參數化 SQL（例如 `INSERT INTO users (username) VALUES ($1)`）傳遞，將 SQL 程式碼與用戶輸入資料分離，由 PostgreSQL 引擎進行預編譯與安全轉義，**杜絕 SQL 注入攻擊**。
 
@@ -366,3 +361,9 @@ flowchart TD
 #### D. 實時 Socket 與資料庫寫入協同 (Socket-DB Synergy)
 - 當 Socket.IO 伺服器接收到發訊事件時，會調用後端分層中的 Service 與 Repository 將訊息持久化至 PostgreSQL。
 - 寫入成功後，即時取出附帶主鍵 `message_id` 的完整資料結構，透過網頁通訊協定廣播至該房間的 Socket 通道（`io.to(room_roomId).emit(...)`），確保客戶端在收到新訊息的同時能取得正確的資料庫狀態（如已編號的訊息 ID、正確的發送時間戳記）。
+
+## 五、分工
+- 楊銘煌：前端界面設計、好友功能、docker 維護
+- 姚承希：前端架構、聊天室
+- 趙偉恆：使用者帳號、緊急聯絡功能
+- 江禹叡：後端伺服器架構、聊天訊息
