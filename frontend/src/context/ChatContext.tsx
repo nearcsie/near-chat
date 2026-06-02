@@ -1,33 +1,47 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useRef, useState } from "react";
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type {
   Attachment as ApiAttachment,
+  EmergencyContactResponse,
   Folder as ApiFolder,
+  FriendRequestResponse,
+  FriendResponse,
   MessageWithSender,
   MyProfile,
+  PublicUser,
   Room,
   RoomSummary,
   UserSettings,
 } from "@shared/types";
 import {
   attachmentDownloadUrl,
+  blockUser as blockUserApi,
   createFolder,
   createGroup,
   createPrivateRoom,
+  deleteEmergencyContact,
+  deleteFriend,
   getMe,
   getMySettings,
   leaveRoom as leaveRoomApi,
+  listEmergencyContacts,
   listFolders,
+  listFriendRequests,
+  listFriends,
   listMessages,
   listRooms,
   logout,
+  respondFriendRequest,
   searchUsers,
+  sendFriendRequest as sendFriendRequestApi,
+  unblockUser as unblockUserApi,
   updateFolderRooms,
   updateMe,
   updateMySettings,
   updateRoom,
+  upsertEmergencyContact,
   uploadAttachment,
 } from "@/lib/api";
 import {
@@ -63,6 +77,9 @@ export interface ChatRoom {
   allowUpload?: boolean;
   members?: Member[];
   isArchived?: boolean;
+  unreadCount?: number;
+  lastMessagePreview?: string;
+  lastMessageAt?: string;
 }
 
 export interface Message {
@@ -93,12 +110,49 @@ export interface User {
   email: string;
   avatar: string;
   bio?: string;
-  language?: string;
+  language?: UiLanguage;
   warningEnabled?: boolean;
   warningDays?: number;
 }
 
 type StoredUser = User;
+
+export interface Friend {
+  id: string;
+  name: string;
+  email: string;
+  status: "online" | "offline";
+  isEmergencyContact?: boolean;
+}
+
+export interface FriendRequest {
+  id: string;
+  name: string;
+  email: string;
+  direction: "incoming" | "outgoing";
+}
+
+export interface BlockedUser {
+  id: string;
+  name: string;
+  email: string;
+}
+
+export interface EmergencyContact {
+  id: string;
+  contactId: string;
+  name: string;
+  email: string;
+  message: string;
+}
+
+export interface EmergencySettings {
+  warningEnabled: boolean;
+  warningDays: number;
+  contacts: EmergencyContact[];
+}
+
+export type UiLanguage = "zh-TW" | "en";
 
 export const getAvatarForUser = (
   username: string,
@@ -111,6 +165,27 @@ export const getAvatarForUser = (
   return "";
 };
 
+interface PersonalSettingsInput {
+  username: string;
+  email: string;
+  avatar: string;
+  theme: string;
+  language: UiLanguage;
+  notifyDesktop: boolean;
+  notifySound: boolean;
+  warningEnabled?: boolean;
+  warningDays?: number;
+}
+
+interface GroupSettingsInput {
+  name: string;
+  description: string;
+  isPublic: boolean;
+  allowInvite: boolean;
+  allowUpload: boolean;
+  members: Member[];
+}
+
 interface ChatContextType {
   rooms: ChatRoom[];
   folders: Folder[];
@@ -118,8 +193,17 @@ interface ChatContextType {
   groupReadStates: Record<string, Record<string, string>>;
   user: User;
   activeRoomNicknames: Record<string, string>;
+  friends: Friend[];
+  friendRequests: FriendRequest[];
+  blockedUsers: BlockedUser[];
+  emergencySettings: EmergencySettings;
+  uiLanguage: UiLanguage;
   isAuthenticated: boolean;
   isMounted: boolean;
+  selectedFriendForSidebar: Friend | null;
+  setSelectedFriendForSidebar: React.Dispatch<React.SetStateAction<Friend | null>>;
+  showRightPanel: boolean;
+  setShowRightPanel: React.Dispatch<React.SetStateAction<boolean>>;
 
   setRooms: React.Dispatch<React.SetStateAction<ChatRoom[]>>;
   setFolders: React.Dispatch<React.SetStateAction<Folder[]>>;
@@ -139,27 +223,19 @@ interface ChatContextType {
   handleCategorizeRoom: (roomId: string, folderId: string | null) => Promise<void>;
   handleModifyNickname: (roomId: string, nickname: string) => void;
   handleLeaveOrBlock: (roomId: string) => Promise<{ isDeleted: boolean; newActiveId?: string }>;
-  handleSavePersonalSettings: (settings: {
-    username: string;
-    email: string;
-    avatar: string;
-    theme: string;
-    notifyDesktop: boolean;
-    notifySound: boolean;
-    language: string;
-    warningEnabled: boolean;
-    warningDays: number;
-  }) => Promise<void>;
-  saveGroupSettings: (roomId: string, settings: {
-    name: string;
-    description: string;
-    isPublic: boolean;
-    allowInvite: boolean;
-    allowUpload: boolean;
-    members: Member[];
-  }) => Promise<void>;
+  handleSavePersonalSettings: (settings: PersonalSettingsInput) => Promise<void>;
+  saveGroupSettings: (roomId: string, settings: GroupSettingsInput) => Promise<void>;
   handleDeleteGroupRoom: (roomId: string) => Promise<string | null>;
   getReadAvatarsForMessage: (room: ChatRoom, msg: Message) => string[];
+
+  sendFriendRequest: (name: string, email: string) => Promise<void>;
+  acceptFriendRequest: (requestId: string) => Promise<void>;
+  rejectFriendRequest: (requestId: string) => Promise<void>;
+  removeFriend: (friendId: string) => Promise<void>;
+  blockFriend: (friendId: string) => Promise<void>;
+  unblockUser: (blockedId: string) => Promise<void>;
+  saveEmergencySettings: (settings: EmergencySettings) => Promise<void>;
+  setUiLanguage: (language: UiLanguage) => void;
 }
 
 const ChatContext = createContext<ChatContextType | undefined>(undefined);
@@ -173,7 +249,7 @@ const toStoredUser = (
   email: profile.email,
   avatar: profile.avatarUrl ?? "",
   bio: profile.bio ?? "",
-  language: settings?.language ?? "en",
+  language: normalizeLanguage(settings?.language),
   warningEnabled: settings?.warningEnabled ?? false,
   warningDays: settings?.warningDays ?? 0,
 });
@@ -241,6 +317,51 @@ const mapFolders = (apiFolders: ApiFolder[], currentFolders: Folder[]): Folder[]
   }));
 };
 
+const normalizeLanguage = (language?: string): UiLanguage =>
+  language === "zh-TW" || language === "en" ? language : "en";
+
+const mapFriend = (item: FriendResponse, emergencyContactIds: Set<string>): Friend => ({
+  id: item.friend.userId,
+  name: item.friend.name,
+  email: "",
+  status: "offline",
+  isEmergencyContact: emergencyContactIds.has(item.friend.userId),
+});
+
+const mapFriendRequest = (item: FriendRequestResponse): FriendRequest => {
+  const requester = item.requester;
+  return {
+    id: item.requesterId,
+    name: requester?.name ?? item.requesterId,
+    email: "",
+    direction: "incoming",
+  };
+};
+
+const mapEmergencyContact = (item: EmergencyContactResponse): EmergencyContact => ({
+  id: item.contactId,
+  contactId: item.contactId,
+  name: item.contact?.name ?? item.contactId,
+  email: item.contact?.email ?? "",
+  message: item.message,
+});
+
+const findRequestedUser = (
+  candidates: PublicUser[],
+  name: string,
+  email: string,
+): PublicUser | undefined => {
+  const normalizedName = name.trim().toLowerCase();
+  const normalizedEmail = email.trim().toLowerCase();
+
+  return (
+    candidates.find((candidate) => candidate.name.toLowerCase() === normalizedName) ??
+    candidates.find((candidate) => candidate.userId.toLowerCase() === normalizedEmail) ??
+    candidates.find((candidate) => candidate.name.toLowerCase().includes(normalizedName)) ??
+    candidates[0]
+  );
+};
+
 const sortMessages = (items: Message[]) =>
   [...items].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
 
@@ -259,6 +380,17 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [groupReadStates, setGroupReadStates] = useState<Record<string, Record<string, string>>>({});
   const [activeRoomNicknames, setActiveRoomNicknames] = useState<Record<string, string>>({});
+  const [uiLanguage, setUiLanguageState] = useState<UiLanguage>("zh-TW");
+  const [friends, setFriends] = useState<Friend[]>([]);
+  const [friendRequests, setFriendRequests] = useState<FriendRequest[]>([]);
+  const [blockedUsers, setBlockedUsers] = useState<BlockedUser[]>([]);
+  const [emergencySettings, setEmergencySettings] = useState<EmergencySettings>({
+    warningEnabled: false,
+    warningDays: 0,
+    contacts: [],
+  });
+  const [selectedFriendForSidebar, setSelectedFriendForSidebar] = useState<Friend | null>(null);
+  const [showRightPanel, setShowRightPanel] = useState<boolean>(true);
 
   const clearSession = () => {
     localStorage.removeItem("token");
@@ -290,6 +422,24 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
+  const refreshSocialData = async (authToken: string, settings?: UserSettings) => {
+    const [apiFriends, apiRequests, apiEmergencyContacts] = await Promise.all([
+      listFriends(authToken),
+      listFriendRequests(authToken),
+      listEmergencyContacts(authToken),
+    ]);
+    const contacts = apiEmergencyContacts.map(mapEmergencyContact);
+    const emergencyContactIds = new Set(contacts.map((contact) => contact.contactId));
+
+    setFriends(apiFriends.map((friend) => mapFriend(friend, emergencyContactIds)));
+    setFriendRequests(apiRequests.map(mapFriendRequest));
+    setEmergencySettings({
+      warningEnabled: settings?.warningEnabled ?? user.warningEnabled ?? false,
+      warningDays: settings?.warningDays ?? user.warningDays ?? 0,
+      contacts,
+    });
+  };
+
   useEffect(() => {
     setIsMounted(true);
   }, []);
@@ -305,6 +455,11 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       document.documentElement.classList.add("dark");
     } else {
       document.documentElement.classList.remove("dark");
+    }
+
+    const savedLanguage = localStorage.getItem("language");
+    if (savedLanguage === "zh-TW" || savedLanguage === "en") {
+      setUiLanguageState(savedLanguage);
     }
 
     if (!savedToken) {
@@ -334,9 +489,13 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         localStorage.setItem("user", JSON.stringify(stored));
         setUser(stored);
         setCurrentUserId(profile.userId);
+        setUiLanguageState(stored.language ?? "en");
         setToken(savedToken);
         setIsAuthenticated(true);
-        await refreshRoomsAndFolders(savedToken, profile.userId);
+        await Promise.all([
+          refreshRoomsAndFolders(savedToken, profile.userId),
+          refreshSocialData(savedToken, settings),
+        ]);
       } catch (error) {
         console.error(error);
         if (!cancelled) {
@@ -414,6 +573,9 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       }
     };
   }, [token, currentUserId]);
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const roomById = useMemo(() => new Map(rooms.map((room) => [room.id, room])), [rooms]);
 
   const toggleFolder = (folderId: string) => {
     setFolders((current) =>
@@ -546,17 +708,9 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     return { isDeleted: false };
   };
 
-  const handleSavePersonalSettings = async (settings: {
-    username: string;
-    email: string;
-    avatar: string;
-    theme: string;
-    notifyDesktop: boolean;
-    notifySound: boolean;
-    language: string;
-    warningEnabled: boolean;
-    warningDays: number;
-  }) => {
+  const handleSavePersonalSettings = async (settings: PersonalSettingsInput) => {
+    const nextWarningEnabled = settings.warningEnabled ?? user.warningEnabled ?? false;
+    const nextWarningDays = settings.warningDays ?? user.warningDays ?? 0;
     let nextUser: StoredUser = {
       userId: currentUserId,
       username: settings.username,
@@ -564,8 +718,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       avatar: settings.avatar,
       bio: user.bio ?? "",
       language: settings.language,
-      warningEnabled: settings.warningEnabled,
-      warningDays: settings.warningDays,
+      warningEnabled: nextWarningEnabled,
+      warningDays: nextWarningDays,
     };
 
     if (token) {
@@ -576,8 +730,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         }),
         updateMySettings(token, {
           language: settings.language,
-          warningEnabled: settings.warningEnabled,
-          warningDays: settings.warningDays,
+          ...(settings.warningEnabled !== undefined ? { warningEnabled: nextWarningEnabled } : {}),
+          ...(settings.warningDays !== undefined ? { warningDays: nextWarningDays } : {}),
         }),
       ]);
       nextUser = toStoredUser(updatedProfile, updatedSettings);
@@ -585,19 +739,20 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
     localStorage.setItem("user", JSON.stringify(nextUser));
     localStorage.setItem("theme", settings.theme);
+    localStorage.setItem("language", settings.language);
     localStorage.setItem("notify-desktop", String(settings.notifyDesktop));
     localStorage.setItem("notify-sound", String(settings.notifySound));
+    document.documentElement.classList.toggle("dark", settings.theme === "dark");
     setUser(nextUser);
+    setUiLanguageState(settings.language);
+    setEmergencySettings((current) => ({
+      ...current,
+      warningEnabled: nextUser.warningEnabled ?? false,
+      warningDays: nextUser.warningDays ?? 0,
+    }));
   };
 
-  const saveGroupSettings = async (roomId: string, settings: {
-    name: string;
-    description: string;
-    isPublic: boolean;
-    allowInvite: boolean;
-    allowUpload: boolean;
-    members: Member[];
-  }) => {
+  const saveGroupSettings = async (roomId: string, settings: GroupSettingsInput) => {
     if (token) {
       await updateRoom(token, roomId, {
         name: settings.name,
@@ -642,6 +797,113 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       .map(() => "");
   };
 
+  const sendFriendRequest = async (name: string, email: string) => {
+    if (!token) return;
+    const trimmedName = name.trim();
+    const trimmedEmail = email.trim();
+    if (!trimmedName || !trimmedEmail) return;
+
+    const matches = await searchUsers(token, { query: trimmedEmail || trimmedName });
+    const target = findRequestedUser(matches, trimmedName, trimmedEmail);
+    if (!target) {
+      throw new Error("No matching user found");
+    }
+
+    await sendFriendRequestApi(token, target.userId);
+    setFriendRequests((prev) => [
+      ...prev,
+      {
+        id: target.userId,
+        name: target.name,
+        email: trimmedEmail,
+        direction: "outgoing",
+      },
+    ]);
+  };
+
+  const acceptFriendRequest = async (requestId: string) => {
+    if (!token) return;
+    await respondFriendRequest(token, requestId, "accepted");
+    await refreshSocialData(token);
+  };
+
+  const rejectFriendRequest = async (requestId: string) => {
+    if (!token) return;
+    const request = friendRequests.find((item) => item.id === requestId);
+    if (request?.direction === "incoming") {
+      await respondFriendRequest(token, requestId, "rejected");
+    }
+    setFriendRequests((prev) => prev.filter((item) => item.id !== requestId));
+  };
+
+  const removeFriend = async (friendId: string) => {
+    if (!token) return;
+    await deleteFriend(token, friendId);
+    await refreshSocialData(token);
+  };
+
+  const blockFriend = async (friendId: string) => {
+    if (!token) return;
+    const friend = friends.find((item) => item.id === friendId);
+    if (!friend) return;
+
+    await blockUserApi(token, friendId);
+    setBlockedUsers((prev) => {
+      if (prev.some((item) => item.id === friendId)) return prev;
+      return [...prev, { id: friend.id, name: friend.name, email: friend.email }];
+    });
+    await refreshSocialData(token);
+  };
+
+  const unblockUser = async (blockedId: string) => {
+    if (token) {
+      await unblockUserApi(token, blockedId);
+    }
+    setBlockedUsers((prev) => prev.filter((item) => item.id !== blockedId));
+  };
+
+  const saveEmergencySettings = async (settings: EmergencySettings) => {
+    if (!token) return;
+    const nextWarningDays = settings.warningEnabled ? Math.max(1, settings.warningDays) : 0;
+
+    await updateMySettings(token, {
+      warningEnabled: settings.warningEnabled,
+      warningDays: nextWarningDays,
+    });
+
+    const nextContactIds = new Set(settings.contacts.map((contact) => contact.contactId));
+    const removedContacts = emergencySettings.contacts.filter(
+      (contact) => !nextContactIds.has(contact.contactId),
+    );
+
+    await Promise.all([
+      ...settings.contacts.map((contact) =>
+        upsertEmergencyContact(token, {
+          contactId: contact.contactId,
+          message: contact.message,
+        }),
+      ),
+      ...removedContacts.map((contact) => deleteEmergencyContact(token, contact.contactId)),
+    ]);
+
+    const updatedSettings: UserSettings = {
+      language: user.language ?? uiLanguage,
+      warningEnabled: settings.warningEnabled,
+      warningDays: nextWarningDays,
+    };
+    await refreshSocialData(token, updatedSettings);
+    setUser((current) => ({
+      ...current,
+      warningEnabled: updatedSettings.warningEnabled,
+      warningDays: updatedSettings.warningDays,
+    }));
+  };
+
+  const setUiLanguage = (language: UiLanguage) => {
+    localStorage.setItem("language", language);
+    setUiLanguageState(language);
+  };
+
   useEffect(() => {
     const lastMessage = messages.at(-1);
     if (lastMessage && socketRef.current && !lastMessage.isOutgoing) {
@@ -661,8 +923,17 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         groupReadStates,
         user,
         activeRoomNicknames,
+        friends,
+        friendRequests,
+        blockedUsers,
+        emergencySettings,
+        uiLanguage,
         isAuthenticated,
         isMounted,
+        selectedFriendForSidebar,
+        setSelectedFriendForSidebar,
+        showRightPanel,
+        setShowRightPanel,
         setRooms,
         setFolders,
         setMessages,
@@ -684,6 +955,14 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         saveGroupSettings,
         handleDeleteGroupRoom,
         getReadAvatarsForMessage,
+        sendFriendRequest,
+        acceptFriendRequest,
+        rejectFriendRequest,
+        removeFriend,
+        blockFriend,
+        unblockUser,
+        saveEmergencySettings,
+        setUiLanguage,
       }}
     >
       {children}
