@@ -35,6 +35,9 @@ describe('userController', () => {
     warningEnabled: true,
     warningDays: 3,
     language: 'zh-TW',
+    theme: 'dark',
+    notifyDesktop: false,
+    notifySound: false,
   };
   const service = {
     getMe: vi.fn(),
@@ -116,7 +119,16 @@ describe('userController', () => {
     const next = vi.fn();
 
     await ctrl.updateMySettings(
-      authedReq({ body: { warningEnabled: true, warningDays: 3, language: 'zh-TW' } }),
+      authedReq({
+        body: {
+          warningEnabled: true,
+          warningDays: 3,
+          language: 'zh-TW',
+          theme: 'dark',
+          notifyDesktop: false,
+          notifySound: false,
+        },
+      }),
       res,
       next,
     );

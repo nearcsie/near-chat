@@ -22,6 +22,9 @@ describe('userService', () => {
     bio: 'Hello there',
     avatarUrl: 'https://example.com/avatar.png',
     language: 'en',
+    theme: 'light',
+    notifyDesktop: true,
+    notifySound: true,
     warningEnabled: false,
     warningDays: 0,
     lastActivity: new Date('2026-01-01T00:00:00.000Z'),
@@ -174,6 +177,31 @@ describe('userService', () => {
       });
     });
 
+    it('updates email and password through my profile', async () => {
+      const updatedUser = { ...baseUser(), email: 'new@example.com' };
+      mockRepo.findByEmail.mockResolvedValue(null);
+      mockRepo.update.mockResolvedValue(updatedUser);
+
+      const result = await userService.updateMe('u1', {
+        email: 'new@example.com',
+        password: 'newpassword123',
+      });
+
+      expect(mockRepo.findByEmail).toHaveBeenCalledWith('new@example.com');
+      const updateCall = mockRepo.update.mock.calls[0][1];
+      expect(updateCall.email).toBe('new@example.com');
+      expect(updateCall.passwordHash).not.toBe('newpassword123');
+      expect(await bcrypt.compare('newpassword123', updateCall.passwordHash!)).toBe(true);
+      expect(result.email).toBe('new@example.com');
+    });
+
+    it('rejects updating email to another user email', async () => {
+      mockRepo.findByEmail.mockResolvedValue({ ...baseUser(), userId: 'u2' });
+
+      await expect(userService.updateMe('u1', { email: 'taken@example.com' })).rejects.toThrow(ConflictError);
+      expect(mockRepo.update).not.toHaveBeenCalled();
+    });
+
     it('rejects invalid profile payloads', async () => {
       await expect(userService.updateMe('u1', { name: '' })).rejects.toThrow(ValidationError);
       expect(mockRepo.update).not.toHaveBeenCalled();
@@ -188,28 +216,48 @@ describe('userService', () => {
         warningEnabled: false,
         warningDays: 0,
         language: 'en',
+        theme: 'light',
+        notifyDesktop: true,
+        notifySound: true,
       });
     });
 
     it('updates settings when the next state is valid', async () => {
       mockRepo.findById.mockResolvedValue({ ...baseUser(), warningEnabled: false, warningDays: 0 });
-      mockRepo.update.mockResolvedValue({ ...baseUser(), warningEnabled: true, warningDays: 3, language: 'zh-TW' });
+      mockRepo.update.mockResolvedValue({
+        ...baseUser(),
+        warningEnabled: true,
+        warningDays: 3,
+        language: 'zh-TW',
+        theme: 'dark',
+        notifyDesktop: false,
+        notifySound: false,
+      });
 
       const result = await userService.updateMySettings('u1', {
         warningEnabled: true,
         warningDays: 3,
         language: 'zh-TW',
+        theme: 'dark',
+        notifyDesktop: false,
+        notifySound: false,
       });
 
       expect(mockRepo.update).toHaveBeenCalledWith('u1', {
         warningEnabled: true,
         warningDays: 3,
         language: 'zh-TW',
+        theme: 'dark',
+        notifyDesktop: false,
+        notifySound: false,
       });
       expect(result).toEqual({
         warningEnabled: true,
         warningDays: 3,
         language: 'zh-TW',
+        theme: 'dark',
+        notifyDesktop: false,
+        notifySound: false,
       });
     });
 

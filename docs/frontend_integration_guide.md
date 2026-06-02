@@ -45,6 +45,8 @@ Profile fields:
 ```ts
 {
   name?: string;
+  email?: string;
+  password?: string;
   bio?: string;
   avatarUrl?: string;
 }
@@ -57,10 +59,13 @@ Settings fields:
   warningEnabled?: boolean;
   warningDays?: number;
   language?: string;
+  theme?: "light" | "dark";
+  notifyDesktop?: boolean;
+  notifySound?: boolean;
 }
 ```
 
-Keep local-only UI preferences such as theme, desktop notifications, and sound notifications in frontend storage until backend support exists.
+Profile settings shown in the UI should be persisted through these backend APIs. Do not treat theme, desktop notifications, or sound notifications as local-only state.
 
 ## Friends, Requests, Blocks, And Search
 

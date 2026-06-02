@@ -25,6 +25,9 @@ export interface User {
   bio?: string;
   avatarUrl?: string;
   language: string;
+  theme: 'light' | 'dark';
+  notifyDesktop: boolean;
+  notifySound: boolean;
   warningEnabled: boolean;
   warningDays: number;
   lastActivity: Date;
@@ -54,6 +57,9 @@ export interface UserSettings {
   warningEnabled: boolean;
   warningDays: number;
   language: string;
+  theme: 'light' | 'dark';
+  notifyDesktop: boolean;
+  notifySound: boolean;
 }
 
 // ---------------------------------------------------------------------------

@@ -81,7 +81,10 @@ JWT 預設有效期為 `15m`，可透過環境變數 `JWT_EXPIRES_IN` 調整。T
 {
   "warningEnabled": "boolean",
   "warningDays": "number (integer, min 0)",
-  "language": "string (BCP 47 tag, e.g. zh-TW, en)"
+  "language": "string (BCP 47 tag, e.g. zh-TW, en)",
+  "theme": "\"light\" | \"dark\"",
+  "notifyDesktop": "boolean",
+  "notifySound": "boolean"
 }
 ```
 
@@ -270,6 +273,8 @@ JWT 預設有效期為 `15m`，可透過環境變數 `JWT_EXPIRES_IN` 調整。T
 ```json
 {
   "name": "string (min 1 char)  [optional]",
+  "email": "string (valid email)  [optional]",
+  "password": "string (min 8 chars)  [optional]",
   "bio": "string  [optional]",
   "avatarUrl": "string (valid URL)  [optional]"
 }
@@ -295,7 +300,10 @@ JWT 預設有效期為 `15m`，可透過環境變數 `JWT_EXPIRES_IN` 調整。T
 {
   "warningEnabled": "boolean  [optional]",
   "warningDays": "number (integer, min 0)  [optional]",
-  "language": "string (BCP 47 tag)  [optional]"
+  "language": "string (BCP 47 tag)  [optional]",
+  "theme": "\"light\" | \"dark\"  [optional]",
+  "notifyDesktop": "boolean  [optional]",
+  "notifySound": "boolean  [optional]"
 }
 ```
 **Response `200`:** `UserSettings`

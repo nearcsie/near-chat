@@ -111,6 +111,9 @@ export interface User {
   avatar: string;
   bio?: string;
   language?: UiLanguage;
+  theme?: "light" | "dark";
+  notifyDesktop?: boolean;
+  notifySound?: boolean;
   warningEnabled?: boolean;
   warningDays?: number;
 }
@@ -173,6 +176,7 @@ interface PersonalSettingsInput {
   language: UiLanguage;
   notifyDesktop: boolean;
   notifySound: boolean;
+  password?: string;
   warningEnabled?: boolean;
   warningDays?: number;
 }
@@ -250,6 +254,9 @@ const toStoredUser = (
   avatar: profile.avatarUrl ?? "",
   bio: profile.bio ?? "",
   language: normalizeLanguage(settings?.language),
+  theme: settings?.theme ?? "light",
+  notifyDesktop: settings?.notifyDesktop ?? true,
+  notifySound: settings?.notifySound ?? true,
   warningEnabled: settings?.warningEnabled ?? false,
   warningDays: settings?.warningDays ?? 0,
 });
@@ -487,6 +494,10 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         if (cancelled) return;
         const stored = toStoredUser(profile, settings);
         localStorage.setItem("user", JSON.stringify(stored));
+        localStorage.setItem("theme", stored.theme ?? "light");
+        localStorage.setItem("notify-desktop", String(stored.notifyDesktop ?? true));
+        localStorage.setItem("notify-sound", String(stored.notifySound ?? true));
+        document.documentElement.classList.toggle("dark", stored.theme === "dark");
         setUser(stored);
         setCurrentUserId(profile.userId);
         setUiLanguageState(stored.language ?? "en");
@@ -718,6 +729,9 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       avatar: settings.avatar,
       bio: user.bio ?? "",
       language: settings.language,
+      theme: settings.theme === "dark" ? "dark" : "light",
+      notifyDesktop: settings.notifyDesktop,
+      notifySound: settings.notifySound,
       warningEnabled: nextWarningEnabled,
       warningDays: nextWarningDays,
     };
@@ -726,10 +740,15 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       const [updatedProfile, updatedSettings] = await Promise.all([
         updateMe(token, {
           name: settings.username,
+          email: settings.email,
           avatarUrl: settings.avatar,
+          ...(settings.password ? { password: settings.password } : {}),
         }),
         updateMySettings(token, {
           language: settings.language,
+          theme: settings.theme === "dark" ? "dark" : "light",
+          notifyDesktop: settings.notifyDesktop,
+          notifySound: settings.notifySound,
           ...(settings.warningEnabled !== undefined ? { warningEnabled: nextWarningEnabled } : {}),
           ...(settings.warningDays !== undefined ? { warningDays: nextWarningDays } : {}),
         }),
@@ -888,6 +907,9 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
     const updatedSettings: UserSettings = {
       language: user.language ?? uiLanguage,
+      theme: user.theme ?? "light",
+      notifyDesktop: user.notifyDesktop ?? true,
+      notifySound: user.notifySound ?? true,
       warningEnabled: settings.warningEnabled,
       warningDays: nextWarningDays,
     };

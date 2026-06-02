@@ -14,6 +14,8 @@ export const loginSchema = z.object({
 export const updateMeSchema = z
   .object({
     name: z.string().trim().min(1, 'Name cannot be empty').optional(),
+    email: z.string().email('Invalid email format').optional(),
+    password: z.string().min(8, 'Password must be at least 8 characters long').optional(),
     bio: z.string().trim().optional(),
     avatarUrl: z.string().url('Invalid avatar URL').optional(),
   })
@@ -32,6 +34,9 @@ export const updateSettingsSchema = z
       .max(10, 'language must be at most 10 characters')
       .regex(/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/, 'language must be a valid BCP 47 tag')
       .optional(),
+    theme: z.enum(['light', 'dark']).optional(),
+    notifyDesktop: z.boolean().optional(),
+    notifySound: z.boolean().optional(),
   })
   .refine((v) => Object.keys(v).length > 0, {
     message: 'At least one field must be provided',

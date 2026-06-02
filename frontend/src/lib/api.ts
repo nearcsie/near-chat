@@ -19,8 +19,12 @@ import type {
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 const API_PREFIX = '/api/v1';
 
-type UpdateMeRequest = Partial<Pick<MyProfile, 'name' | 'bio' | 'avatarUrl'>>;
-type UpdateMySettingsRequest = Partial<Pick<UserSettings, 'warningEnabled' | 'warningDays' | 'language'>>;
+type UpdateMeRequest = Partial<Pick<MyProfile, 'name' | 'email' | 'bio' | 'avatarUrl'>> & {
+  password?: string;
+};
+type UpdateMySettingsRequest = Partial<
+  Pick<UserSettings, 'warningEnabled' | 'warningDays' | 'language' | 'theme' | 'notifyDesktop' | 'notifySound'>
+>;
 
 type CreateGroupRequest = {
   name: string;

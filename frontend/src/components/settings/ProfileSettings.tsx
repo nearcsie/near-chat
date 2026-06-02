@@ -42,10 +42,10 @@ export default function ProfileSettings() {
       setPersonalAvatar(user.avatar);
     }
 
-    setPersonalTheme(localStorage.getItem("theme") || "light");
+    setPersonalTheme(user.theme || localStorage.getItem("theme") || "light");
     setPersonalLanguage(uiLanguage);
-    setDesktopNotifications(localStorage.getItem("notify-desktop") !== "false");
-    setMessageSounds(localStorage.getItem("notify-sound") !== "false");
+    setDesktopNotifications(user.notifyDesktop ?? (localStorage.getItem("notify-desktop") !== "false"));
+    setMessageSounds(user.notifySound ?? (localStorage.getItem("notify-sound") !== "false"));
   }, [uiLanguage, user]);
 
   const { t } = useTranslation();
@@ -98,7 +98,10 @@ export default function ProfileSettings() {
         language: personalLanguage,
         notifyDesktop: desktopNotifications,
         notifySound: messageSounds,
+        password: personalNewPassword || undefined,
       });
+      setPersonalNewPassword("");
+      setPersonalConfirmPassword("");
       setFeedback({ type: "success", text: t("profile.profileSaved") });
     } catch (error) {
       console.error(error);

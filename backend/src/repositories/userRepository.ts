@@ -11,6 +11,9 @@ function mapRowToUser(row: any): User {
     bio: row.bio ?? undefined,
     avatarUrl: row.avatar_url ?? undefined,
     language: row.lang_preference,
+    theme: row.app_theme ?? 'light',
+    notifyDesktop: row.notify_desktop ?? true,
+    notifySound: row.notify_sound ?? true,
     warningEnabled: row.warning_enabled,
     warningDays: row.warning_days,
     lastActivity: row.last_activity,
@@ -52,7 +55,27 @@ export class UserRepository implements IUserRepository {
     return mapRowToUser(res.rows[0]);
   }
 
-  async update(userId: string, data: Partial<Pick<User, "name" | "bio" | "avatarUrl" | "language" | "warningEnabled" | "warningDays" | "lastActivity" | "deletedAt">>): Promise<User> {
+  async update(
+    userId: string,
+    data: Partial<
+      Pick<
+        User,
+        | "name"
+        | "email"
+        | "passwordHash"
+        | "bio"
+        | "avatarUrl"
+        | "language"
+        | "theme"
+        | "notifyDesktop"
+        | "notifySound"
+        | "warningEnabled"
+        | "warningDays"
+        | "lastActivity"
+        | "deletedAt"
+      >
+    >,
+  ): Promise<User> {
     const fields: string[] = [];
     const values: any[] = [];
     let queryIdx = 1;
@@ -60,6 +83,14 @@ export class UserRepository implements IUserRepository {
     if (data.name !== undefined) {
       fields.push(`name = $${queryIdx++}`);
       values.push(data.name);
+    }
+    if (data.email !== undefined) {
+      fields.push(`email = $${queryIdx++}`);
+      values.push(data.email);
+    }
+    if (data.passwordHash !== undefined) {
+      fields.push(`password_hash = $${queryIdx++}`);
+      values.push(data.passwordHash);
     }
     if (data.bio !== undefined) {
       fields.push(`bio = $${queryIdx++}`);
@@ -72,6 +103,18 @@ export class UserRepository implements IUserRepository {
     if (data.language !== undefined) {
       fields.push(`lang_preference = $${queryIdx++}`);
       values.push(data.language);
+    }
+    if (data.theme !== undefined) {
+      fields.push(`app_theme = $${queryIdx++}`);
+      values.push(data.theme);
+    }
+    if (data.notifyDesktop !== undefined) {
+      fields.push(`notify_desktop = $${queryIdx++}`);
+      values.push(data.notifyDesktop);
+    }
+    if (data.notifySound !== undefined) {
+      fields.push(`notify_sound = $${queryIdx++}`);
+      values.push(data.notifySound);
     }
     if (data.warningEnabled !== undefined) {
       fields.push(`warning_enabled = $${queryIdx++}`);
