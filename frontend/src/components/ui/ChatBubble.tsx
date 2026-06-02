@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Avatar } from "./Avatar";
+import ProfilePopover from "../chat/ProfilePopover";
 
 export interface Attachment {
   filename: string;
@@ -49,6 +50,8 @@ export function ChatBubble({
   canEdit = false,
 }: ChatBubbleProps) {
   const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null>(null);
+  const [showPopover, setShowPopover] = useState(false);
+  const [popoverStyle, setPopoverStyle] = useState<React.CSSProperties>({});
 
   useEffect(() => {
     if (!menuPosition) return;
@@ -63,6 +66,35 @@ export function ChatBubble({
     };
   }, [menuPosition]);
 
+  const handleTogglePopover = (event: React.MouseEvent) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const scrollEl = event.currentTarget.closest(".overflow-y-auto");
+
+    if (scrollEl) {
+      const parentRect = scrollEl.getBoundingClientRect();
+      const relativeTop = rect.top - parentRect.top + rect.height / 2;
+      const halfPopover = 170;
+      const padding = 12;
+      let topVal = relativeTop;
+
+      if (parentRect.height <= halfPopover * 2 + padding * 2) {
+        topVal = parentRect.height / 2;
+      } else if (topVal - halfPopover < padding) {
+        topVal = halfPopover + padding;
+      } else if (topVal + halfPopover > parentRect.height - padding) {
+        topVal = parentRect.height - halfPopover - padding;
+      }
+
+      const offsetTop = topVal - relativeTop;
+      setPopoverStyle({
+        top: `calc(50% + ${offsetTop}px)`,
+        transform: "translateY(-50%)",
+      });
+    }
+
+    setShowPopover((current) => !current);
+  };
+
   const handleCopy = async () => {
     if (!content || isRecalled) return;
     await navigator.clipboard?.writeText(content);
@@ -76,28 +108,41 @@ export function ChatBubble({
     <div
       className={cn(
         "flex gap-2 max-w-[85%] font-sans",
-        isOutgoing ? "self-end flex-row-reverse" : "self-start flex-row"
+        isOutgoing ? "self-end flex-row-reverse" : "self-start flex-row",
       )}
     >
-      {/* Sender Avatar (only for incoming messages) */}
       {!isOutgoing && (
-        <div className="shrink-0 mt-1">
+        <div
+          className="shrink-0 mt-1 relative cursor-pointer avatar-click-target"
+          onClick={handleTogglePopover}
+        >
           <Avatar name={senderName} src={senderAvatar} size="sm" />
+          {showPopover && (
+            <ProfilePopover
+              username={senderName}
+              onClose={(event) => {
+                event.stopPropagation();
+                setShowPopover(false);
+              }}
+              position="custom"
+              className="absolute left-full ml-3"
+              style={popoverStyle}
+            />
+          )}
         </div>
       )}
 
-      {/* Message and Metadata Column */}
       <div className={cn("flex flex-col gap-1", isOutgoing ? "items-end" : "items-start")}>
-        {/* Sender Name */}
         {!isOutgoing && (
-          <span className="text-xs font-semibold text-text-muted select-none">
+          <span
+            onClick={handleTogglePopover}
+            className="text-xs font-semibold text-text-muted select-none cursor-pointer hover:underline avatar-click-target"
+          >
             {senderName}
           </span>
         )}
 
-        {/* Bubble & Metadata Row */}
         <div className="flex items-end gap-1.5">
-          {/* Outgoing Metadata (Timestamp and LINE-style "已讀") */}
           {isOutgoing && (
             <div className="flex flex-col items-end text-[10px] text-text-muted font-mono leading-none select-none mb-0.5">
               {roomType === "msg" && isRead && (
@@ -107,7 +152,6 @@ export function ChatBubble({
             </div>
           )}
 
-          {/* Bubble Container */}
           <div
             onContextMenu={(event) => {
               event.preventDefault();
@@ -121,17 +165,16 @@ export function ChatBubble({
                 ? isHighEmphasis
                   ? "bg-primary border-primary text-white"
                   : "bg-surface-muted border-border-primary text-foreground"
-                : "bg-surface-card border-border-primary text-foreground"
+                : "bg-surface-card border-border-primary text-foreground",
             )}
           >
-            {/* Reply Quote Block */}
             {replyTo && (
               <div
                 className={cn(
                   "border-l-2 pl-2 text-xs mb-1 select-none",
                   isOutgoing && isHighEmphasis
                     ? "border-white/50 text-white/80"
-                    : "border-primary text-text-muted"
+                    : "border-primary text-text-muted",
                 )}
               >
                 <span className="font-bold block">{replyTo.senderName}</span>
@@ -139,16 +182,14 @@ export function ChatBubble({
               </div>
             )}
 
-            {/* Message Content */}
             <div className={cn("text-sm break-words", isRecalled && "italic text-text-muted/70")}>
-              {isRecalled ? "該訊息已被收回" : content}
+              {isRecalled ? "訊息已收回" : content}
             </div>
 
-            {/* Attachments Section */}
             {attachments.length > 0 && (
               <div className="flex flex-col gap-1.5 mt-1 border-t border-border-secondary/40 pt-2">
                 {attachments.map((file, idx) => {
-                  const content = (
+                  const fileContent = (
                     <>
                       <svg
                         className="h-4 w-4 shrink-0"
@@ -168,7 +209,7 @@ export function ChatBubble({
                         <p
                           className={cn(
                             "text-[9px] uppercase tracking-wider font-mono mt-0.5",
-                            isOutgoing && isHighEmphasis ? "text-white/60" : "text-text-muted"
+                            isOutgoing && isHighEmphasis ? "text-white/60" : "text-text-muted",
                           )}
                         >
                           {file.filetype}
@@ -181,7 +222,7 @@ export function ChatBubble({
                     "flex items-center gap-2.5 p-2 border rounded-sm text-xs cursor-pointer select-none transition-colors",
                     isOutgoing && isHighEmphasis
                       ? "bg-white/10 border-white/20 hover:bg-white/20 text-white"
-                      : "bg-surface-card border-border-secondary hover:border-border-primary text-foreground"
+                      : "bg-surface-card border-border-secondary hover:border-border-primary text-foreground",
                   );
 
                   return file.url ? (
@@ -192,14 +233,11 @@ export function ChatBubble({
                       rel="noreferrer"
                       className={className}
                     >
-                      {content}
+                      {fileContent}
                     </a>
                   ) : (
-                    <div
-                    key={idx}
-                      className={className}
-                    >
-                      {content}
+                    <div key={idx} className={className}>
+                      {fileContent}
                     </div>
                   );
                 })}
@@ -242,17 +280,12 @@ export function ChatBubble({
               >
                 收回訊息
               </button>
-              <button
-                type="button"
-                className={menuItemClass}
-                onClick={handleCopy}
-              >
+              <button type="button" className={menuItemClass} onClick={handleCopy}>
                 複製文字
               </button>
             </div>
           )}
 
-          {/* Incoming Metadata (Timestamp) */}
           {!isOutgoing && (
             <span className="text-[10px] text-text-muted font-mono leading-none select-none mb-0.5">
               {timestamp}
@@ -260,7 +293,6 @@ export function ChatBubble({
           )}
         </div>
 
-        {/* Group Read Status (Messenger style) */}
         {roomType === "group" && readByAvatars && readByAvatars.length > 0 && (
           <div className="flex gap-1 mt-1 justify-end w-full px-0.5">
             {readByAvatars.map((avatarUrl, idx) => (
