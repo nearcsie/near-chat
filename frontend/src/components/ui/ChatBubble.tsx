@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Avatar } from "./Avatar";
 
@@ -24,6 +24,10 @@ export interface ChatBubbleProps {
   isRead?: boolean;
   readByAvatars?: string[];
   roomType?: "msg" | "group";
+  onReply?: () => void;
+  onRecall?: () => void;
+  canRecall?: boolean;
+  canEdit?: boolean;
 }
 
 export function ChatBubble({
@@ -39,7 +43,35 @@ export function ChatBubble({
   isRead = false,
   readByAvatars = [],
   roomType = "msg",
+  onReply,
+  onRecall,
+  canRecall = false,
+  canEdit = false,
 }: ChatBubbleProps) {
+  const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null>(null);
+
+  useEffect(() => {
+    if (!menuPosition) return;
+    const close = () => setMenuPosition(null);
+    window.addEventListener("click", close);
+    window.addEventListener("keydown", close);
+    window.addEventListener("scroll", close, true);
+    return () => {
+      window.removeEventListener("click", close);
+      window.removeEventListener("keydown", close);
+      window.removeEventListener("scroll", close, true);
+    };
+  }, [menuPosition]);
+
+  const handleCopy = async () => {
+    if (!content || isRecalled) return;
+    await navigator.clipboard?.writeText(content);
+    setMenuPosition(null);
+  };
+
+  const menuItemClass =
+    "w-full px-3 py-2 text-left text-xs hover:bg-surface-muted disabled:cursor-not-allowed disabled:text-text-muted disabled:hover:bg-transparent";
+
   return (
     <div
       className={cn(
@@ -77,6 +109,12 @@ export function ChatBubble({
 
           {/* Bubble Container */}
           <div
+            onContextMenu={(event) => {
+              event.preventDefault();
+              if (!isRecalled) {
+                setMenuPosition({ x: event.clientX, y: event.clientY });
+              }
+            }}
             className={cn(
               "border rounded-sm p-3 relative flex flex-col gap-2 max-w-md md:max-w-lg",
               isOutgoing
@@ -168,6 +206,51 @@ export function ChatBubble({
               </div>
             )}
           </div>
+
+          {menuPosition && (
+            <div
+              className="fixed z-50 min-w-32 border border-border-primary bg-surface-card text-foreground shadow-lg rounded-sm overflow-hidden"
+              style={{ left: menuPosition.x, top: menuPosition.y }}
+              onClick={(event) => event.stopPropagation()}
+            >
+              <button
+                type="button"
+                className={menuItemClass}
+                onClick={() => {
+                  onReply?.();
+                  setMenuPosition(null);
+                }}
+              >
+                回覆訊息
+              </button>
+              <button
+                type="button"
+                className={menuItemClass}
+                disabled={!canEdit}
+                title={canEdit ? undefined : "目前尚未支援修改訊息"}
+              >
+                修改訊息
+              </button>
+              <button
+                type="button"
+                className={menuItemClass}
+                disabled={!canRecall}
+                onClick={() => {
+                  onRecall?.();
+                  setMenuPosition(null);
+                }}
+              >
+                收回訊息
+              </button>
+              <button
+                type="button"
+                className={menuItemClass}
+                onClick={handleCopy}
+              >
+                複製文字
+              </button>
+            </div>
+          )}
 
           {/* Incoming Metadata (Timestamp) */}
           {!isOutgoing && (
