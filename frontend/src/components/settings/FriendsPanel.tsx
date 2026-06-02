@@ -45,8 +45,10 @@ export default function FriendsPanel() {
       await sendFriendRequest(newFriendName, newFriendEmail);
       setNewFriendName("");
       setNewFriendEmail("");
+      alert("Friend request sent successfully!");
     } catch (error) {
       console.error(error);
+      alert(error instanceof Error ? error.message : "Failed to send friend request");
     }
   };
 
