@@ -57,6 +57,7 @@ import {
 import {
   createChatSocket,
   joinRoom,
+  onFriendRequest,
   onMessageRecalled,
   onNewMessage,
   onReadUpdate,
@@ -249,7 +250,7 @@ interface ChatContextType {
   handleDeleteGroupRoom: (roomId: string) => Promise<string | null>;
   getReadAvatarsForMessage: (room: ChatRoom, msg: Message) => string[];
 
-  sendFriendRequest: (name: string, email: string) => Promise<void>;
+  sendFriendRequest: (query: string) => Promise<void>;
   acceptFriendRequest: (requestId: string) => Promise<void>;
   rejectFriendRequest: (requestId: string) => Promise<void>;
   removeFriend: (friendId: string) => Promise<void>;
@@ -390,16 +391,14 @@ const fetchRoomMembers = async (authToken: string, roomId: string): Promise<Memb
 
 const findRequestedUser = (
   candidates: PublicUser[],
-  name: string,
-  email: string,
+  query: string,
 ): PublicUser | undefined => {
-  const normalizedName = name.trim().toLowerCase();
-  const normalizedEmail = email.trim().toLowerCase();
+  const normalizedQuery = query.trim().toLowerCase();
 
   return (
-    candidates.find((candidate) => candidate.name.toLowerCase() === normalizedName) ??
-    candidates.find((candidate) => candidate.userId.toLowerCase() === normalizedEmail) ??
-    candidates.find((candidate) => candidate.name.toLowerCase().includes(normalizedName)) ??
+    candidates.find((candidate) => candidate.userId.toLowerCase() === normalizedQuery) ??
+    candidates.find((candidate) => candidate.name.toLowerCase() === normalizedQuery) ??
+    candidates.find((candidate) => candidate.name.toLowerCase().includes(normalizedQuery)) ??
     candidates[0]
   );
 };
@@ -411,6 +410,9 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const socketRef = useRef<ChatSocket | null>(null);
   const roomsRef = useRef<ChatRoom[]>([]);
+  const socialDataRefreshTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const socialDataRefreshPromiseRef = useRef<Promise<void> | null>(null);
+  const socialDataRefreshResolversRef = useRef<Array<() => void>>([]);
 
   const [isMounted, setIsMounted] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -455,9 +457,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   };
 
   const refreshGroupMembersForRooms = async (authToken: string, nextRooms: ChatRoom[]) => {
-    const groupRooms = nextRooms.filter((room) => room.type === "group");
     const entries = await Promise.all(
-      groupRooms.map(async (room) => [room.id, await fetchRoomMembers(authToken, room.id)] as const),
+      nextRooms.map(async (room) => [room.id, await fetchRoomMembers(authToken, room.id)] as const),
     );
     const membersByRoomId = new Map(entries);
 
@@ -481,23 +482,59 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   };
 
   const refreshSocialData = async (authToken: string, settings?: UserSettings) => {
-    const [apiFriends, apiRequests, apiEmergencyContacts, apiBlockedUsers] = await Promise.all([
-      listFriends(authToken),
-      listFriendRequests(authToken),
-      listEmergencyContacts(authToken),
-      getBlockedUsers(authToken),
-    ]);
-    const contacts = apiEmergencyContacts.map(mapEmergencyContact);
-    const emergencyContactIds = new Set(contacts.map((contact) => contact.contactId));
+    if (socialDataRefreshTimerRef.current) {
+      clearTimeout(socialDataRefreshTimerRef.current);
+    }
 
-    setFriends(apiFriends.map((friend) => mapFriend(friend, emergencyContactIds)));
-    setFriendRequests(apiRequests.map(mapFriendRequest));
-    setBlockedUsers(apiBlockedUsers.map(u => ({ id: u.userId, name: u.name, email: u.email })));
-    setEmergencySettings({
-      warningEnabled: settings?.warningEnabled ?? user.warningEnabled ?? false,
-      warningDays: settings?.warningDays ?? user.warningDays ?? 0,
-      contacts,
-    });
+    if (!socialDataRefreshPromiseRef.current) {
+      let resolveFn: () => void;
+      socialDataRefreshPromiseRef.current = new Promise<void>((resolve) => {
+        resolveFn = resolve;
+      });
+      socialDataRefreshResolversRef.current = [resolveFn!];
+    } else {
+      let resolveFn: () => void;
+      const p = new Promise<void>((resolve) => { resolveFn = resolve; });
+      socialDataRefreshResolversRef.current.push(resolveFn!);
+      // We still return the single promise that represents the batch,
+      // but wait, if we push a new resolver, we should make sure we return a promise 
+      // that resolves when THIS specific call resolves. 
+      // It's easier to just return the shared promise:
+    }
+    const currentPromise = socialDataRefreshPromiseRef.current;
+
+    socialDataRefreshTimerRef.current = setTimeout(async () => {
+      socialDataRefreshTimerRef.current = null;
+      socialDataRefreshPromiseRef.current = null;
+      const resolvers = socialDataRefreshResolversRef.current;
+      socialDataRefreshResolversRef.current = [];
+
+      try {
+        const [apiFriends, apiRequests, apiEmergencyContacts, apiBlockedUsers] = await Promise.all([
+          listFriends(authToken),
+          listFriendRequests(authToken),
+          listEmergencyContacts(authToken),
+          getBlockedUsers(authToken),
+        ]);
+        const contacts = apiEmergencyContacts.map(mapEmergencyContact);
+        const emergencyContactIds = new Set(contacts.map((contact) => contact.contactId));
+
+        setFriends(apiFriends.map((friend) => mapFriend(friend, emergencyContactIds)));
+        setFriendRequests(apiRequests.map(mapFriendRequest));
+        setBlockedUsers(apiBlockedUsers.map(u => ({ id: u.userId, name: u.name, email: u.email })));
+        setEmergencySettings(prev => ({
+          warningEnabled: settings?.warningEnabled ?? user.warningEnabled ?? false,
+          warningDays: settings?.warningDays ?? user.warningDays ?? 0,
+          contacts,
+        }));
+      } catch (error) {
+        console.error("Error refreshing social data:", error);
+      } finally {
+        resolvers.forEach((resolve) => resolve());
+      }
+    }, 250);
+
+    return currentPromise;
   };
 
   useEffect(() => {
@@ -620,6 +657,9 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     const cleanupError = onSocketError(socket, (error) => {
       console.error("Socket error", error);
     });
+    const cleanupFriendRequest = onFriendRequest(socket, () => {
+      void refreshSocialData(token);
+    });
 
     socket.on("connect", joinKnownRooms);
     socket.connect();
@@ -630,6 +670,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       cleanupRead();
       cleanupTyping();
       cleanupError();
+      cleanupFriendRequest();
       socket.off("connect", joinKnownRooms);
       socket.disconnect();
       if (socketRef.current === socket) {
@@ -764,9 +805,23 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       return { isDeleted: true, newActiveId: remaining[0]?.id };
     }
 
+    const newArchived = !room.isArchived;
+    if (token) {
+      await updateRoom(token, roomId, { isArchived: newArchived });
+      const targetUserId = room.members?.find((m) => m.userId !== currentUserId)?.userId;
+      if (targetUserId) {
+        if (newArchived) {
+          await blockUserApi(token, targetUserId).catch(console.error);
+        } else {
+          await unblockUserApi(token, targetUserId).catch(console.error);
+        }
+        await refreshSocialData(token).catch(console.error);
+      }
+    }
+
     setRooms((current) =>
       current.map((item) =>
-        item.id === roomId ? { ...item, isArchived: !item.isArchived } : item,
+        item.id === roomId ? { ...item, isArchived: newArchived } : item,
       ),
     );
     return { isDeleted: false };
@@ -908,14 +963,13 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       .map(() => "");
   };
 
-  const sendFriendRequest = async (name: string, email: string) => {
+  const sendFriendRequest = async (query: string) => {
     if (!token) throw new Error("Not authenticated");
-    const trimmedName = name.trim();
-    const trimmedEmail = email.trim();
-    if (!trimmedName || !trimmedEmail) throw new Error("Name and email are required");
+    const trimmedQuery = query.trim();
+    if (!trimmedQuery) throw new Error("Search query is required");
 
-    const matches = await searchUsers(token, { query: trimmedEmail || trimmedName });
-    const target = findRequestedUser(matches, trimmedName, trimmedEmail);
+    const matches = await searchUsers(token, { query: trimmedQuery });
+    const target = findRequestedUser(matches, trimmedQuery);
     if (!target) {
       throw new Error("No matching user found");
     }
@@ -926,7 +980,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       {
         id: target.userId,
         name: target.name,
-        email: trimmedEmail,
+        email: trimmedQuery.includes("@") ? trimmedQuery : "",
         direction: "outgoing",
       },
     ]);
@@ -1028,10 +1082,26 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     }
   }, [messages]);
 
+  const derivedRooms = useMemo(() => {
+    return rooms.map((room) => {
+      if (room.type === "msg" && room.members && currentUserId) {
+        const otherMember = room.members.find((m) => m.userId !== currentUserId);
+        if (otherMember) {
+          const friend = friends.find((f) => f.id === otherMember.userId);
+          return {
+            ...room,
+            name: friend ? friend.name : (otherMember.name || room.name),
+          };
+        }
+      }
+      return room;
+    });
+  }, [rooms, friends, currentUserId]);
+
   return (
     <ChatContext.Provider
       value={{
-        rooms,
+        rooms: derivedRooms,
         folders,
         messages,
         groupReadStates,

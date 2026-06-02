@@ -1,5 +1,6 @@
 "use client";
 
+import { useCallback } from "react";
 import { useChat } from "@/context/ChatContext";
 import zhTW from "@/locales/zh-TW.json";
 import en from "@/locales/en.json";
@@ -12,7 +13,7 @@ const translations = {
 export function useTranslation() {
   const { uiLanguage } = useChat();
 
-  const t = (key: string, replacements?: Record<string, string | number>): string => {
+  const t = useCallback((key: string, replacements?: Record<string, string | number>): string => {
     const keys = key.split(".");
     let current: any = translations[uiLanguage] || translations["zh-TW"];
 
@@ -37,7 +38,7 @@ export function useTranslation() {
     }
 
     return text;
-  };
+  }, [uiLanguage]);
 
   return { t, locale: uiLanguage };
 }

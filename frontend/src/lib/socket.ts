@@ -91,3 +91,11 @@ export const onSocketError = (
   socket.on('error', handler);
   return () => socket.off('error', handler);
 };
+
+export const onFriendRequest = (
+  socket: ChatSocket,
+  handler: ServerToClientEvents['friend_request'],
+): (() => void) => {
+  socket.on('friend_request', handler);
+  return () => socket.off('friend_request', handler);
+};

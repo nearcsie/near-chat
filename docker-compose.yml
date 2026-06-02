@@ -22,6 +22,7 @@ services:
       - PORT=${PORT}
       - DATABASE_URL=${DATABASE_URL}
       - JWT_SECRET=${JWT_SECRET}
+      - RATE_LIMIT_DISABLED=${RATE_LIMIT_DISABLED}
       - CI=true
     volumes:
       - ./backend:/app

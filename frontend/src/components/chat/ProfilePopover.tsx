@@ -87,7 +87,7 @@ export default function ProfilePopover({ username, onClose, position = "right", 
     if (isSelf || !friend) return;
 
     const existingRoom = rooms.find((r) => r.type === "msg" && r.name === username);
-    if (existingRoom) {
+    if (existingRoom && !existingRoom.isArchived) {
       router.push(`/chat/${existingRoom.id}`);
     } else {
       const newId = await handleOpenPrivateRoom(friend.id);

@@ -61,7 +61,7 @@ export default function FriendInfoPanel({
   const handleSendMessage = async () => {
     if (!friend) return;
     const existingRoom = rooms.find((r) => r.type === "msg" && r.name === friendName);
-    if (existingRoom) {
+    if (existingRoom && !existingRoom.isArchived) {
       router.push(`/chat/${existingRoom.id}`);
     } else {
       const newId = await handleOpenPrivateRoom(friend.id);
