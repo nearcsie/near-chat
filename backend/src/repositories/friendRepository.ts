@@ -147,7 +147,7 @@ export const makeFriendRepository = (db: Pool) => {
         [userId]
       );
       return res.rows.map(row => ({
-        id: row.user_id,
+        userId: row.user_id,
         name: row.name,
         email: row.email,
         avatarUrl: row.avatar_url ?? undefined

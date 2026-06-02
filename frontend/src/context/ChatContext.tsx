@@ -492,7 +492,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
     setFriends(apiFriends.map((friend) => mapFriend(friend, emergencyContactIds)));
     setFriendRequests(apiRequests.map(mapFriendRequest));
-    setBlockedUsers(apiBlockedUsers);
+    setBlockedUsers(apiBlockedUsers.map(u => ({ id: u.userId, name: u.name, email: u.email })));
     setEmergencySettings({
       warningEnabled: settings?.warningEnabled ?? user.warningEnabled ?? false,
       warningDays: settings?.warningDays ?? user.warningDays ?? 0,

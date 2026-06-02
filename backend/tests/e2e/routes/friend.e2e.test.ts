@@ -232,5 +232,24 @@ describe('Friendships & Blocks E2E', () => {
       const row = await testPool.query('SELECT is_archived FROM chat_rooms WHERE room_id = $1', [privateRoom.body.roomId]);
       expect(row.rows[0].is_archived).toBe(true);
     });
+
+    it('should list blocked users', async () => {
+      // A blocks C (done in earlier test, but tests might not be perfectly isolated, let's block C if not blocked or use B)
+      await request(app)
+        .post('/api/v1/blocks')
+        .set('Authorization', `Bearer ${tokenA}`)
+        .send({ target_user_id: userC.userId });
+
+      const listRes = await request(app)
+        .get('/api/v1/blocks')
+        .set('Authorization', `Bearer ${tokenA}`);
+
+      expect(listRes.status).toBe(200);
+      expect(Array.isArray(listRes.body)).toBe(true);
+      expect(listRes.body.length).toBeGreaterThan(0);
+      expect(listRes.body[0]).toHaveProperty('userId');
+      expect(listRes.body[0]).toHaveProperty('name');
+      expect(listRes.body[0]).toHaveProperty('email');
+    });
   });
 });
