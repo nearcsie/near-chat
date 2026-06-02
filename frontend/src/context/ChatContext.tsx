@@ -906,10 +906,10 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   };
 
   const sendFriendRequest = async (name: string, email: string) => {
-    if (!token) return;
+    if (!token) throw new Error("Not authenticated");
     const trimmedName = name.trim();
     const trimmedEmail = email.trim();
-    if (!trimmedName || !trimmedEmail) return;
+    if (!trimmedName || !trimmedEmail) throw new Error("Name and email are required");
 
     const matches = await searchUsers(token, { query: trimmedEmail || trimmedName });
     const target = findRequestedUser(matches, trimmedName, trimmedEmail);
