@@ -124,9 +124,12 @@ export default function ProfileSettings() {
             {t("profile.changeAvatar")}
           </Button>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Input label={t("profile.username")} value={personalUsername} onChange={(event) => setPersonalUsername(event.target.value)} required />
-          <Input label={t("profile.email")} type="email" value={personalEmail} onChange={(event) => setPersonalEmail(event.target.value)} required />
+        <div className="flex flex-col gap-4">
+          <Input label={t("profile.userId")} value={user.userId} readOnly disabled />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Input label={t("profile.username")} value={personalUsername} onChange={(event) => setPersonalUsername(event.target.value)} required />
+            <Input label={t("profile.email")} type="email" value={personalEmail} onChange={(event) => setPersonalEmail(event.target.value)} required />
+          </div>
         </div>
 
         <SectionTitle title={t("profile.notifications")} />
