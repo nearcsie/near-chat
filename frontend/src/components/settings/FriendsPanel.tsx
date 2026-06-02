@@ -22,8 +22,7 @@ export default function FriendsPanel() {
     setSelectedFriendForSidebar,
   } = useChat();
   const [searchText, setSearchText] = useState("");
-  const [newFriendName, setNewFriendName] = useState("");
-  const [newFriendEmail, setNewFriendEmail] = useState("");
+  const [addFriendQuery, setAddFriendQuery] = useState("");
 
   const filteredFriends = useMemo(() => {
     const query = searchText.trim().toLowerCase();
@@ -42,9 +41,8 @@ export default function FriendsPanel() {
   const handleSendRequest = async (event: React.FormEvent) => {
     event.preventDefault();
     try {
-      await sendFriendRequest(newFriendName, newFriendEmail);
-      setNewFriendName("");
-      setNewFriendEmail("");
+      await sendFriendRequest(addFriendQuery);
+      setAddFriendQuery("");
       alert(t("friends.requestSent"));
     } catch (error) {
       console.error(error);
@@ -116,18 +114,10 @@ export default function FriendsPanel() {
           <PanelHeader title={t("friends.addFriend")} meta={t("friends.mockRequest")} />
           <form onSubmit={handleSendRequest} className="p-4 flex flex-col gap-4">
             <Input
-              label={t("friends.name")}
-              value={newFriendName}
-              onChange={(event) => setNewFriendName(event.target.value)}
-              placeholder={t("friends.namePlaceholder")}
-              required
-            />
-            <Input
-              label={t("friends.email")}
-              type="email"
-              value={newFriendEmail}
-              onChange={(event) => setNewFriendEmail(event.target.value)}
-              placeholder={t("friends.emailPlaceholder")}
+              label={t("friends.searchPlaceholder") + " / User ID / Email"}
+              value={addFriendQuery}
+              onChange={(event) => setAddFriendQuery(event.target.value)}
+              placeholder="Name, User ID, or Email..."
               required
             />
             <Button type="submit" variant="primary">
