@@ -1,0 +1,78 @@
+name: Task
+description: 功能開發、重構、修補或清理任務
+title: "[Task] "
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        請依序填寫各欄位，協助團隊快速理解任務範圍與驗收標準。
+
+  - type: textarea
+    id: background
+    attributes:
+      label: 背景
+      description: 說明此任務的起因、相關規格或設計決策。
+      placeholder: |
+        最新 relation-schema.md 不包含 room_hash / is_readonly。
+        目前規格是 is_archived 表示封存唯讀。
+    validations:
+      required: true
+
+  - type: textarea
+    id: current_status
+    attributes:
+      label: 目前狀態
+      description: 描述現有程式碼、DB schema 或文件中需要修正的現況。
+      placeholder: |
+        - `backend/migrations/20260531190000_*.sql` 新增了 room_hash 和 is_readonly。
+        - roomRepository 仍有 findByRoomHash、privateRoomHash 等舊邏輯。
+        - docs/er_diagram.md 殘留舊規格。
+    validations:
+      required: true
+
+  - type: textarea
+    id: work_items
+    attributes:
+      label: 工作項目
+      description: 列出需要完成的具體子任務（可使用 checklist 格式）。
+      placeholder: |
+        - [ ] 移除 backend 對 room_hash / is_readonly 的依賴
+        - [ ] 新增 migration drop 舊欄位與 index
+        - [ ] 改用 advisory lock 確保不重複建立 private room
+        - [ ] 更新 unit / e2e tests
+        - [ ] 清理舊文件
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance_criteria
+    attributes:
+      label: 驗收標準
+      description: 列出可量化、可驗證的完成條件。
+      placeholder: |
+        - API response 不暴露 roomHash / isReadonly
+        - DB schema 不再有 room_hash / is_readonly 欄位
+        - 同一對好友重複開私聊不會產生第二個 private room
+        - is_archived 仍作為封存唯讀唯一語意
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: 優先度
+      options:
+        - P0 — 阻塞開發 / 需立即處理
+        - P1 — 本 Sprint 必須完成
+        - P2 — 本 Sprint 盡量完成
+        - P3 — Backlog
+    validations:
+      required: true
+
+  - type: input
+    id: related_issues
+    attributes:
+      label: 相關 Issue / PR
+      description: 填入關聯的 Issue 或 PR 編號，例如 #108。
+      placeholder: "#108, #112"
