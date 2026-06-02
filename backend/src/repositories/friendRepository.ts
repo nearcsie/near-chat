@@ -138,6 +138,22 @@ export const makeFriendRepository = (db: Pool) => {
       );
     },
 
+    async getBlockedUsers(userId: string): Promise<any[]> {
+      const res = await db.query(
+        `SELECT u.user_id, u.name, u.email, u.avatar_url
+         FROM blocks b
+         JOIN users u ON u.user_id = b.blocked_id AND u.deleted_at IS NULL
+         WHERE b.blocker_id = $1`,
+        [userId]
+      );
+      return res.rows.map(row => ({
+        id: row.user_id,
+        name: row.name,
+        email: row.email,
+        avatarUrl: row.avatar_url ?? undefined
+      }));
+    },
+
     async isBlocked(user1: string, user2: string): Promise<boolean> {
       const res = await db.query(
         `SELECT 1 FROM blocks

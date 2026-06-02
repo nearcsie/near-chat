@@ -87,6 +87,10 @@ export function makeFriendService(
 
     async unblockUser(userId: string, blockedId: string) {
       return repo.unblockUser(userId, blockedId);
+    },
+
+    async getBlockedUsers(userId: string) {
+      return repo.getBlockedUsers(userId);
     }
   };
 }

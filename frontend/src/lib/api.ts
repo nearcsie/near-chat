@@ -202,6 +202,9 @@ export const respondFriendRequest = (
     { token },
   );
 
+export const getBlockedUsers = (token: string): Promise<{id: string, name: string, email: string, avatarUrl?: string}[]> =>
+  requestJson<{id: string, name: string, email: string, avatarUrl?: string}[]>('/blocks', { method: 'GET' }, { token });
+
 export const blockUser = (token: string, targetUserId: string): Promise<{ status: 'blocked' }> =>
   requestJson<{ status: 'blocked' }>(
     '/blocks',

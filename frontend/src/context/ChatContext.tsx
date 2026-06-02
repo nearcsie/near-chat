@@ -27,6 +27,7 @@ import {
   createPrivateRoom,
   deleteEmergencyContact,
   deleteFriend,
+  getBlockedUsers,
   getMe,
   getMySettings,
   getUserProfile,
@@ -480,16 +481,18 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   };
 
   const refreshSocialData = async (authToken: string, settings?: UserSettings) => {
-    const [apiFriends, apiRequests, apiEmergencyContacts] = await Promise.all([
+    const [apiFriends, apiRequests, apiEmergencyContacts, apiBlockedUsers] = await Promise.all([
       listFriends(authToken),
       listFriendRequests(authToken),
       listEmergencyContacts(authToken),
+      getBlockedUsers(authToken),
     ]);
     const contacts = apiEmergencyContacts.map(mapEmergencyContact);
     const emergencyContactIds = new Set(contacts.map((contact) => contact.contactId));
 
     setFriends(apiFriends.map((friend) => mapFriend(friend, emergencyContactIds)));
     setFriendRequests(apiRequests.map(mapFriendRequest));
+    setBlockedUsers(apiBlockedUsers);
     setEmergencySettings({
       warningEnabled: settings?.warningEnabled ?? user.warningEnabled ?? false,
       warningDays: settings?.warningDays ?? user.warningDays ?? 0,

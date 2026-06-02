@@ -111,6 +111,16 @@ export const makeFriendController = (
       } catch (err) {
         next(err);
       }
+    },
+
+    async getBlockedUsers(req: Request, res: Response, next: NextFunction) {
+      try {
+        const userId = req.user!.userId;
+        const blockedUsers = await service.getBlockedUsers(userId);
+        res.status(200).json(blockedUsers);
+      } catch (err) {
+        next(err);
+      }
     }
   };
 };
