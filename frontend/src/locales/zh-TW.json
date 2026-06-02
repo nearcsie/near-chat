@@ -100,6 +100,7 @@
   "profile": {
     "profile": "個人資料",
     "changeAvatar": "更換頭像",
+    "userId": "使用者 ID",
     "username": "使用者名稱",
     "email": "Email",
     "notifications": "通知",
