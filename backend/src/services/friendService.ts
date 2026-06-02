@@ -76,6 +76,9 @@ export function makeFriendService(
     },
 
     async blockUser(userId: string, targetUserId: string) {
+      if (userId === targetUserId) {
+        throw new ValidationError('Cannot block yourself');
+      }
       await repo.blockUser(userId, targetUserId);
       await repo.deleteFriendship(userId, targetUserId);
       await privateRooms?.markPrivateReadOnly(userId, targetUserId);

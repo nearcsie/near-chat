@@ -83,10 +83,14 @@ export class RoomRepository implements IRoomRepository {
        ) latest ON true
        LEFT JOIN LATERAL (
          SELECT COUNT(*)::int AS unread_count
-         FROM messages m
-         WHERE m.room_id = cr.room_id
-           AND (cr.view_history = true OR m.sent_at >= rm.join_time)
-           AND (last_read.sent_at IS NULL OR m.sent_at > last_read.sent_at)
+         FROM (
+           SELECT 1
+           FROM messages m
+           WHERE m.room_id = cr.room_id
+             AND (cr.view_history = true OR m.sent_at >= rm.join_time)
+             AND (last_read.sent_at IS NULL OR m.sent_at > last_read.sent_at)
+           LIMIT 100
+         ) _sub
        ) unread ON true
        WHERE rm.user_id = $1
        ORDER BY COALESCE(latest.sent_at, cr.created_at) DESC`,
