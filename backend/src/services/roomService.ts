@@ -103,6 +103,13 @@ export const makeRoomService = (
       }
     },
 
+    async unarchivePrivateRoom(userA: string, userB: string): Promise<void> {
+      const existing = await repo.findByRoomHash(privateRoomHash(userA, userB));
+      if (existing && existing.isArchived) {
+        await repo.update(existing.roomId, { isArchived: false });
+      }
+    },
+
     async listMembers(roomId: string, callerId: string) {
       const room = await repo.findById(roomId);
       if (!room) throw new NotFoundError('room', roomId);
