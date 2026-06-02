@@ -4,6 +4,10 @@ import { authMiddleware } from '../../../src/middlewares/authMiddleware';
 import * as jwtHelper from '../../../src/auth/jwt';
 import { AppError } from '../../../src/errors/AppError';
 
+vi.mock('../../../src/db', () => ({
+  default: { query: vi.fn().mockResolvedValue({ rows: [{}] }) },
+}));
+
 describe('authMiddleware', () => {
   let mockRequest: Partial<Request>;
   let mockResponse: Partial<Response>;
