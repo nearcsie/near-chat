@@ -19,6 +19,7 @@ export const makeBlockRoutes = (ctrl: ReturnType<typeof makeFriendController>): 
 
   router.use(authMiddleware);
 
+  router.get('/', ctrl.getBlockedUsers.bind(ctrl));
   router.post('/', ctrl.blockUser.bind(ctrl));
   router.delete('/:id', ctrl.unblockUser.bind(ctrl));
 
