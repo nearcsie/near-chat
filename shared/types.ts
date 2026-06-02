@@ -214,6 +214,16 @@ export interface Folder {
   roomIds: string[];
 }
 
+export interface EmergencyContactResponse {
+  userId: string;
+  contactId: string;
+  message: string;
+  createdAt: Date;
+  contact?: Pick<PublicUser, 'name' | 'avatarUrl'> & {
+    email?: string;
+  };
+}
+
 export interface Attachment {
   attachmentId: string;
   messageId?: string;

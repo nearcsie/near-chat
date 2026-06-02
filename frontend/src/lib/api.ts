@@ -1,7 +1,10 @@
 import type {
   Attachment,
   AuthResponse,
+  EmergencyContactResponse,
   Folder as ApiFolder,
+  FriendRequestResponse,
+  FriendResponse,
   LoginRequest,
   MessageWithSender,
   MyProfile,
@@ -43,6 +46,11 @@ type EmergencyAlertResult = {
   alerted: boolean;
   recipients: string[];
   reason?: string;
+};
+
+type UpsertEmergencyContactRequest = {
+  contactId: string;
+  message: string;
 };
 
 type RequestOptions = {
@@ -135,6 +143,55 @@ export const searchUsers = (token: string, params: { query: string }): Promise<P
   const query = new URLSearchParams({ q: params.query });
   return requestJson<PublicUser[]>(`/users?${query.toString()}`, {}, { token });
 };
+
+export const listFriends = (token: string): Promise<FriendResponse[]> =>
+  requestJson<FriendResponse[]>('/friends', {}, { token });
+
+export const deleteFriend = (token: string, friendId: string): Promise<void> =>
+  requestJson<void>(`/friends/${friendId}`, { method: 'DELETE' }, { token });
+
+export const listFriendRequests = (token: string): Promise<FriendRequestResponse[]> =>
+  requestJson<FriendRequestResponse[]>('/friend-requests', {}, { token });
+
+export const sendFriendRequest = (
+  token: string,
+  targetUserId: string,
+): Promise<FriendRequestResponse> =>
+  requestJson<FriendRequestResponse>(
+    '/friend-requests',
+    {
+      method: 'POST',
+      ...withJsonBody({ targetUserId }),
+    },
+    { token },
+  );
+
+export const respondFriendRequest = (
+  token: string,
+  requesterId: string,
+  status: 'accepted' | 'rejected',
+): Promise<FriendRequestResponse | { status: 'rejected' }> =>
+  requestJson<FriendRequestResponse | { status: 'rejected' }>(
+    `/friend-requests/${requesterId}`,
+    {
+      method: 'PATCH',
+      ...withJsonBody({ status }),
+    },
+    { token },
+  );
+
+export const blockUser = (token: string, targetUserId: string): Promise<{ status: 'blocked' }> =>
+  requestJson<{ status: 'blocked' }>(
+    '/blocks',
+    {
+      method: 'POST',
+      ...withJsonBody({ targetUserId }),
+    },
+    { token },
+  );
+
+export const unblockUser = (token: string, blockedId: string): Promise<void> =>
+  requestJson<void>(`/blocks/${blockedId}`, { method: 'DELETE' }, { token });
 
 export const listRooms = (token: string): Promise<RoomSummary[]> =>
   requestJson<RoomSummary[]>('/rooms', {}, { token });
@@ -249,6 +306,29 @@ export const triggerEmergencyAlert = (token: string, message?: string): Promise<
       method: 'POST',
       ...withJsonBody(message ? { message } : {}),
     },
+    { token },
+  );
+
+export const listEmergencyContacts = (token: string): Promise<EmergencyContactResponse[]> =>
+  requestJson<EmergencyContactResponse[]>('/users/me/emergency-contacts', {}, { token });
+
+export const upsertEmergencyContact = (
+  token: string,
+  data: UpsertEmergencyContactRequest,
+): Promise<EmergencyContactResponse> =>
+  requestJson<EmergencyContactResponse>(
+    '/users/me/emergency-contacts',
+    {
+      method: 'POST',
+      ...withJsonBody(data),
+    },
+    { token },
+  );
+
+export const deleteEmergencyContact = (token: string, contactId: string): Promise<{ success: boolean }> =>
+  requestJson<{ success: boolean }>(
+    `/users/me/emergency-contacts/${contactId}`,
+    { method: 'DELETE' },
     { token },
   );
 
