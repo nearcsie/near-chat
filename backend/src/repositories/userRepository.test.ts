@@ -63,3 +63,30 @@ describe('UserRepository soft-delete', () => {
     }
   });
 });
+
+describe('UserRepository search', () => {
+  it('finds users by partial name or email case-insensitively', async () => {
+    const uniqueHash = Date.now();
+    const user1 = await repo.create({
+      name: `Search Name ${uniqueHash}`,
+      email: `search-test-${uniqueHash}@test.example`,
+      passwordHash: 'testhash',
+    });
+
+    try {
+      const byEmail = await repo.search(`SEARCH-TEST-${uniqueHash}`);
+      expect(byEmail.length).toBeGreaterThan(0);
+      expect(byEmail.some(u => u.userId === user1.userId)).toBe(true);
+
+      const byName = await repo.search(`search name ${uniqueHash}`);
+      expect(byName.length).toBeGreaterThan(0);
+      expect(byName.some(u => u.userId === user1.userId)).toBe(true);
+      
+      const byUserId = await repo.search(user1.userId);
+      expect(byUserId.length).toBeGreaterThan(0);
+      expect(byUserId.some(u => u.userId === user1.userId)).toBe(true);
+    } finally {
+      await repo.delete(user1.userId);
+    }
+  });
+});

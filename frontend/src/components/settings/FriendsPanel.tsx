@@ -45,8 +45,15 @@ export default function FriendsPanel() {
       await sendFriendRequest(newFriendName, newFriendEmail);
       setNewFriendName("");
       setNewFriendEmail("");
+      alert(t("friends.requestSent"));
     } catch (error) {
       console.error(error);
+      const msg = error instanceof Error ? error.message : "Failed";
+      if (msg === "No matching user found") {
+        alert(t("friends.userNotFound"));
+      } else {
+        alert(t("friends.requestFailed") + (msg !== "Failed" ? `: ${msg}` : ""));
+      }
     }
   };
 

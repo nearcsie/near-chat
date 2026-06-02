@@ -39,7 +39,7 @@ export class UserRepository implements IUserRepository {
 
   async search(query: string): Promise<User[]> {
     const res = await this.db.query(
-      `SELECT * FROM users WHERE (name ILIKE $1 OR user_id::text = $2) AND deleted_at IS NULL LIMIT 20`,
+      `SELECT * FROM users WHERE (name ILIKE $1 OR user_id::text = $2 OR email ILIKE $1) AND deleted_at IS NULL LIMIT 20`,
       [`%${query}%`, query]
     );
     return res.rows.map(mapRowToUser);
