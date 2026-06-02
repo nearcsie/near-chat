@@ -16,6 +16,7 @@ Project design documentation. Contains the ER diagram for the full intended data
 | `db-chat-ui.md` | UI design notes for the database chat interface |
 | `report-1.md` | Course report 1 — project proposal and initial design |
 | `report-2.md` | Course report 2 — implementation progress and results |
+| `report-3.md` | Course report 3 — detailed feature description, flowcharts, UI wireframe specs, and raw pg database integration tech |
 
 ## For AI Agents
 

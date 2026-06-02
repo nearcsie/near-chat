@@ -521,11 +521,11 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         setFriends(apiFriends.map((friend) => mapFriend(friend, emergencyContactIds)));
         setFriendRequests(apiRequests.map(mapFriendRequest));
         setBlockedUsers(apiBlockedUsers.map(u => ({ id: u.userId, name: u.name, email: u.email })));
-        setEmergencySettings({
+        setEmergencySettings(prev => ({
           warningEnabled: settings?.warningEnabled ?? user.warningEnabled ?? false,
           warningDays: settings?.warningDays ?? user.warningDays ?? 0,
           contacts,
-        });
+        }));
       } catch (error) {
         console.error("Error refreshing social data:", error);
       } finally {
