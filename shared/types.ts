@@ -69,11 +69,9 @@ export interface Room {
   name?: string;
   avatarUrl?: string;
   inviteCode?: string;
-  roomHash?: string;
   requireApproval: boolean;
   viewHistory: boolean;
   isArchived: boolean;
-  isReadonly?: boolean;
   createdAt: Date;
 }
 
@@ -95,7 +93,7 @@ export interface Message {
   replyToId?: string;
   isRecalled: boolean;
   sentAt: Date;
-  attachments?: string[];
+  attachments?: Attachment[];
 }
 
 /** Message enriched with the sender's public profile (via JOIN). */
@@ -163,7 +161,7 @@ export interface ApiError {
 export interface ClientToServerEvents {
   join_room:      (payload: { roomId: string }) => void;
   leave_room:     (payload: { roomId: string }) => void;
-  send_message:   (payload: { roomId: string; content: string; replyTo?: string; attachments?: string[] }) => void;
+  send_message:   (payload: { roomId: string; content: string; replyTo?: string; attachmentIds?: string[] }) => void;
   recall_message: (payload: { messageId: string }) => void;
   typing:         (payload: { roomId: string; isTyping: boolean }) => void;
   read_receipt:   (payload: { roomId: string; messageId: string }) => void;
@@ -214,4 +212,14 @@ export interface Folder {
   name: string;
   createdAt: Date;
   roomIds: string[];
+}
+
+export interface Attachment {
+  attachmentId: string;
+  messageId?: string;
+  uploadedBy: string;
+  fileUrl: string;
+  fileType: string;
+  originalName: string;
+  uploadedAt: Date;
 }

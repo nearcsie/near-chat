@@ -1,4 +1,5 @@
 import type {
+  Attachment,
   AuthResponse,
   Folder as ApiFolder,
   LoginRequest,
@@ -36,10 +37,7 @@ type ListMessagesRequest = {
   limit?: number;
 };
 
-type UploadAttachmentResponse = {
-  attachmentId: string;
-  fileUrl: string;
-};
+type UploadAttachmentResponse = Attachment;
 
 type EmergencyAlertResult = {
   alerted: boolean;

@@ -81,7 +81,6 @@ const attachmentService = makeAttachmentService(attachmentRepo);
 const friendService = makeFriendService(friendRepo, (userId, eventName, payload) => {
   io.to(`user_${userId}`).emit(eventName as any, payload);
 }, {
-  createPrivate: roomService.createPrivate,
   markPrivateReadOnly: roomService.markPrivateReadOnly,
 });
 const friendController = makeFriendController(friendService);

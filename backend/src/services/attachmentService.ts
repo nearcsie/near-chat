@@ -1,5 +1,16 @@
 import { ValidationError } from '../errors/AppError';
 import { AttachmentRepository } from '../repositories/attachmentRepository';
+import type { Attachment } from '@shared/types';
+
+const mapAttachment = (row: any): Attachment => ({
+  attachmentId: row.attachment_id,
+  messageId: row.message_id ?? undefined,
+  uploadedBy: row.uploaded_by,
+  fileUrl: `/api/v1/attachments/${row.attachment_id}`,
+  fileType: row.file_type,
+  originalName: row.original_name,
+  uploadedAt: row.uploaded_at,
+});
 
 export function makeAttachmentService(attachmentRepo: AttachmentRepository) {
   return {
@@ -16,10 +27,7 @@ export function makeAttachmentService(attachmentRepo: AttachmentRepository) {
         fileType: file.mimetype,
         originalName: file.originalname,
       });
-      return {
-        attachmentId: attachment.attachment_id,
-        fileUrl: `/api/v1/attachments/${attachment.attachment_id}`,
-      };
+      return mapAttachment(attachment);
     },
     async getAttachment(attachmentId: string) {
       const attachment = await attachmentRepo.findById(attachmentId);

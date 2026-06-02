@@ -126,6 +126,7 @@ describe('Socket.IO chat events E2E', () => {
     });
     expect(messageService.sendMessage).toHaveBeenCalledWith('user-1', 'room-1', 'hello', {
       replyToId: undefined,
+      attachmentIds: undefined,
     });
   });
 

@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type {
+  Attachment as ApiAttachment,
   Folder as ApiFolder,
   MessageWithSender,
   MyProfile,
@@ -182,13 +183,12 @@ const formatMessageTime = (value: Date | string): string => {
   return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 };
 
-const mapAttachment = (fileUrl: string) => {
-  const url = attachmentDownloadUrl(fileUrl);
-  const filename = decodeURIComponent(fileUrl.split("/").filter(Boolean).at(-1) ?? "attachment");
+const mapAttachment = (attachment: ApiAttachment) => {
+  const filename = attachment.originalName || "attachment";
   return {
     filename,
-    filetype: filename.includes(".") ? filename.split(".").pop() ?? "file" : "file",
-    url,
+    filetype: attachment.fileType,
+    url: attachmentDownloadUrl(attachment.fileUrl),
   };
 };
 
@@ -226,7 +226,7 @@ const mapRooms = (
     isPublic: !room.requireApproval,
     allowInvite: Boolean(room.inviteCode),
     allowUpload: true,
-    isArchived: room.isArchived || room.isReadonly,
+    isArchived: room.isArchived,
     members: room.type === "group" ? [] : undefined,
   }));
 };
@@ -452,7 +452,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     sendMessage(socketRef.current, {
       roomId,
       content: `Uploaded ${file.name}`,
-      attachments: [uploaded.attachmentId],
+      attachmentIds: [uploaded.attachmentId],
     });
   };
 

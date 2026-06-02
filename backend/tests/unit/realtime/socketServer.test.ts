@@ -82,10 +82,16 @@ describe('attachSockets', () => {
   it('sends messages through messageService and emits new_message to the room', async () => {
     service.sendMessage.mockResolvedValue(message);
 
-    await handlers.send_message({ roomId: 'room-1', content: 'hello', replyTo: 'msg-0' });
+    await handlers.send_message({
+      roomId: 'room-1',
+      content: 'hello',
+      replyTo: 'msg-0',
+      attachmentIds: ['550e8400-e29b-41d4-a716-446655440000'],
+    });
 
     expect(service.sendMessage).toHaveBeenCalledWith('user-1', 'room-1', 'hello', {
       replyToId: 'msg-0',
+      attachmentIds: ['550e8400-e29b-41d4-a716-446655440000'],
     });
     expect(roomEmit).toHaveBeenCalledWith('new_message', message);
   });

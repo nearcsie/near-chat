@@ -104,12 +104,18 @@ describe('Friendships & Blocks E2E', () => {
       expect(listRes.body.length).toBe(1);
       expect(listRes.body[0].friend.userId).toBe(userA.userId);
 
-      const roomsA = await request(app).get('/api/v1/rooms').set('Authorization', `Bearer ${tokenA}`);
+      const roomsBeforeOpen = await request(app).get('/api/v1/rooms').set('Authorization', `Bearer ${tokenA}`);
+      expect(roomsBeforeOpen.body.some((room: { type: string }) => room.type === 'private')).toBe(false);
+
+      const openRoom = await request(app)
+        .post('/api/v1/rooms')
+        .set('Authorization', `Bearer ${tokenA}`)
+        .send({ type: 'private', targetUserId: userB.userId });
+      expect(openRoom.status).toBe(201);
+
       const roomsB = await request(app).get('/api/v1/rooms').set('Authorization', `Bearer ${tokenB}`);
-      const privateRoomA = roomsA.body.find((room: { type: string }) => room.type === 'private');
       const privateRoomB = roomsB.body.find((room: { type: string }) => room.type === 'private');
-      expect(privateRoomA?.roomId).toBeDefined();
-      expect(privateRoomB?.roomId).toBe(privateRoomA.roomId);
+      expect(privateRoomB?.roomId).toBe(openRoom.body.roomId);
     });
 
     it('should mark the private room read-only when friendship is removed', async () => {
@@ -122,16 +128,19 @@ describe('Friendships & Blocks E2E', () => {
         .set('Authorization', `Bearer ${tokenB}`)
         .send({ status: 'accepted' });
 
-      const beforeDelete = await request(app).get('/api/v1/rooms').set('Authorization', `Bearer ${tokenA}`);
-      const privateRoom = beforeDelete.body.find((room: { type: string }) => room.type === 'private');
+      const privateRoom = await request(app)
+        .post('/api/v1/rooms')
+        .set('Authorization', `Bearer ${tokenA}`)
+        .send({ type: 'private', targetUserId: userB.userId });
+      expect(privateRoom.status).toBe(201);
 
       const deleteRes = await request(app)
         .delete(`/api/v1/friends/${userB.userId}`)
         .set('Authorization', `Bearer ${tokenA}`);
       expect(deleteRes.status).toBe(204);
 
-      const row = await testPool.query('SELECT is_readonly FROM chat_rooms WHERE room_id = $1', [privateRoom.roomId]);
-      expect(row.rows[0].is_readonly).toBe(true);
+      const row = await testPool.query('SELECT is_archived FROM chat_rooms WHERE room_id = $1', [privateRoom.body.roomId]);
+      expect(row.rows[0].is_archived).toBe(true);
     });
     it('should reject a friend request and not affect accepted friendships', async () => {
       // C sends request to B
@@ -208,8 +217,11 @@ describe('Friendships & Blocks E2E', () => {
         .set('Authorization', `Bearer ${tokenB}`)
         .send({ status: 'accepted' });
 
-      const rooms = await request(app).get('/api/v1/rooms').set('Authorization', `Bearer ${tokenA}`);
-      const privateRoom = rooms.body.find((room: { type: string }) => room.type === 'private');
+      const privateRoom = await request(app)
+        .post('/api/v1/rooms')
+        .set('Authorization', `Bearer ${tokenA}`)
+        .send({ type: 'private', targetUserId: userB.userId });
+      expect(privateRoom.status).toBe(201);
 
       const blockRes = await request(app)
         .post('/api/v1/blocks')
@@ -217,8 +229,8 @@ describe('Friendships & Blocks E2E', () => {
         .send({ target_user_id: userB.userId });
 
       expect(blockRes.status).toBe(201);
-      const row = await testPool.query('SELECT is_readonly FROM chat_rooms WHERE room_id = $1', [privateRoom.roomId]);
-      expect(row.rows[0].is_readonly).toBe(true);
+      const row = await testPool.query('SELECT is_archived FROM chat_rooms WHERE room_id = $1', [privateRoom.body.roomId]);
+      expect(row.rows[0].is_archived).toBe(true);
     });
   });
 });
