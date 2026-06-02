@@ -4,8 +4,13 @@ import { AppError, ValidationError } from '../errors/AppError';
 import type { makeFriendRepository } from '../repositories/friendRepository';
 
 const friendRequestSchema = z.object({
-  target_user_id: z.string().uuid(),
-});
+  targetUserId: z.string().uuid().optional(),
+  target_user_id: z.string().uuid().optional(),
+}).refine((data) => data.targetUserId || data.target_user_id, {
+  message: 'targetUserId is required',
+}).transform((data) => ({
+  targetUserId: data.targetUserId ?? data.target_user_id!,
+}));
 
 const friendResponseSchema = z.object({
   status: z.enum(['accepted', 'rejected']),
@@ -20,7 +25,7 @@ export const makeFriendController = (
         const userId = req.user!.userId;
         const body = friendRequestSchema.parse(req.body);
         
-        const request = await service.sendFriendRequest(userId, body.target_user_id);
+        const request = await service.sendFriendRequest(userId, body.targetUserId);
 
         res.status(201).json(request);
       } catch (err) {
@@ -86,7 +91,7 @@ export const makeFriendController = (
         const userId = req.user!.userId;
         const body = friendRequestSchema.parse(req.body);
 
-        const result = await service.blockUser(userId, body.target_user_id);
+        const result = await service.blockUser(userId, body.targetUserId);
         
         res.status(201).json(result);
       } catch (err) {

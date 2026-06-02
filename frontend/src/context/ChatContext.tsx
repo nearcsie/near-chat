@@ -134,6 +134,7 @@ interface ChatContextType {
   handleUploadAttachment: (roomId: string, file: File) => Promise<void>;
   handleRecallMessage: (msgId: string) => void;
   handleCreateRoom: (name: string, type: "msg" | "group", folderId: string) => Promise<string>;
+  handleOpenPrivateRoom: (targetUserId: string) => Promise<string>;
   handleCreateFolder: (name: string) => Promise<void>;
   handleCategorizeRoom: (roomId: string, folderId: string | null) => Promise<void>;
   handleModifyNickname: (roomId: string, nickname: string) => void;
@@ -483,6 +484,13 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     return created.roomId;
   };
 
+  const handleOpenPrivateRoom = async (targetUserId: string) => {
+    if (!token) return "";
+    const room = await createPrivateRoom(token, { targetUserId });
+    await refreshRoomsAndFolders(token);
+    return room.roomId;
+  };
+
   const handleCreateFolder = async (name: string) => {
     if (!token) return;
     const folder = await createFolder(token, name);
@@ -667,6 +675,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         handleUploadAttachment,
         handleRecallMessage,
         handleCreateRoom,
+        handleOpenPrivateRoom,
         handleCreateFolder,
         handleCategorizeRoom,
         handleModifyNickname,
