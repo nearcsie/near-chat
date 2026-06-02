@@ -57,6 +57,7 @@ import {
 import {
   createChatSocket,
   joinRoom,
+  onFriendRequest,
   onMessageRecalled,
   onNewMessage,
   onReadUpdate,
@@ -656,6 +657,9 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     const cleanupError = onSocketError(socket, (error) => {
       console.error("Socket error", error);
     });
+    const cleanupFriendRequest = onFriendRequest(socket, () => {
+      void refreshSocialData(token);
+    });
 
     socket.on("connect", joinKnownRooms);
     socket.connect();
@@ -666,6 +670,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       cleanupRead();
       cleanupTyping();
       cleanupError();
+      cleanupFriendRequest();
       socket.off("connect", joinKnownRooms);
       socket.disconnect();
       if (socketRef.current === socket) {
