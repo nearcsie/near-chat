@@ -9,6 +9,7 @@ export interface IUserRepository {
     userId: string,
     data: Partial<
       Pick<User, 'name' | 'bio' | 'avatarUrl' | 'language' | 'warningEnabled' | 'warningDays' | 'lastActivity' | 'deletedAt'>
+      & Pick<User, 'email' | 'passwordHash' | 'theme' | 'notifyDesktop' | 'notifySound'>
     >,
   ): Promise<User>;
   delete(userId: string): Promise<void>;

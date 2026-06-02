@@ -19,6 +19,9 @@
 | created_at | TIMESTAMP | 註冊時間 | NOT NULL, DEFAULT CURRENT_TIMESTAMP |
 | deleted_at | TIMESTAMP | 軟刪除時間 | NULLABLE |
 | lang_preference | VARCHAR(10) | 語言偏好（對外 API 欄位名為 `language`） | NOT NULL, DEFAULT 'en' |
+| app_theme | VARCHAR(10) | UI 主題偏好（對外 API 欄位名為 `theme`） | NOT NULL, DEFAULT 'light', CHECK IN ('light', 'dark') |
+| notify_desktop | BOOLEAN | 桌面通知偏好（對外 API 欄位名為 `notifyDesktop`） | NOT NULL, DEFAULT TRUE |
+| notify_sound | BOOLEAN | 訊息音效偏好（對外 API 欄位名為 `notifySound`） | NOT NULL, DEFAULT TRUE |
 
 ### chat_rooms (聊天室)
 | 欄位名 | 型別 | 說明 | 限制 |

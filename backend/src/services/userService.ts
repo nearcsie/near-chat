@@ -52,11 +52,14 @@ const toMyProfile = (
 });
 
 const toUserSettings = (
-  user: Pick<User, 'warningEnabled' | 'warningDays' | 'language'>,
+  user: Pick<User, 'warningEnabled' | 'warningDays' | 'language' | 'theme' | 'notifyDesktop' | 'notifySound'>,
 ): UserSettings => ({
   warningEnabled: user.warningEnabled,
   warningDays: user.warningDays,
   language: user.language,
+  theme: user.theme,
+  notifyDesktop: user.notifyDesktop,
+  notifySound: user.notifySound,
 });
 
 export const makeUserService = (
@@ -154,7 +157,27 @@ export const makeUserService = (
       if (!parsed.success) {
         throw new ValidationError(parsed.error.issues[0]?.message ?? 'Invalid payload');
       }
-      const updated = await repo.update(userId, parsed.data);
+
+      const updateData: Partial<Pick<User, 'name' | 'email' | 'passwordHash' | 'bio' | 'avatarUrl'>> = {
+        name: parsed.data.name,
+        email: parsed.data.email,
+        bio: parsed.data.bio,
+        avatarUrl: parsed.data.avatarUrl,
+      };
+
+      if (parsed.data.email !== undefined) {
+        const existing = await repo.findByEmail(parsed.data.email);
+        if (existing && existing.userId !== userId) {
+          throw new ConflictError('Email already in use');
+        }
+      }
+
+      if (parsed.data.password !== undefined) {
+        const salt = await bcrypt.genSalt(10);
+        updateData.passwordHash = await bcrypt.hash(parsed.data.password, salt);
+      }
+
+      const updated = await repo.update(userId, updateData);
       return toMyProfile(updated);
     },
 
