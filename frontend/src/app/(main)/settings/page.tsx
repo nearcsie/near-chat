@@ -1,8 +1,7 @@
-"use client";
+import ProfileSettingsPage from "@/components/pages/ProfileSettingsPage";
 
-import React from "react";
-import PersonalSettings from "@/components/settings/PersonalSettings";
+export const dynamic = "force-dynamic";
 
 export default function SettingsPage() {
-  return <PersonalSettings />;
+  return <ProfileSettingsPage />;
 }

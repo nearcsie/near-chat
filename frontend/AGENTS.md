@@ -45,6 +45,8 @@ Docker Compose exposes the frontend on host port 3005 while the container still 
 - With Docker Compose, set `NEXT_PUBLIC_API_URL=http://localhost:4005` because the browser connects through the backend host port.
 - Socket.IO uses the same `NEXT_PUBLIC_API_URL` and passes JWT data in `auth: { token }`.
 - Package manager is pnpm; do not use npm or yarn.
+- Run dev server: `pnpm dev` (requires Node, or use `docker compose up frontend`).
+- No need to run Next.js production builds (`pnpm run build` or `next build`) during development. Verify via TypeScript checks (`pnpm exec tsc --noEmit`) and manual testing.
 
 ### Testing Requirements
 - Run frontend type-checks with `pnpm exec tsc --noEmit` from `frontend/`, or through the frontend container.
@@ -54,6 +56,10 @@ Docker Compose exposes the frontend on host port 3005 while the container still 
 - Import path alias `@/` maps to `frontend/src`.
 - UI styling uses Tailwind CSS classes and the project color tokens from `src/app/globals.css`.
 - Prefer existing UI primitives in `src/components/ui/` before adding new component styles.
+- Server Components by default; add `"use client"` directive for interactive components that use hooks or browser APIs.
+- Font setup uses `next/font/google` (Geist Sans + Geist Mono) with CSS variables.
+- Tailwind classes are the primary styling mechanism — no CSS modules or styled-components.
+- **Centralized i18n**: UI translation strings are stored in `src/locales/zh-TW.json` and `src/locales/en.json`. Use the `useTranslation` hook from `@/hooks/useTranslation` in Client Components to look up text (`t("namespace.key", replacements?)`). Do not hardcode UI text strings or define local translation copy constants. Keep native language labels (`繁體中文` and `English`) statically set in select dropdowns.
 
 ## Dependencies
 
@@ -69,3 +75,4 @@ Docker Compose exposes the frontend on host port 3005 while the container still 
 - `typescript` 6
 
 <!-- MANUAL: Any manually added notes below this line are preserved on regeneration -->
+

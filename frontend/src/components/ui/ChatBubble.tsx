@@ -1,6 +1,7 @@
-import React from "react";
+import React, { useState } from "react";
 import { cn } from "@/lib/utils";
 import { Avatar } from "./Avatar";
+import ProfilePopover from "../chat/ProfilePopover";
 
 export interface Attachment {
   filename: string;
@@ -40,6 +41,38 @@ export function ChatBubble({
   readByAvatars = [],
   roomType = "msg",
 }: ChatBubbleProps) {
+  const [showPopover, setShowPopover] = useState(false);
+  const [popoverStyle, setPopoverStyle] = useState<React.CSSProperties>({});
+
+  const handleTogglePopover = (e: React.MouseEvent) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const scrollEl = e.currentTarget.closest(".overflow-y-auto");
+    if (scrollEl) {
+      const parentRect = scrollEl.getBoundingClientRect();
+      const relativeTop = rect.top - parentRect.top + rect.height / 2;
+      const halfPopover = 170; // Half of estimated popover height (340px)
+      const padding = 12;      // Top/bottom margins
+      let topVal = relativeTop;
+
+      if (parentRect.height <= (halfPopover * 2 + padding * 2)) {
+        topVal = parentRect.height / 2;
+      } else {
+        if (topVal - halfPopover < padding) {
+          topVal = halfPopover + padding;
+        } else if (topVal + halfPopover > parentRect.height - padding) {
+          topVal = parentRect.height - halfPopover - padding;
+        }
+      }
+
+      const offsetTop = topVal - relativeTop;
+      setPopoverStyle({
+        top: `calc(50% + ${offsetTop}px)`,
+        transform: "translateY(-50%)",
+      });
+    }
+    setShowPopover(!showPopover);
+  };
+
   return (
     <div
       className={cn(
@@ -49,8 +82,23 @@ export function ChatBubble({
     >
       {/* Sender Avatar (only for incoming messages) */}
       {!isOutgoing && (
-        <div className="shrink-0 mt-1">
+        <div
+          className="shrink-0 mt-1 relative cursor-pointer avatar-click-target"
+          onClick={handleTogglePopover}
+        >
           <Avatar name={senderName} src={senderAvatar} size="sm" />
+          {showPopover && (
+            <ProfilePopover
+              username={senderName}
+              onClose={(e) => {
+                e.stopPropagation();
+                setShowPopover(false);
+              }}
+              position="custom"
+              className="absolute left-full ml-3"
+              style={popoverStyle}
+            />
+          )}
         </div>
       )}
 
@@ -58,7 +106,10 @@ export function ChatBubble({
       <div className={cn("flex flex-col gap-1", isOutgoing ? "items-end" : "items-start")}>
         {/* Sender Name */}
         {!isOutgoing && (
-          <span className="text-xs font-semibold text-text-muted select-none">
+          <span
+            onClick={handleTogglePopover}
+            className="text-xs font-semibold text-text-muted select-none cursor-pointer hover:underline avatar-click-target"
+          >
             {senderName}
           </span>
         )}

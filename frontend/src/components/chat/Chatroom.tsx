@@ -8,6 +8,8 @@ import { Dropdown } from "@/components/ui/Dropdown";
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
 import { ChatBubble } from "@/components/ui/ChatBubble";
+import { useTranslation } from "@/hooks/useTranslation";
+import ProfilePopover from "./ProfilePopover";
 
 interface ChatroomProps {
   roomId: string;
@@ -30,12 +32,16 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
     handleModifyNickname,
     handleLeaveOrBlock,
     getReadAvatarsForMessage,
+    showRightPanel,
+    setShowRightPanel,
   } = useChat();
 
   const [inputText, setInputText] = useState("");
   const [replyTarget, setReplyTarget] = useState<Message | null>(null);
+  const [showHeaderPopover, setShowHeaderPopover] = useState(false);
   const messageEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { t } = useTranslation();
 
   const activeRoom = rooms.find((r) => r.id === roomId);
 
@@ -47,7 +53,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
   if (!activeRoom) {
     return (
       <div className="flex-1 flex items-center justify-center bg-background text-foreground font-sans">
-        找不到此聊天室
+        {t("chatroom.notFound")}
       </div>
     );
   }
@@ -81,15 +87,15 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
 
   const handleModifyNick = () => {
     const currentNick = activeRoomNicknames[activeRoom.id] || "我";
-    const nick = prompt("修改您的聊天室暱稱：", currentNick);
+    const nick = prompt(t("chatroom.modifyNicknamePrompt"), currentNick);
     if (nick !== null) {
       handleModifyNickname(activeRoom.id, nick || "我");
     }
   };
 
   const handleLeaveOrBlockAction = async () => {
-    const action = activeRoom.type === "group" ? "退出" : activeRoom.isArchived ? "解除封鎖" : "封鎖";
-    if (confirm(`確定要${action}「${activeRoom.name}」嗎？`)) {
+    const action = activeRoom.type === "group" ? t("chatroom.leave") : activeRoom.isArchived ? t("chatroom.unblock") : t("chatroom.block");
+    if (confirm(t("chatroom.confirmLeaveOrBlock", { action, name: activeRoom.name }))) {
       const { isDeleted, newActiveId } = await handleLeaveOrBlock(activeRoom.id);
       if (isDeleted) {
         if (newActiveId) {
@@ -105,7 +111,16 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
     <div className="flex-1 flex flex-col bg-background h-full overflow-hidden">
       {/* Chat Panel Header */}
       <div className="h-14 border-b border-border-primary px-6 flex items-center justify-between select-none shrink-0 bg-surface-card z-10">
-        <div className="flex items-center gap-3">
+        <div
+          className={`flex items-center gap-3 relative avatar-click-target ${
+            activeRoom.type === "msg" ? "cursor-pointer hover:opacity-85 transition-opacity" : ""
+          }`}
+          onClick={() => {
+            if (activeRoom.type === "msg") {
+              setShowHeaderPopover(!showHeaderPopover);
+            }
+          }}
+        >
           <Avatar
             name={activeRoom.name}
             src={getAvatarForUser(activeRoom.name, user.avatar, user.username)}
@@ -117,18 +132,45 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
               <h1 className="text-sm font-bold text-foreground truncate max-w-[200px]">
                 {activeRoom.name}
               </h1>
-              {activeRoom.isArchived && <Badge variant="danger">唯讀</Badge>}
+              {activeRoom.isArchived && <Badge variant="danger">{t("chatroom.readOnly")}</Badge>}
             </div>
             {activeRoom.type === "group" && (
               <span className="text-[10px] text-text-muted font-mono leading-none">
-                群組聊天室 • {activeRoom.members?.length || 0} 位成員
+                {t("chatroom.groupChatInfo", { count: activeRoom.members?.length || 0 })}
               </span>
             )}
           </div>
+
+          {showHeaderPopover && activeRoom.type === "msg" && (
+            <ProfilePopover
+              username={activeRoom.name}
+              onClose={(e) => {
+                e.stopPropagation();
+                setShowHeaderPopover(false);
+              }}
+              position="bottom"
+            />
+          )}
         </div>
 
         {/* Header Action Elements */}
         <div className="flex items-center gap-3">
+          {/* Panel Toggle Button */}
+          <button
+            onClick={() => setShowRightPanel(!showRightPanel)}
+            className={`p-1.5 border rounded-sm transition-colors cursor-pointer ${
+              showRightPanel
+                ? "bg-primary/10 border-primary/30 text-primary"
+                : "border-border-secondary hover:border-border-primary text-text-muted hover:text-foreground"
+            }`}
+            title={showRightPanel ? t("chatroom.hideInfoPanel") : t("chatroom.showInfoPanel")}
+          >
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v14a1 1 0 01-1 1H5a1 1 0 01-1-1V5z" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M16 4v16" />
+            </svg>
+          </button>
+
           {/* Group Settings Button */}
           {activeRoom.type === "group" && onOpenGroupSettings && (
             <Button
@@ -139,7 +181,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
               <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
               </svg>
-              群組設定
+              {t("chatroom.groupSettings")}
             </Button>
           )}
 
@@ -148,7 +190,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
             trigger={
               <button
                 className="p-1.5 border border-border-secondary hover:border-border-primary rounded-sm text-text-muted hover:text-foreground transition-colors cursor-pointer"
-                title="聊天室選項"
+                title={t("chatroom.chatOptions")}
               >
                 <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
@@ -156,11 +198,11 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
               </button>
             }
             items={[
-              { label: "修改暱稱", onClick: handleModifyNick },
+              { label: t("chatroom.modifyNickname"), onClick: handleModifyNick },
               {
-                label: "分類…",
+                label: t("chatroom.categorize"),
                 subMenuItems: [
-                  { label: "無分類", onClick: () => handleCategorizeRoom(activeRoom.id, null) },
+                  { label: t("chatroom.noCategory"), onClick: () => handleCategorizeRoom(activeRoom.id, null) },
                   ...folders.map((f) => ({
                     label: f.name,
                     onClick: () => handleCategorizeRoom(activeRoom.id, f.id),
@@ -168,7 +210,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
                 ],
               },
               {
-                label: activeRoom.type === "group" ? "退出聊天室" : activeRoom.isArchived ? "解除封鎖" : "封鎖聯絡人",
+                label: activeRoom.type === "group" ? t("chatroom.leaveGroup") : activeRoom.isArchived ? t("chatroom.unblock") : t("chatroom.blockContact"),
                 onClick: handleLeaveOrBlockAction,
                 variant: activeRoom.isArchived ? "default" : "danger",
               },
@@ -207,14 +249,14 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
                     onClick={() => setReplyTarget(msg)}
                     className="hover:text-primary transition-colors cursor-pointer"
                   >
-                    回覆
+                    {t("chatroom.reply")}
                   </button>
                   {msg.isOutgoing && (
                     <button
                       onClick={() => handleRecallMessage(msg.id)}
                       className="hover:text-red-600 transition-colors cursor-pointer"
                     >
-                      收回
+                      {t("chatroom.recall")}
                     </button>
                   )}
                 </div>
@@ -228,7 +270,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
       {replyTarget && (
         <div className="bg-surface-muted border-t border-border-primary px-6 py-2 flex items-center justify-between text-xs select-none">
           <div className="flex-1 min-w-0 border-l-2 border-primary pl-2">
-            <span className="font-bold text-foreground block">回覆給 {replyTarget.senderName}</span>
+            <span className="font-bold text-foreground block">{t("chatroom.replyTo", { name: replyTarget.senderName })}</span>
             <p className="text-text-muted truncate mt-0.5">{replyTarget.content}</p>
           </div>
           <button
@@ -246,7 +288,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
       <div className="border-t border-border-primary bg-surface-card px-6 py-4 shrink-0">
         {activeRoom.isArchived ? (
           <div className="w-full text-center py-2.5 bg-surface-muted text-xs text-text-muted uppercase tracking-wider select-none border border-dashed border-border-secondary rounded-sm">
-            此聊天室已被封鎖或唯讀，無法發送訊息。
+            {t("chatroom.readOnlyOrBlocked")}
           </div>
         ) : (
           <form onSubmit={handleSend} className="flex gap-4 items-end">
@@ -259,7 +301,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
             <button
               type="button"
               onClick={handleAttach}
-              title="上傳附件檔案"
+              title={t("chatroom.uploadAttachment")}
               className="p-2.5 border border-border-secondary hover:border-border-primary rounded-sm text-text-muted hover:text-foreground transition-colors cursor-pointer shrink-0 mb-0.5"
             >
               <svg className="h-4.5 w-4.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
@@ -269,7 +311,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
 
             <input
               type="text"
-              placeholder="輸入訊息..."
+              placeholder={t("chatroom.inputPlaceholder")}
               value={inputText}
               onChange={(e) => {
                 setInputText(e.target.value);
@@ -280,7 +322,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
             />
 
             <Button type="submit" variant="primary" className="py-2.5 px-5 shrink-0 select-none">
-              發送
+              {t("chatroom.send")}
             </Button>
           </form>
         )}
