@@ -199,6 +199,9 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
                 isRead={msg.isRead}
                 readByAvatars={getReadAvatarsForMessage(activeRoom, msg)}
                 roomType={activeRoom.type}
+                onReply={() => setReplyTarget(msg)}
+                onRecall={() => handleRecallMessage(msg.id)}
+                canRecall={Boolean(msg.isOutgoing)}
               />
 
               {!msg.isRecalled && (
