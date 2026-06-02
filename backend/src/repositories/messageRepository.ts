@@ -1,7 +1,19 @@
 import { Pool } from 'pg';
-import type { Message, MessageWithSender } from '@shared/types';
+import type { Attachment, Message, MessageWithSender } from '@shared/types';
 import type { IMessageRepository } from './IMessageRepository';
 import { ValidationError } from '../errors/AppError';
+
+function mapRowToAttachment(row: any): Attachment {
+  return {
+    attachmentId: row.attachment_id,
+    messageId: row.message_id ?? undefined,
+    uploadedBy: row.uploaded_by,
+    fileUrl: `/api/v1/attachments/${row.attachment_id}`,
+    fileType: row.file_type,
+    originalName: row.original_name,
+    uploadedAt: row.uploaded_at,
+  };
+}
 
 function mapRowToMessage(row: any): Message {
   const msg: Message = {
@@ -14,7 +26,7 @@ function mapRowToMessage(row: any): Message {
     sentAt: row.sent_at,
   };
   if (row.attachments && row.attachments.length > 0) {
-    msg.attachments = row.attachments.filter((id: string | null) => id !== null).map((id: string) => `/api/v1/attachments/${id}`);
+    msg.attachments = row.attachments.filter(Boolean);
   }
   return msg;
 }
@@ -72,7 +84,19 @@ export class MessageRepository implements IMessageRepository {
            u.avatar_url AS sender_avatar_url,
            u.deleted_at AS sender_deleted_at,
            (SELECT array_agg(user_id) FROM message_mentions WHERE message_id = m.message_id) AS mentions,
-           (SELECT array_agg(attachment_id) FROM attachments WHERE message_id = m.message_id) AS attachments
+           (
+             SELECT COALESCE(jsonb_agg(jsonb_build_object(
+               'attachmentId', a.attachment_id,
+               'messageId', a.message_id,
+               'uploadedBy', a.uploaded_by,
+               'fileUrl', '/api/v1/attachments/' || a.attachment_id,
+               'fileType', a.file_type,
+               'originalName', a.original_name,
+               'uploadedAt', a.uploaded_at
+             ) ORDER BY a.uploaded_at), '[]'::jsonb)
+             FROM attachments a
+             WHERE a.message_id = m.message_id
+           ) AS attachments
          FROM messages m
          LEFT JOIN users u ON u.user_id = m.sender_id
          WHERE m.room_id = $1
@@ -93,7 +117,19 @@ export class MessageRepository implements IMessageRepository {
          u.avatar_url AS sender_avatar_url,
          u.deleted_at AS sender_deleted_at,
          (SELECT array_agg(user_id) FROM message_mentions WHERE message_id = m.message_id) AS mentions,
-         (SELECT array_agg(attachment_id) FROM attachments WHERE message_id = m.message_id) AS attachments
+         (
+           SELECT COALESCE(jsonb_agg(jsonb_build_object(
+             'attachmentId', a.attachment_id,
+             'messageId', a.message_id,
+             'uploadedBy', a.uploaded_by,
+             'fileUrl', '/api/v1/attachments/' || a.attachment_id,
+             'fileType', a.file_type,
+             'originalName', a.original_name,
+             'uploadedAt', a.uploaded_at
+           ) ORDER BY a.uploaded_at), '[]'::jsonb)
+           FROM attachments a
+           WHERE a.message_id = m.message_id
+         ) AS attachments
        FROM messages m
        LEFT JOIN users u ON u.user_id = m.sender_id
        WHERE m.room_id = $1
@@ -105,7 +141,7 @@ export class MessageRepository implements IMessageRepository {
     return res.rows.map(mapRowToMessageWithSender);
   }
 
-  async create(data: Pick<Message, 'roomId' | 'senderId' | 'content' | 'replyToId'> & { mentions?: string[], attachments?: string[] }): Promise<MessageWithSender> {
+  async create(data: Pick<Message, 'roomId' | 'senderId' | 'content' | 'replyToId'> & { mentions?: string[], attachmentIds?: string[] }): Promise<MessageWithSender> {
     const client = await this.db.connect();
     try {
       await client.query('BEGIN');
@@ -121,7 +157,7 @@ export class MessageRepository implements IMessageRepository {
            u.name AS sender_name,
            u.avatar_url AS sender_avatar_url,
            u.deleted_at AS sender_deleted_at,
-           ARRAY[]::uuid[] AS attachments
+           '[]'::jsonb AS attachments
          FROM inserted
          LEFT JOIN users u ON u.user_id = inserted.sender_id`,
         [data.roomId, data.senderId, data.content, data.replyToId ?? null],
@@ -136,9 +172,15 @@ export class MessageRepository implements IMessageRepository {
         msg.mentions = data.mentions;
       }
       
-      if (data.attachments && data.attachments.length > 0) {
-        await client.query('UPDATE attachments SET message_id = $1 WHERE attachment_id = ANY($2::uuid[])', [msg.messageId, data.attachments]);
-        msg.attachments = data.attachments.map(id => `/api/v1/attachments/${id}`);
+      if (data.attachmentIds && data.attachmentIds.length > 0) {
+        const attachmentRes = await client.query(
+          'UPDATE attachments SET message_id = $1 WHERE attachment_id = ANY($2::uuid[]) AND message_id IS NULL RETURNING *',
+          [msg.messageId, data.attachmentIds],
+        );
+        if (attachmentRes.rowCount !== new Set(data.attachmentIds).size) {
+          throw new ValidationError('Attachments must exist and must not already belong to a message');
+        }
+        msg.attachments = attachmentRes.rows.map(mapRowToAttachment);
       }
       
       await client.query('COMMIT');
@@ -166,7 +208,19 @@ export class MessageRepository implements IMessageRepository {
          u.avatar_url AS sender_avatar_url,
          u.deleted_at AS sender_deleted_at,
          (SELECT array_agg(user_id) FROM message_mentions WHERE message_id = updated.message_id) AS mentions,
-         (SELECT array_agg(attachment_id) FROM attachments WHERE message_id = updated.message_id) AS attachments
+         (
+           SELECT COALESCE(jsonb_agg(jsonb_build_object(
+             'attachmentId', a.attachment_id,
+             'messageId', a.message_id,
+             'uploadedBy', a.uploaded_by,
+             'fileUrl', '/api/v1/attachments/' || a.attachment_id,
+             'fileType', a.file_type,
+             'originalName', a.original_name,
+             'uploadedAt', a.uploaded_at
+           ) ORDER BY a.uploaded_at), '[]'::jsonb)
+           FROM attachments a
+           WHERE a.message_id = updated.message_id
+         ) AS attachments
        FROM updated
        LEFT JOIN users u ON u.user_id = updated.sender_id`,
       [messageId],

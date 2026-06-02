@@ -6,7 +6,7 @@ export const sendMessageSchema = z.object({
   roomId: idSchema,
   content: z.string().trim().min(1, 'Message content cannot be empty'),
   replyToId: idSchema.optional(),
-  attachments: z.array(z.string().uuid()).optional(),
+  attachmentIds: z.array(z.string().uuid()).optional(),
 });
 
 export const listMessagesSchema = z.object({

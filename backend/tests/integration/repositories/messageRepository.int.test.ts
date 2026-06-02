@@ -113,6 +113,52 @@ describe('MessageRepository (pg)', () => {
     expect(messages[0].mentions).toEqual([mentionedId]);
   });
 
+  it('create binds unassigned attachments once and returns attachment objects', async () => {
+    const senderId = await createUser('attachment-sender@test.com');
+    const roomId = await createRoom();
+    const attachmentRes = await testPool.query(
+      `INSERT INTO attachments (uploaded_by, file_path, file_type, original_name)
+       VALUES ($1, $2, $3, $4)
+       RETURNING attachment_id`,
+      [senderId, 'uploads/test.txt', 'text/plain', 'test.txt'],
+    );
+    const attachmentId = attachmentRes.rows[0].attachment_id as string;
+
+    const created = await repo.create({
+      roomId,
+      senderId,
+      content: 'message with attachment',
+      attachmentIds: [attachmentId],
+    });
+
+    expect(created.attachments).toEqual([
+      expect.objectContaining({
+        attachmentId,
+        messageId: created.messageId,
+        uploadedBy: senderId,
+        fileUrl: `/api/v1/attachments/${attachmentId}`,
+        fileType: 'text/plain',
+        originalName: 'test.txt',
+      }),
+    ]);
+
+    const messages = await repo.findByRoom(roomId, { limit: 10 });
+    expect(messages[0].attachments).toEqual([
+      expect.objectContaining({
+        attachmentId,
+        messageId: created.messageId,
+        originalName: 'test.txt',
+      }),
+    ]);
+
+    await expect(repo.create({
+      roomId,
+      senderId,
+      content: 'try reusing attachment',
+      attachmentIds: [attachmentId],
+    })).rejects.toThrow('Attachments must exist and must not already belong to a message');
+  });
+
   it('markRecalled sets isRecalled and findById returns null for missing messages', async () => {
     const userId = await createUser('recall-user@test.com');
     const roomId = await createRoom();

@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import path from 'path';
+import { NotFoundError, ValidationError } from '../errors/AppError';
 
 export function makeAttachmentController(attachmentService: any) {
   return {
@@ -7,7 +8,7 @@ export function makeAttachmentController(attachmentService: any) {
       try {
         const uploadedBy = req.user!.userId;
         if (!req.file) {
-          return res.status(400).json({ error: 'file is required' });
+          throw new ValidationError('file is required');
         }
         const result = await attachmentService.uploadAttachment(uploadedBy, req.file);
         res.status(201).json(result);
@@ -17,10 +18,10 @@ export function makeAttachmentController(attachmentService: any) {
     },
     download: async (req: Request, res: Response, next: NextFunction) => {
       try {
-        const attachmentId = req.params.id;
+        const attachmentId = String(req.params.id);
         const attachment = await attachmentService.getAttachment(attachmentId);
         if (!attachment) {
-          return res.status(404).json({ error: 'Attachment not found' });
+          throw new NotFoundError('attachment', attachmentId);
         }
         res.download(path.resolve(attachment.file_path), attachment.original_name);
       } catch (err) {

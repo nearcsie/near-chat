@@ -55,6 +55,13 @@ describe('Attachment E2E', () => {
     expect(res.status).toBe(201);
     expect(res.body).toHaveProperty('attachmentId');
     expect(res.body.fileUrl).toContain('/api/v1/attachments/');
+    expect(res.body).toMatchObject({
+      uploadedBy: userId,
+      fileType: 'text/plain',
+      originalName: 'test.txt',
+    });
+    expect(res.body.messageId).toBeUndefined();
+    expect(res.body.uploadedAt).toBeDefined();
   });
 
   it('should download an uploaded attachment', async () => {

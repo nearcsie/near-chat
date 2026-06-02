@@ -124,9 +124,10 @@ describe('Room E2E', () => {
 
     expect(first.status).toBe(201);
     expect(first.body.type).toBe('private');
-    expect(first.body.roomHash).toEqual(expect.any(String));
-    expect(second.status).toBe(201);
+    expect(first.body.roomHash).toBeUndefined();
+    expect(second.status).toBe(200);
     expect(second.body.roomId).toBe(first.body.roomId);
+    expect(second.body.roomHash).toBeUndefined();
 
     const ownerRooms = await request(app).get('/api/v1/rooms').set('Authorization', `Bearer ${token}`);
     const otherRooms = await request(app).get('/api/v1/rooms').set('Authorization', `Bearer ${otherToken}`);

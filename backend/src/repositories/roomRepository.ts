@@ -1,6 +1,6 @@
 import { Pool } from 'pg';
 import type { Room, RoomSummary } from '@shared/types';
-import type { IRoomRepository } from './IRoomRepository';
+import type { CreateRoomData, IRoomRepository, UpdateRoomData } from './IRoomRepository';
 
 function mapRowToRoom(row: any): Room {
   return {
@@ -9,11 +9,9 @@ function mapRowToRoom(row: any): Room {
     name:            row.name ?? undefined,
     avatarUrl:       row.avatar_url ?? undefined,
     inviteCode:      row.invite_code ?? undefined,
-    roomHash:        row.room_hash ?? undefined,
     requireApproval: row.require_approval,
     viewHistory:     row.view_history,
     isArchived:      row.is_archived,
-    isReadonly:      row.is_readonly ?? false,
     createdAt:       row.created_at,
   };
 }
@@ -97,10 +95,10 @@ export class RoomRepository implements IRoomRepository {
     return res.rows.map(mapRowToRoomSummary);
   }
 
-  async create(data: Pick<Room, 'type' | 'name' | 'avatarUrl' | 'inviteCode' | 'roomHash' | 'requireApproval' | 'viewHistory' | 'isReadonly'>): Promise<Room> {
+  async create(data: CreateRoomData): Promise<Room> {
     const res = await this.db.query(
-      `INSERT INTO chat_rooms (type, name, avatar_url, invite_code, room_hash, require_approval, view_history, is_readonly)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `INSERT INTO chat_rooms (type, name, avatar_url, invite_code, room_hash, require_approval, view_history)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
       [
         data.type,
@@ -110,7 +108,6 @@ export class RoomRepository implements IRoomRepository {
         data.roomHash ?? null,
         data.requireApproval,
         data.viewHistory,
-        data.isReadonly ?? false,
       ]
     );
     return mapRowToRoom(res.rows[0]);
@@ -118,7 +115,7 @@ export class RoomRepository implements IRoomRepository {
 
   async update(
     roomId: string,
-    data: Partial<Pick<Room, 'name' | 'avatarUrl' | 'requireApproval' | 'viewHistory' | 'isArchived' | 'isReadonly'>>
+    data: UpdateRoomData
   ): Promise<Room> {
     const fields: string[] = [];
     const values: any[] = [];
@@ -129,7 +126,6 @@ export class RoomRepository implements IRoomRepository {
     if (data.requireApproval !== undefined) { fields.push(`require_approval = $${idx++}`); values.push(data.requireApproval); }
     if (data.viewHistory !== undefined)     { fields.push(`view_history = $${idx++}`);     values.push(data.viewHistory); }
     if (data.isArchived !== undefined)      { fields.push(`is_archived = $${idx++}`);      values.push(data.isArchived); }
-    if (data.isReadonly !== undefined)      { fields.push(`is_readonly = $${idx++}`);      values.push(data.isReadonly); }
 
     if (fields.length === 0) {
       const res = await this.db.query('SELECT * FROM chat_rooms WHERE room_id = $1', [roomId]);

@@ -5,7 +5,6 @@ export function makeFriendService(
   repo: ReturnType<typeof makeFriendRepository>,
   notifyUser?: (userId: string, eventName: string, payload: any) => void,
   privateRooms?: {
-    createPrivate(creatorId: string, targetUserId: string): Promise<unknown>;
     markPrivateReadOnly(userA: string, userB: string): Promise<void>;
   }
 ) {
@@ -29,7 +28,6 @@ export function makeFriendService(
       const reciprocal = pendingForMe.find(req => req.requesterId === targetUserId);
       if (reciprocal) {
         const accepted = await repo.acceptFriendRequest(targetUserId, requesterId);
-        await privateRooms?.createPrivate(targetUserId, requesterId);
         if (notifyUser) {
           notifyUser(targetUserId, 'friend_request', accepted);
         }
@@ -58,7 +56,6 @@ export function makeFriendService(
         if (!accepted) {
           throw new AppError(404, 'Friend request not found', 'NOT_FOUND');
         }
-        await privateRooms?.createPrivate(requesterId, userId);
         return accepted;
       } else {
         const rejected = await repo.rejectFriendRequest(requesterId, userId);

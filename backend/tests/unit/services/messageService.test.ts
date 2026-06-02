@@ -167,11 +167,38 @@ describe('messageService', () => {
   });
 
   it('sendMessage rejects read-only rooms', async () => {
-    roomRepo.findById.mockResolvedValue({ ...room, isReadonly: true });
+    roomRepo.findById.mockResolvedValue({ ...room, isArchived: true });
     roomMemberRepo.findMember.mockResolvedValue(member);
 
     await expect(messageService.sendMessage('user-1', 'room-1', 'hello')).rejects.toThrow(ForbiddenError);
     expect(messageRepo.create).not.toHaveBeenCalled();
+  });
+
+  it('sendMessage passes attachmentIds to the repository', async () => {
+    const attachmentId = '550e8400-e29b-41d4-a716-446655440000';
+    roomRepo.findById.mockResolvedValue(room);
+    roomMemberRepo.findMember.mockResolvedValue(member);
+    messageRepo.create.mockResolvedValue({
+      ...messageWithSender,
+      attachments: [{
+        attachmentId,
+        messageId: 'message-1',
+        uploadedBy: 'user-1',
+        fileUrl: `/api/v1/attachments/${attachmentId}`,
+        fileType: 'text/plain',
+        originalName: 'notes.txt',
+        uploadedAt: new Date('2026-01-01T00:00:00.000Z'),
+      }],
+    });
+
+    await messageService.sendMessage('user-1', 'room-1', 'hello', { attachmentIds: [attachmentId] });
+
+    expect(messageRepo.create).toHaveBeenCalledWith({
+      roomId: 'room-1',
+      senderId: 'user-1',
+      content: 'hello',
+      attachmentIds: [attachmentId],
+    });
   });
 
   it('listForRoom applies join time when room history is hidden', async () => {

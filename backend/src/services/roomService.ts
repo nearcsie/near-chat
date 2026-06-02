@@ -77,8 +77,8 @@ export const makeRoomService = (
       const roomHash = privateRoomHash(creatorId, targetUserId);
       const existing = await repo.findByRoomHash(roomHash);
       if (existing) {
-        if (existing.isReadonly || existing.isArchived) {
-          const room = await repo.update(existing.roomId, { isReadonly: false, isArchived: false });
+        if (existing.isArchived) {
+          const room = await repo.update(existing.roomId, { isArchived: false });
           return { room, created: false };
         }
         return { room: existing, created: false };
@@ -90,7 +90,6 @@ export const makeRoomService = (
         roomHash,
         requireApproval: false,
         viewHistory: true,
-        isReadonly: false,
       });
       await ensureMember(room.roomId, creatorId);
       await ensureMember(room.roomId, targetUserId);
@@ -100,7 +99,7 @@ export const makeRoomService = (
     async markPrivateReadOnly(userA: string, userB: string): Promise<void> {
       const existing = await repo.findByRoomHash(privateRoomHash(userA, userB));
       if (existing) {
-        await repo.update(existing.roomId, { isReadonly: true, isArchived: true });
+        await repo.update(existing.roomId, { isArchived: true });
       }
     },
 
