@@ -4,19 +4,25 @@
 ALTER TABLE attachments ALTER COLUMN uploaded_at TYPE TIMESTAMPTZ USING uploaded_at AT TIME ZONE 'UTC';
 
 -- 2. Self-reference prevention constraints
--- Remove any pre-existing self-referencing rows so ADD CONSTRAINT does not fail
+-- Remove any pre-existing self-referencing rows so VALIDATE CONSTRAINT succeeds
 DELETE FROM friendships WHERE requester_id = addressee_id;
 DELETE FROM blocks WHERE blocker_id = blocked_id;
 DELETE FROM emergency_contacts WHERE user_id = contact_id;
 
+-- Add constraints NOT VALID first: skips full-table scan, uses weaker lock
 ALTER TABLE friendships ADD CONSTRAINT friendships_no_self_friendship
-  CHECK (requester_id <> addressee_id);
+  CHECK (requester_id <> addressee_id) NOT VALID;
 
 ALTER TABLE blocks ADD CONSTRAINT blocks_no_self_block
-  CHECK (blocker_id <> blocked_id);
+  CHECK (blocker_id <> blocked_id) NOT VALID;
 
 ALTER TABLE emergency_contacts ADD CONSTRAINT emergency_contacts_no_self_contact
-  CHECK (user_id <> contact_id);
+  CHECK (user_id <> contact_id) NOT VALID;
+
+-- Validate separately: ShareUpdateExclusiveLock instead of AccessExclusiveLock
+ALTER TABLE friendships VALIDATE CONSTRAINT friendships_no_self_friendship;
+ALTER TABLE blocks VALIDATE CONSTRAINT blocks_no_self_block;
+ALTER TABLE emergency_contacts VALIDATE CONSTRAINT emergency_contacts_no_self_contact;
 
 -- 3. room_members: index on user_id for findByMember (PK is (room_id, user_id), unusable for user_id-only scans)
 CREATE INDEX IF NOT EXISTS idx_room_members_user_id ON room_members (user_id);
@@ -40,7 +46,7 @@ CREATE INDEX IF NOT EXISTS idx_users_name_trgm ON users USING gin (name gin_trgm
 
 --- Down migration
 DROP INDEX IF EXISTS idx_users_name_trgm;
-DROP EXTENSION IF EXISTS pg_trgm;
+-- pg_trgm extension is not dropped on rollback: it may be shared with other objects
 DROP INDEX IF EXISTS idx_messages_sender_id;
 DROP INDEX IF EXISTS idx_attachments_message_id;
 DROP INDEX IF EXISTS idx_blocks_blocked_id;

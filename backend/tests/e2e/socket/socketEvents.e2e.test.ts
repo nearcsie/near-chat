@@ -9,6 +9,10 @@ import { attachSocketAuth, type ChatServer } from '../../../src/realtime/authSoc
 import { attachSockets } from '../../../src/realtime/socketServer';
 import type { ClientToServerEvents, MessageWithSender, ServerToClientEvents } from '../../../../shared/types';
 
+vi.mock('../../../src/db', () => ({
+  default: { query: vi.fn().mockResolvedValue({ rows: [{}] }) },
+}));
+
 type TestClient = ClientSocket<ServerToClientEvents, ClientToServerEvents>;
 
 const message: MessageWithSender = {

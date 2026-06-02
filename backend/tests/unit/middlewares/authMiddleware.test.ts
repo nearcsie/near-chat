@@ -3,6 +3,11 @@ import { Request, Response, NextFunction } from 'express';
 import { authMiddleware } from '../../../src/middlewares/authMiddleware';
 import * as jwtHelper from '../../../src/auth/jwt';
 import { AppError } from '../../../src/errors/AppError';
+import pool from '../../../src/db';
+
+vi.mock('../../../src/db', () => ({
+  default: { query: vi.fn() },
+}));
 
 describe('authMiddleware', () => {
   let mockRequest: Partial<Request>;
@@ -15,6 +20,8 @@ describe('authMiddleware', () => {
     };
     mockResponse = {};
     nextFunction = vi.fn();
+    // vi.restoreAllMocks() resets vi.fn() implementations, so re-apply after each test
+    vi.mocked(pool.query).mockResolvedValue({ rows: [{}] } as any);
   });
 
   afterEach(() => {
