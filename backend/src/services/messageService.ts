@@ -55,6 +55,9 @@ export const makeMessageService = (
       if (room.isArchived) {
         throw new ForbiddenError('This room is archived');
       }
+      if (room.isReadonly) {
+        throw new ForbiddenError('This room is read-only');
+      }
       if (member.isMuted) {
         throw new ForbiddenError('Muted members cannot send messages');
       }

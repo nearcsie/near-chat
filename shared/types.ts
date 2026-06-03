@@ -78,6 +78,7 @@ export interface Room {
   requireApproval: boolean;
   viewHistory: boolean;
   isArchived: boolean;
+  isReadonly: boolean;
   createdAt: Date;
 }
 
