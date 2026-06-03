@@ -45,6 +45,17 @@ export class UserRepository implements IUserRepository {
     return res.rows.map(mapRowToUser);
   }
 
+  async findAllWarningEnabled(): Promise<{ userId: string; lastActivity: Date; warningDays: number }[]> {
+    const res = await this.db.query(
+      `SELECT user_id, last_activity, warning_days FROM users WHERE warning_enabled = true AND deleted_at IS NULL`
+    );
+    return res.rows.map(row => ({
+      userId: row.user_id,
+      lastActivity: row.last_activity,
+      warningDays: row.warning_days,
+    }));
+  }
+
   async create(data: { name: string; email: string; passwordHash: string }): Promise<User> {
     const res = await this.db.query(
       `INSERT INTO users (name, email, password_hash)
