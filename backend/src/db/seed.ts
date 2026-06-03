@@ -1,6 +1,6 @@
-// We use process.env.DATABASE_URL if available
 if (!process.env.DATABASE_URL) {
-  process.env.DATABASE_URL = 'postgresql://chatuser:chatpassword@localhost:5435/chatdb';
+  console.error('DATABASE_URL is not set. Copy .env.example to .env or run via: docker compose exec backend pnpm run db:seed');
+  process.exit(1);
 }
 
 import bcrypt from 'bcryptjs';
@@ -82,7 +82,7 @@ async function seed() {
       [groupRoomId]
     );
 
-    // Alice is owner, Bob is admin, Charlie is member
+    // Alice is owner, Bob is admin, Charlie and Frank are members
     await pool.query(
       `INSERT INTO room_members (room_id, user_id, role) VALUES ($1, $2, 'owner')`,
       [groupRoomId, usersData[0].id]
@@ -94,6 +94,10 @@ async function seed() {
     await pool.query(
       `INSERT INTO room_members (room_id, user_id, role) VALUES ($1, $2, 'member')`,
       [groupRoomId, usersData[2].id]
+    );
+    await pool.query(
+      `INSERT INTO room_members (room_id, user_id, role) VALUES ($1, $2, 'member')`,
+      [groupRoomId, usersData[5].id]
     );
 
     // 6. Create Messages in Group Room
@@ -110,6 +114,7 @@ async function seed() {
     console.log('Database seed completed successfully.');
   } catch (err) {
     console.error('Error seeding database:', err);
+    process.exit(1);
   } finally {
     await pool.end();
   }
