@@ -17,6 +17,7 @@ describe('roomService', () => {
     requireApproval: false,
     viewHistory: true,
     isArchived: false,
+    isReadonly: false,
     createdAt: new Date('2026-01-01T00:00:00.000Z'),
   };
 
@@ -171,6 +172,32 @@ describe('roomService', () => {
     await roomService.markPrivateReadOnly('user-1', 'user-2');
 
     expect(mockRepo.update).toHaveBeenCalledWith('room-1', { isReadonly: true });
+  });
+
+  it('reopenPrivateRoom sets isReadonly to false', async () => {
+    const readonlyRoom = { ...room, type: 'private' as const, isReadonly: true };
+    mockRepo.findByRoomHash.mockResolvedValue(readonlyRoom as Room);
+
+    await roomService.reopenPrivateRoom('user-1', 'user-2');
+
+    expect(mockRepo.update).toHaveBeenCalledWith('room-1', { isReadonly: false });
+  });
+
+  it('reopenPrivateRoom does nothing when room is not readonly', async () => {
+    const openRoom = { ...room, type: 'private' as const, isReadonly: false };
+    mockRepo.findByRoomHash.mockResolvedValue(openRoom as Room);
+
+    await roomService.reopenPrivateRoom('user-1', 'user-2');
+
+    expect(mockRepo.update).not.toHaveBeenCalled();
+  });
+
+  it('reopenPrivateRoom does nothing when room does not exist', async () => {
+    mockRepo.findByRoomHash.mockResolvedValue(null);
+
+    await roomService.reopenPrivateRoom('user-1', 'user-2');
+
+    expect(mockRepo.update).not.toHaveBeenCalled();
   });
   describe('joinByCode', () => {
     it('joins room using invite code', async () => {

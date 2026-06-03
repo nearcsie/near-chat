@@ -99,7 +99,7 @@ export const makeRoomService = (
       }
     },
 
-    async unarchivePrivateRoom(userA: string, userB: string): Promise<void> {
+    async reopenPrivateRoom(userA: string, userB: string): Promise<void> {
       const existing = await repo.findByRoomHash(privateRoomHash(userA, userB));
       if (existing && existing.isReadonly) {
         await repo.update(existing.roomId, { isReadonly: false });
@@ -173,6 +173,7 @@ export const makeRoomService = (
       }
     },
 
+    // Group rooms use isArchived; private rooms use isReadonly (set by markPrivateReadOnly/reopenPrivateRoom).
     async archiveGroup(roomId: string, callerId: string): Promise<void> {
       const existing = await repo.findById(roomId);
       if (!existing) throw new NotFoundError('room', roomId);
