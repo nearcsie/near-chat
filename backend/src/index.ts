@@ -28,6 +28,7 @@ import { makeRoomController } from "./controllers/roomController";
 import { makeMessageController } from "./controllers/messageController";
 import { makeFolderController } from "./controllers/folderController";
 import { makeFriendController } from "./controllers/friendController";
+import { startInactivityJob } from "./cron/inactivityJob";
 import { makeAuthRoutes } from "./routes/authRoutes";
 import { makeUserRoutes } from "./routes/userRoutes";
 import { makeRoomRoutes } from "./routes/roomRoutes";
@@ -101,6 +102,7 @@ attachSocketAuth(io);
 attachSockets(io, { messageService, messageRepository: messageRepo, roomMemberRepository: roomMemberRepo });
 
 if (require.main === module) {
+  startInactivityJob(userRepo, userService);
   server.listen(PORT as number, "0.0.0.0", () =>
     console.log(`Backend server successfully listening on port ${PORT} (0.0.0.0)`),
   );
