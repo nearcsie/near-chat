@@ -58,7 +58,6 @@ describe('messageService', () => {
     roomRepo = {
       findById: vi.fn(),
       findByInviteCode: vi.fn(),
-      findByRoomHash: vi.fn(),
       findByMember: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
