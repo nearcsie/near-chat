@@ -139,8 +139,8 @@ describe('Friendships & Blocks E2E', () => {
         .set('Authorization', `Bearer ${tokenA}`);
       expect(deleteRes.status).toBe(204);
 
-      const row = await testPool.query('SELECT is_archived FROM chat_rooms WHERE room_id = $1', [privateRoom.body.roomId]);
-      expect(row.rows[0].is_archived).toBe(true);
+      const row = await testPool.query('SELECT is_readonly FROM chat_rooms WHERE room_id = $1', [privateRoom.body.roomId]);
+      expect(row.rows[0].is_readonly).toBe(true);
     });
     it('should reject a friend request and not affect accepted friendships', async () => {
       // C sends request to B
