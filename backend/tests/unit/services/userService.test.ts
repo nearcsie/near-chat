@@ -40,6 +40,7 @@ describe('userService', () => {
       create: vi.fn(),
       update: vi.fn(),
       delete: vi.fn(),
+      findAllWarningEnabled: vi.fn(),
     };
     emergencyContactRepo = {
       findByUserId: vi.fn(),

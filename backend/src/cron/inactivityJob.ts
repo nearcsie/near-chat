@@ -6,7 +6,10 @@ export function startInactivityJob(
   userService: ReturnType<typeof makeUserService>,
   intervalMs = 60 * 60 * 1000 // default 1 hour
 ) {
+  let isRunning = false;
   return setInterval(async () => {
+    if (isRunning) return;
+    isRunning = true;
     try {
       const users = await userRepo.findAllWarningEnabled();
       const now = new Date();
@@ -19,6 +22,8 @@ export function startInactivityJob(
       }
     } catch (err) {
       console.error('Error running inactivity job:', err);
+    } finally {
+      isRunning = false;
     }
   }, intervalMs);
 }
