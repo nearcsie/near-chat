@@ -69,14 +69,31 @@ The frontend is a Next.js application in the `frontend/` directory.
 
 ## Database Management
 
-### Common Commands
-- Create a new migration file: `pnpm run migrate:create <name>`
-- Run migrations up: `pnpm run migrate:up`
-- Roll migrations back: `pnpm run migrate:down`
-
-To run migrations inside the Docker container, use:
+### Initialization Flow
+When setting up the project for the first time, you must initialize the database schema. Ensure your Docker containers are running, then apply the migrations:
 
 ```bash
+docker compose exec backend pnpm run migrate:up
+```
+
+### Common Commands
+- Create a new migration file: `docker compose exec backend pnpm run migrate:create <name>`
+- Run migrations up: `docker compose exec backend pnpm run migrate:up`
+- Roll migrations back: `docker compose exec backend pnpm run migrate:down`
+
+### Repairing a Broken Dev Database
+If you encounter `relation ... already exists` errors during migration, or if `node-pg-migrate` reports that a new migration is preceding an already-run migration, your local database state is out of sync with the migration history (e.g. missing `pgmigrations` table). 
+
+Because this is a development database, the safest and clearest way to repair it is to wipe the database volume and run migrations from a clean state:
+
+```bash
+# 1. Stop containers and wipe the database volume
+docker compose down -v
+
+# 2. Restart containers
+docker compose up -d
+
+# 3. Wait for the database to be ready, then run migrations again
 docker compose exec backend pnpm run migrate:up
 ```
 
