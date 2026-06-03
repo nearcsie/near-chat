@@ -58,7 +58,9 @@ export class RoomRepository implements IRoomRepository {
       `SELECT r.* FROM chat_rooms r
        JOIN room_members rm1 ON r.room_id = rm1.room_id AND rm1.user_id = $1
        JOIN room_members rm2 ON r.room_id = rm2.room_id AND rm2.user_id = $2
-       WHERE r.type = 'private'`,
+       WHERE r.type = 'private'
+       ORDER BY r.is_archived ASC, r.created_at DESC
+       LIMIT 1`,
       [userA, userB]
     );
     return res.rows.length === 0 ? null : mapRowToRoom(res.rows[0]);
