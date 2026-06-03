@@ -77,9 +77,9 @@ docker compose exec backend pnpm run migrate:up
 ```
 
 ### Common Commands
-- Create a new migration file: `pnpm run migrate:create <name>`
-- Run migrations up: `pnpm run migrate:up`
-- Roll migrations back: `pnpm run migrate:down`
+- Create a new migration file: `docker compose exec backend pnpm run migrate:create <name>`
+- Run migrations up: `docker compose exec backend pnpm run migrate:up`
+- Roll migrations back: `docker compose exec backend pnpm run migrate:down`
 
 ### Repairing a Broken Dev Database
 If you encounter `relation ... already exists` errors during migration, or if `node-pg-migrate` reports that a new migration is preceding an already-run migration, your local database state is out of sync with the migration history (e.g. missing `pgmigrations` table). 
