@@ -71,28 +71,25 @@ describe('Room Members E2E', () => {
     await pool.end();
   });
 
-  describe('PATCH /rooms/:id/members/:userId/approve', () => {
+  describe('POST /rooms/:id/members/:userId/approve', () => {
     it('should allow owner to approve pending member', async () => {
       const res = await request(app)
-        .patch(`/api/v1/rooms/${roomId}/members/${pendingId}`)
-        .set('Authorization', `Bearer ${ownerToken}`)
-        .send({ status: 'approved' });
+        .post(`/api/v1/rooms/${roomId}/members/${pendingId}/approve`)
+        .set('Authorization', `Bearer ${ownerToken}`);
       expect(res.status).toBe(200);
     });
 
     it('should allow admin to approve pending member', async () => {
       const res = await request(app)
-        .patch(`/api/v1/rooms/${roomId}/members/${pendingId}`)
-        .set('Authorization', `Bearer ${adminToken}`)
-        .send({ status: 'approved' });
+        .post(`/api/v1/rooms/${roomId}/members/${pendingId}/approve`)
+        .set('Authorization', `Bearer ${adminToken}`);
       expect(res.status).toBe(200);
     });
 
     it('should not allow regular member to approve pending member', async () => {
       const res = await request(app)
-        .patch(`/api/v1/rooms/${roomId}/members/${pendingId}`)
-        .set('Authorization', `Bearer ${memberToken}`)
-        .send({ status: 'approved' });
+        .post(`/api/v1/rooms/${roomId}/members/${pendingId}/approve`)
+        .set('Authorization', `Bearer ${memberToken}`);
       expect(res.status).toBe(403);
     });
   });
