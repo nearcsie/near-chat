@@ -53,10 +53,13 @@ export class RoomRepository implements IRoomRepository {
     return res.rows.length === 0 ? null : mapRowToRoom(res.rows[0]);
   }
 
-  async findByRoomHash(roomHash: string): Promise<Room | null> {
+  async findPrivateRoomByMembers(userA: string, userB: string): Promise<Room | null> {
     const res = await this.db.query(
-      'SELECT * FROM chat_rooms WHERE room_hash = $1',
-      [roomHash]
+      `SELECT r.* FROM chat_rooms r
+       JOIN room_members rm1 ON r.room_id = rm1.room_id AND rm1.user_id = $1
+       JOIN room_members rm2 ON r.room_id = rm2.room_id AND rm2.user_id = $2
+       WHERE r.type = 'private'`,
+      [userA, userB]
     );
     return res.rows.length === 0 ? null : mapRowToRoom(res.rows[0]);
   }
@@ -101,15 +104,14 @@ export class RoomRepository implements IRoomRepository {
 
   async create(data: CreateRoomData): Promise<Room> {
     const res = await this.db.query(
-      `INSERT INTO chat_rooms (type, name, avatar_url, invite_code, room_hash, require_approval, view_history)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `INSERT INTO chat_rooms (type, name, avatar_url, invite_code, require_approval, view_history)
+       VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING *`,
       [
         data.type,
         data.name ?? null,
         data.avatarUrl ?? null,
         data.inviteCode ?? null,
-        data.roomHash ?? null,
         data.requireApproval,
         data.viewHistory,
       ]

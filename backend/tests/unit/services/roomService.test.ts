@@ -32,7 +32,7 @@ describe('roomService', () => {
     mockRepo = {
       findById: vi.fn(),
       findByInviteCode: vi.fn(),
-      findByRoomHash: vi.fn(),
+      findPrivateRoomByMembers: vi.fn(),
       findByMember: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
@@ -120,7 +120,7 @@ describe('roomService', () => {
       areFriends: vi.fn().mockResolvedValue(true),
     };
     const privateRoom = { ...room, type: 'private' as const };
-    mockRepo.findByRoomHash.mockResolvedValue(privateRoom);
+    mockRepo.findPrivateRoomByMembers.mockResolvedValue(privateRoom);
     roomService = makeRoomService(mockRepo, mockMemberRepo, undefined, socialRepo);
 
     const result = await roomService.createPrivate('user-1', 'user-2');
@@ -143,7 +143,7 @@ describe('roomService', () => {
       ...archivedPrivate,
       isArchived: false,
     };
-    mockRepo.findByRoomHash.mockResolvedValue(archivedPrivate as Room);
+    mockRepo.findPrivateRoomByMembers.mockResolvedValue(archivedPrivate as Room);
     mockRepo.update.mockResolvedValue(reopenedPrivate as Room);
     roomService = makeRoomService(mockRepo, mockMemberRepo, undefined, socialRepo);
 
@@ -166,7 +166,7 @@ describe('roomService', () => {
 
   it('markPrivateReadOnly archives the private room', async () => {
     const privateRoom = { ...room, type: 'private' as const };
-    mockRepo.findByRoomHash.mockResolvedValue(privateRoom as Room);
+    mockRepo.findPrivateRoomByMembers.mockResolvedValue(privateRoom as Room);
 
     await roomService.markPrivateReadOnly('user-1', 'user-2');
 

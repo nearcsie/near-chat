@@ -1,5 +1,5 @@
 import type { Room, RoomSummary } from '@shared/types';
-import { createHash, randomBytes } from 'crypto';
+import { randomBytes } from 'crypto';
 import type { IRoomRepository } from '../repositories/IRoomRepository';
 import type { IRoomMemberRepository } from '../repositories/IRoomMemberRepository';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../errors/AppError';
@@ -14,8 +14,6 @@ const validationMessage = (issues: { message: string }[]) =>
   issues[0]?.message ?? 'Invalid room payload';
 
 const generateInviteCode = () => randomBytes(6).toString('base64url').slice(0, 8).toUpperCase();
-const privateRoomHash = (userA: string, userB: string) =>
-  createHash('sha256').update([userA, userB].sort().join(':')).digest('hex');
 
 export const makeRoomService = (
   repo: IRoomRepository,
@@ -74,8 +72,7 @@ export const makeRoomService = (
         throw new ForbiddenError('Private rooms require an accepted friendship');
       }
 
-      const roomHash = privateRoomHash(creatorId, targetUserId);
-      const existing = await repo.findByRoomHash(roomHash);
+      const existing = await repo.findPrivateRoomByMembers(creatorId, targetUserId);
       if (existing) {
         if (existing.isArchived) {
           const room = await repo.update(existing.roomId, { isArchived: false });
@@ -87,7 +84,6 @@ export const makeRoomService = (
       const room = await repo.create({
         type: 'private',
         name: undefined,
-        roomHash,
         requireApproval: false,
         viewHistory: true,
       });
@@ -97,14 +93,14 @@ export const makeRoomService = (
     },
 
     async markPrivateReadOnly(userA: string, userB: string): Promise<void> {
-      const existing = await repo.findByRoomHash(privateRoomHash(userA, userB));
+      const existing = await repo.findPrivateRoomByMembers(userA, userB);
       if (existing) {
         await repo.update(existing.roomId, { isArchived: true });
       }
     },
 
     async unarchivePrivateRoom(userA: string, userB: string): Promise<void> {
-      const existing = await repo.findByRoomHash(privateRoomHash(userA, userB));
+      const existing = await repo.findPrivateRoomByMembers(userA, userB);
       if (existing && existing.isArchived) {
         await repo.update(existing.roomId, { isArchived: false });
       }
