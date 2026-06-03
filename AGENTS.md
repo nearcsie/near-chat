@@ -47,7 +47,7 @@ A real-time group chat application built as an NTNU database course project. The
 
 ### External
 - Docker + Docker Compose — container orchestration
-- PostgreSQL 17 — primary datastore
+- PostgreSQL 18 — primary datastore
 - Node.js — runtime for both services
 
 <!-- MANUAL: Any manually added notes below this line are preserved on regeneration -->
