@@ -129,7 +129,7 @@ describe('roomService', () => {
     expect(mockRepo.create).not.toHaveBeenCalled();
   });
 
-  it('createPrivate reopens an archived private room instead of creating a duplicate', async () => {
+  it('createPrivate reopens a readonly private room instead of creating a duplicate', async () => {
     const socialRepo = {
       isBlocked: vi.fn().mockResolvedValue(false),
       areFriends: vi.fn().mockResolvedValue(true),
@@ -137,11 +137,11 @@ describe('roomService', () => {
     const archivedPrivate = {
       ...room,
       type: 'private' as const,
-      isArchived: true,
+      isReadonly: true,
     };
     const reopenedPrivate = {
       ...archivedPrivate,
-      isArchived: false,
+      isReadonly: false,
     };
     mockRepo.findPrivateRoomByMembers.mockResolvedValue(archivedPrivate as Room);
     mockRepo.update.mockResolvedValue(reopenedPrivate as Room);
@@ -149,7 +149,7 @@ describe('roomService', () => {
 
     const result = await roomService.createPrivate('user-1', 'user-2');
 
-    expect(mockRepo.update).toHaveBeenCalledWith('room-1', { isArchived: false });
+    expect(mockRepo.update).toHaveBeenCalledWith('room-1', { isReadonly: false });
     expect(result).toEqual({ room: reopenedPrivate, created: false });
   });
 
@@ -164,13 +164,13 @@ describe('roomService', () => {
     expect(mockRepo.create).not.toHaveBeenCalled();
   });
 
-  it('markPrivateReadOnly archives the private room', async () => {
+  it('markPrivateReadOnly sets isReadonly to true', async () => {
     const privateRoom = { ...room, type: 'private' as const };
     mockRepo.findPrivateRoomByMembers.mockResolvedValue(privateRoom as Room);
 
     await roomService.markPrivateReadOnly('user-1', 'user-2');
 
-    expect(mockRepo.update).toHaveBeenCalledWith('room-1', { isArchived: true });
+    expect(mockRepo.update).toHaveBeenCalledWith('room-1', { isReadonly: true });
   });
   describe('joinByCode', () => {
     it('joins room using invite code', async () => {

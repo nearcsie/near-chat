@@ -229,8 +229,8 @@ describe('Friendships & Blocks E2E', () => {
         .send({ target_user_id: userB.userId });
 
       expect(blockRes.status).toBe(201);
-      const row = await testPool.query('SELECT is_archived FROM chat_rooms WHERE room_id = $1', [privateRoom.body.roomId]);
-      expect(row.rows[0].is_archived).toBe(true);
+      const row = await testPool.query('SELECT is_readonly FROM chat_rooms WHERE room_id = $1', [privateRoom.body.roomId]);
+      expect(row.rows[0].is_readonly).toBe(true);
     });
 
     it('should list blocked users', async () => {
