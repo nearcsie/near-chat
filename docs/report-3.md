@@ -6,7 +6,7 @@
 
 ---
 ## 一、ER-digram
-![1142-db-project-report2-group9.drawio](https://hackmd.io/_uploads/SJzWFHqRZg.png)
+![ER-digram](./ER_Digram.png)
 
 ### 修改
 - RoomMember 改為關係
