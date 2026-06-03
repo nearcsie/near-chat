@@ -83,6 +83,7 @@ const friendService = makeFriendService(friendRepo, (userId, eventName, payload)
 }, {
   markPrivateReadOnly: roomService.markPrivateReadOnly,
   unarchivePrivateRoom: roomService.unarchivePrivateRoom,
+  createPrivate: roomService.createPrivate,
 });
 const friendController = makeFriendController(friendService);
 
