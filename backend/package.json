@@ -11,6 +11,7 @@
     "migrate:down": "node-pg-migrate down",
     "migrate:create": "node-pg-migrate create",
     "test": "pnpm run test:unit && pnpm run test:integration && pnpm run test:e2e",
+    "db:seed": "tsx src/db/seed.ts",
     "test:unit": "vitest run --passWithNoTests tests/unit",
     "test:coverage": "vitest run --coverage",
     "test:integration": "vitest run --config vitest.integration.config.ts tests/integration",
@@ -46,6 +47,7 @@
     "socket.io-client": "^4.8.3",
     "supertest": "^7.2.2",
     "ts-node-dev": "^2.0.0",
+    "tsx": "^4.22.4",
     "typescript": "^6.0.3",
     "vitest": "^3.0.0"
   }
