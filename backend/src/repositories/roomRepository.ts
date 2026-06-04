@@ -12,6 +12,7 @@ function mapRowToRoom(row: any): Room {
     requireApproval: row.require_approval,
     viewHistory:     row.view_history,
     isArchived:      row.is_archived,
+    isReadonly:      row.is_readonly ?? false,
     createdAt:       row.created_at,
   };
 }
@@ -134,6 +135,7 @@ export class RoomRepository implements IRoomRepository {
     if (data.requireApproval !== undefined) { fields.push(`require_approval = $${idx++}`); values.push(data.requireApproval); }
     if (data.viewHistory !== undefined)     { fields.push(`view_history = $${idx++}`);     values.push(data.viewHistory); }
     if (data.isArchived !== undefined)      { fields.push(`is_archived = $${idx++}`);      values.push(data.isArchived); }
+    if (data.isReadonly !== undefined)      { fields.push(`is_readonly = $${idx++}`);      values.push(data.isReadonly); }
 
     if (fields.length === 0) {
       const res = await this.db.query('SELECT * FROM chat_rooms WHERE room_id = $1', [roomId]);

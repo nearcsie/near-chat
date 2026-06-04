@@ -32,7 +32,7 @@ export function makeFriendService(
         if (notifyUser) {
           notifyUser(targetUserId, 'friend_request', accepted);
         }
-        await privateRooms?.unarchivePrivateRoom?.(requesterId, targetUserId);
+        await privateRooms?.reopenPrivateRoom?.(requesterId, targetUserId);
         return accepted;
       }
 
@@ -58,7 +58,7 @@ export function makeFriendService(
         if (!accepted) {
           throw new AppError(404, 'Friend request not found', 'NOT_FOUND');
         }
-        await privateRooms?.unarchivePrivateRoom?.(requesterId, userId);
+        await privateRooms?.reopenPrivateRoom?.(requesterId, userId);
         return accepted;
       } else {
         const rejected = await repo.rejectFriendRequest(requesterId, userId);
