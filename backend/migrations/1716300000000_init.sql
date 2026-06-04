@@ -2,30 +2,37 @@
 -- v1 scope: users, chat_rooms, messages, room_members
 
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
 CREATE TABLE users (
-  user_id         UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id         UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
   name            VARCHAR(255) NOT NULL,
   email           VARCHAR(255) NOT NULL UNIQUE,
   password_hash   VARCHAR(255) NOT NULL,
   bio             TEXT,
   avatar_url      VARCHAR(2048),
-  warning_enabled BOOLEAN     NOT NULL DEFAULT false,
-  warning_days    INTEGER     NOT NULL DEFAULT 0,
-  last_activity   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  warning_enabled BOOLEAN      NOT NULL DEFAULT false,
+  warning_days    INTEGER      NOT NULL DEFAULT 0,
+  last_activity   TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  created_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  deleted_at      TIMESTAMPTZ  DEFAULT NULL,
+  lang_preference VARCHAR(10)  NOT NULL DEFAULT 'en',
+  app_theme       VARCHAR(10)  NOT NULL DEFAULT 'light' CHECK (app_theme IN ('light', 'dark')),
+  notify_desktop  BOOLEAN      NOT NULL DEFAULT true,
+  notify_sound    BOOLEAN      NOT NULL DEFAULT true
 );
 
 CREATE TABLE chat_rooms (
-  room_id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-  type             VARCHAR(10) NOT NULL CHECK (type IN ('private', 'group')),
+  room_id          UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+  type             VARCHAR(10)  NOT NULL CHECK (type IN ('private', 'group')),
   name             VARCHAR(255),
   avatar_url       VARCHAR(2048),
   invite_code      VARCHAR(255),
-  require_approval BOOLEAN     NOT NULL DEFAULT false,
-  view_history     BOOLEAN     NOT NULL DEFAULT true,
-  is_archived      BOOLEAN     NOT NULL DEFAULT false,
-  created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  require_approval BOOLEAN      NOT NULL DEFAULT false,
+  view_history     BOOLEAN      NOT NULL DEFAULT true,
+  is_archived      BOOLEAN      NOT NULL DEFAULT false,
+  created_at       TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  is_readonly      BOOLEAN      NOT NULL DEFAULT false
 );
 
 CREATE TABLE messages (
