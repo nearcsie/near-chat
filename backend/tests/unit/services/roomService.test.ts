@@ -176,7 +176,7 @@ describe('roomService', () => {
 
   it('reopenPrivateRoom sets isReadonly to false', async () => {
     const readonlyRoom = { ...room, type: 'private' as const, isReadonly: true };
-    mockRepo.findByRoomHash.mockResolvedValue(readonlyRoom as Room);
+    mockRepo.findPrivateRoomByMembers.mockResolvedValue(readonlyRoom as Room);
 
     await roomService.reopenPrivateRoom('user-1', 'user-2');
 
@@ -185,7 +185,7 @@ describe('roomService', () => {
 
   it('reopenPrivateRoom does nothing when room is not readonly', async () => {
     const openRoom = { ...room, type: 'private' as const, isReadonly: false };
-    mockRepo.findByRoomHash.mockResolvedValue(openRoom as Room);
+    mockRepo.findPrivateRoomByMembers.mockResolvedValue(openRoom as Room);
 
     await roomService.reopenPrivateRoom('user-1', 'user-2');
 
@@ -193,7 +193,7 @@ describe('roomService', () => {
   });
 
   it('reopenPrivateRoom does nothing when room does not exist', async () => {
-    mockRepo.findByRoomHash.mockResolvedValue(null);
+    mockRepo.findPrivateRoomByMembers.mockResolvedValue(null);
 
     await roomService.reopenPrivateRoom('user-1', 'user-2');
 
