@@ -362,20 +362,32 @@ flowchart TD
   - 聊天室採三欄配置：左側資料夾與聊天室列表、中間訊息區、右側群組為成員列表，私聊顯示好友個人資料。
   - 訊息區規劃支援回覆、提及、附件下載、已讀標示與輸入中提示。
 
-### 3. 連結資料庫與後端實做
+### 3. 專案開發技術
 
-#### A. 資料庫連線與操作
+採用容器化開發，將系統劃分為前端、後端與資料庫，並以 Docker Compose 進行本機與部署的統籌管理。
 
-後端使用 Node.js + express 建立伺服器，利用 pg 套件連接 PostgreSQL 資料庫以執行 SQL 指令操作，並規劃使用 `node-pg-migrate` 管理 schema 版本。
+#### Docker 容器化技術
+- 使用 `Docker Compose` 來統籌並連接三個主要容器服務：`db`、`backend`以及 `frontend`。
+- 所有環境變數皆於專案根目錄的 `.env` 檔中統一宣告，由 Docker Compose 自動注入各個容器，確保開發與生產環境設定分離。
 
-#### B. 後端分層架構設計
+#### 前端開發技術
+- 採用 `Next.js` 框架開發。
+- 使用 React Context (`ChatContext`) 管理全域對話狀態與認證狀態；即時連線方面使用 `socket.io-client` 處理 WebSocket 即時事件。
 
-後端規劃採用 `Routes -> Controllers -> Services -> Repositories` 分層設計：
+#### 後端開發技術
+- 使用 `Node.js`、`Express` 與 `TypeScript` 建立 RESTful API 伺服器，並搭載 `Socket.IO` 實作實時雙向事件發送。
+- 身分驗證基於 `JSON Web Token (JWT)`，密碼加密採用 `bcryptjs` 進行高安全性單向雜湊。
+- 使用 `Routes -> Controllers -> Services -> Repositories` 分層設計。
+  1. **Routes**：定義 REST API 與 middleware 組裝方式。
+  2. **Controllers**：處理 HTTP request / response，呼叫對應的 Service 來執行核心邏輯。
+  3. **Services**：封裝系統規則邏輯，例如群組權限檢查、封鎖限制、訊息驗證。
+  4. **Repositories**：與資料庫溝通，使用 SQL 操作資料庫。
 
-1. **Routes**：定義 REST API 與 middleware 組裝方式。
-2. **Controllers**：處理 HTTP request / response，不直接撰寫業務邏輯與 SQL。
-3. **Services**：封裝系統規則，例如群組權限檢查、封鎖限制、、訊息驗證。
-4. **Repositories**：專注於 SQL 與資料映射，包含訊息分頁、附件綁定、好友關係查詢等細
+
+#### 資料庫管理與操作 
+- 使用 `PostgreSQL` 作為系統的主要關聯式資料庫。
+- 使用原生 `pg` 客戶端連線池 (`pg.Pool`) 直接對資料庫下達參數化 SQL 查詢指令，確保最優化且安全的 SQL 語法執行速度。
+- 使用 `node-pg-migrate` 管理資料庫結構版本，以 SQL Migration 腳本形式紀錄資料表的每一次結構變動。
 
 ## 五、預定工作分配
 
