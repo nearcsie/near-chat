@@ -100,7 +100,7 @@ export const makeRoomService = (
     },
 
     async reopenPrivateRoom(userA: string, userB: string): Promise<void> {
-      const existing = await repo.findByRoomHash(privateRoomHash(userA, userB));
+      const existing = await repo.findPrivateRoomByMembers(userA, userB);
       if (existing && existing.isReadonly) {
         await repo.update(existing.roomId, { isReadonly: false });
       }
