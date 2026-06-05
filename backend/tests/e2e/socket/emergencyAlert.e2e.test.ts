@@ -4,7 +4,7 @@ import { io as createClient, type Socket as ClientSocket } from 'socket.io-clien
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { app, server } from '../../../src/index';
 import { resetDb } from '../../helpers/resetDb';
-import type { ClientToServerEvents, ServerToClientEvents } from '../../../../shared/types';
+import type { ClientToServerEvents, ServerToClientEvents, Room, Message } from '../../../../shared/types';
 
 type TestClient = ClientSocket<ServerToClientEvents, ClientToServerEvents>;
 
@@ -51,7 +51,7 @@ describe('Emergency alert Socket.IO E2E', () => {
       socket.once('connect_error', reject);
     });
 
-  it('emits emergency_alert to configured emergency contacts', async () => {
+  it('sends real chat message to configured emergency contacts (private room)', async () => {
     const userRes = await request(app).post('/api/v1/auth/register').send({
       name: 'Alert User',
       email: 'alert-user@example.com',
@@ -63,6 +63,24 @@ describe('Emergency alert Socket.IO E2E', () => {
       password: 'Password123!',
     });
 
+    // Become friends
+    await request(app).post('/api/v1/friend-requests').set('Authorization', `Bearer ${userRes.body.token}`).send({
+      target_user_id: contactRes.body.user.userId,
+    });
+    await request(app).patch(`/api/v1/friend-requests/${userRes.body.user.userId}`).set('Authorization', `Bearer ${contactRes.body.token}`).send({
+      status: 'accepted',
+    });
+
+    // explicitly create private room
+    const roomRes = await request(app)
+      .post('/api/v1/rooms')
+      .set('Authorization', `Bearer ${userRes.body.token}`)
+      .send({ type: 'private', targetUserId: contactRes.body.user.userId });
+    
+    expect(roomRes.status).to.be.oneOf([200, 201]);
+    const privateRoomId = roomRes.body.roomId;
+
+    // Set up emergency contact
     await request(app)
       .post('/api/v1/users/me/emergency-contacts')
       .set('Authorization', `Bearer ${userRes.body.token}`)
@@ -72,9 +90,14 @@ describe('Emergency alert Socket.IO E2E', () => {
       });
 
     const contactSocket = await connectClient(contactRes.body.token);
-    const alertPayload = waitFor<Parameters<ServerToClientEvents['emergency_alert']>[0]>(
+    
+    // Have the contact socket join the room to receive new_message event
+    contactSocket.emit('join_room', { roomId: privateRoomId });
+    await new Promise((res) => setTimeout(res, 100));
+    
+    const messagePayload = waitFor<Message>(
       contactSocket,
-      'emergency_alert',
+      'new_message',
     );
 
     const triggerRes = await request(app)
@@ -83,9 +106,10 @@ describe('Emergency alert Socket.IO E2E', () => {
       .send();
 
     expect(triggerRes.status).toBe(202);
-    await expect(alertPayload).resolves.toEqual({
-      userId: userRes.body.user.userId,
-      message: 'Please check on me',
-    });
+    
+    const received = await messagePayload;
+    expect(received.content).toBe('(測試) Please check on me');
+    expect(received.senderId).toBe(userRes.body.user.userId);
+    expect(received.roomId).toBe(privateRoomId);
   });
 });
