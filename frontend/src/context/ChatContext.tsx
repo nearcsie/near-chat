@@ -44,6 +44,7 @@ import {
   respondFriendRequest,
   searchUsers,
   sendFriendRequest as sendFriendRequestApi,
+  triggerEmergencyAlert as triggerEmergencyAlertApi,
   unblockUser as unblockUserApi,
   updateFolderRooms,
   updateMe,
@@ -171,6 +172,12 @@ export interface EmergencySettings {
   contacts: EmergencyContact[];
 }
 
+interface TriggerEmergencyAlertResult {
+  alerted: boolean;
+  recipients: string[];
+  reason?: string;
+}
+
 export type UiLanguage = "zh-TW" | "en";
 
 export const getAvatarForUser = (
@@ -261,6 +268,7 @@ interface ChatContextType {
   blockFriend: (friendId: string) => Promise<void>;
   unblockUser: (blockedId: string) => Promise<void>;
   saveEmergencySettings: (settings: EmergencySettings) => Promise<void>;
+  triggerEmergencyAlertNow: (message?: string) => Promise<TriggerEmergencyAlertResult>;
   setUiLanguage: (language: UiLanguage) => void;
 }
 
@@ -1174,6 +1182,14 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     }));
   };
 
+  const triggerEmergencyAlertNow = async (message?: string): Promise<TriggerEmergencyAlertResult> => {
+    if (!token) {
+      throw new Error("Not authenticated");
+    }
+
+    return triggerEmergencyAlertApi(token, message?.trim() ? message.trim() : undefined);
+  };
+
   const setUiLanguage = (language: UiLanguage) => {
     localStorage.setItem("language", language);
     setUiLanguageState(language);
@@ -1323,6 +1339,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         blockFriend,
         unblockUser,
         saveEmergencySettings,
+        triggerEmergencyAlertNow,
         setUiLanguage,
       }}
     >
