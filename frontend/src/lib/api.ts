@@ -145,6 +145,9 @@ export const updateMe = (token: string, data: UpdateMeRequest): Promise<MyProfil
     { token },
   );
 
+export const deleteMe = (token: string): Promise<void> =>
+  requestJson<void>('/users/me', { method: 'DELETE' }, { token });
+
 export const getMySettings = (token: string): Promise<UserSettings> =>
   requestJson<UserSettings>('/users/me/settings', {}, { token });
 
