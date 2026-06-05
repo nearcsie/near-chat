@@ -23,7 +23,10 @@ export default function RoomMembersPanel({ room, members }: { room: ChatRoom; me
 
       <div className="flex-1 overflow-y-auto divide-y divide-border-secondary/30">
         {members.map((member, index) => {
-          const displayNick = member.name === user.username ? activeUserDisplayName : member.name;
+          let displayNick = member.name === user.username ? activeUserDisplayName : member.name;
+          if (member.nickname) {
+            displayNick = `${member.nickname} (${displayNick})`;
+          }
           return (
             <div
               key={`${member.name}-${index}`}

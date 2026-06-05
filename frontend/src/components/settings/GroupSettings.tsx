@@ -255,14 +255,15 @@ export default function GroupSettings({ roomId, onClose }: GroupSettingsProps) {
             </div>
           )}
 
-          <section className="flex flex-col gap-4">
-            <SectionTitle title="基本設定" />
-            <Input
-              label="群組名稱"
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              required
-            />
+          {canManageMembers && (
+            <section className="flex flex-col gap-4">
+              <SectionTitle title="基本設定" />
+              <Input
+                label="群組名稱"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                required
+              />
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               <Checkbox
                 label="加入前需要審核"
@@ -291,8 +292,16 @@ export default function GroupSettings({ roomId, onClose }: GroupSettingsProps) {
                 </Button>
               )}
             </div>
-            {canManageMembers && (
-              <div className="flex flex-col gap-2 border border-border-secondary bg-surface-muted px-3 py-3">
+              <div className="flex justify-end">
+                <Button type="submit" variant="primary" disabled={isSaving}>
+                  {isSaving ? "儲存中..." : "儲存設定"}
+                </Button>
+              </div>
+            </section>
+          )}
+
+          {canManageMembers && (
+            <div className="flex flex-col gap-2 border border-border-secondary bg-surface-muted px-3 py-3">
                 <p className="text-xs font-semibold text-foreground">搜尋並邀請成員</p>
                 <p className="text-[10px] text-text-muted">輸入名稱搜尋用戶，將邀請碼複製後分享給對方。</p>
                 <div className="flex gap-2">
@@ -327,12 +336,6 @@ export default function GroupSettings({ roomId, onClose }: GroupSettingsProps) {
               </div>
             )}
 
-            <div className="flex justify-end">
-              <Button type="submit" variant="primary" disabled={isSaving}>
-                {isSaving ? "儲存中..." : "儲存設定"}
-              </Button>
-            </div>
-          </section>
 
           <section className="flex flex-col gap-3">
             <SectionTitle title={`成員管理 (${members.length})`} />
@@ -358,17 +361,19 @@ export default function GroupSettings({ roomId, onClose }: GroupSettingsProps) {
             </div>
           </section>
 
-          <section className="flex flex-col gap-3 border border-red-500/20 p-4 bg-red-500/5 rounded-sm">
-            <SectionTitle title="危險區" danger />
-            <div className="flex flex-col items-start gap-2">
-              <Button type="button" variant="secondary" onClick={handleArchive} className="text-red-600 border-red-600 hover:bg-red-500/10">
-                封存群組
-              </Button>
-              <span className="text-[10px] text-red-600/70 leading-normal">
-                封存後群組會保留歷史資料，但不可再發送新訊息。
-              </span>
-            </div>
-          </section>
+          {canTransferOwner && (
+            <section className="flex flex-col gap-3 border border-red-500/20 p-4 bg-red-500/5 rounded-sm">
+              <SectionTitle title="危險區" danger />
+              <div className="flex flex-col items-start gap-2">
+                <Button type="button" variant="secondary" onClick={handleArchive} className="text-red-600 border-red-600 hover:bg-red-500/10">
+                  封存群組
+                </Button>
+                <span className="text-[10px] text-red-600/70 leading-normal">
+                  封存後群組會保留歷史資料，但不可再發送新訊息。
+                </span>
+              </div>
+            </section>
+          )}
         </form>
       </div>
     </div>
@@ -421,7 +426,9 @@ function MemberRow({
         />
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <p className="font-semibold text-foreground truncate">{member.name}</p>
+            <p className="font-semibold text-foreground truncate">
+              {member.nickname ? `${member.nickname} (${member.name})` : member.name}
+            </p>
             {isSelf && <span className="text-[9px] text-primary font-mono">YOU</span>}
             {member.isMuted && <span className="text-[9px] text-red-600 font-mono">MUTED</span>}
           </div>
@@ -450,34 +457,38 @@ function MemberRow({
             審核通過
           </Button>
         )}
-        {!isPending && (
+        {!isPending && (isSelf || canManageMembers) && (
           <Button type="button" variant="ghost" className="text-[10px]" onClick={() => void onNickname(member)}>
             暱稱
           </Button>
         )}
-        <Button
-          type="button"
-          variant="ghost"
-          className="text-[10px]"
-          disabled={!canEditMember || isSelf}
-          onClick={() => void onToggleMute(member)}
-        >
-          {member.isMuted ? "解除禁言" : "禁言"}
-        </Button>
+        {canManageMembers && (
+          <Button
+            type="button"
+            variant="ghost"
+            className="text-[10px]"
+            disabled={!canEditMember || isSelf}
+            onClick={() => void onToggleMute(member)}
+          >
+            {member.isMuted ? "解除禁言" : "禁言"}
+          </Button>
+        )}
         {canTransferOwner && !isOwner && !isPending && (
           <Button type="button" variant="ghost" className="text-[10px]" onClick={() => void onTransferOwner(member)}>
             轉讓群主
           </Button>
         )}
-        <Button
-          type="button"
-          variant="ghost"
-          className="text-[10px] text-red-600"
-          disabled={!canEditMember || isSelf}
-          onClick={() => void onKick(member)}
-        >
-          移除
-        </Button>
+        {canManageMembers && (
+          <Button
+            type="button"
+            variant="ghost"
+            className="text-[10px] text-red-600"
+            disabled={!canEditMember || isSelf}
+            onClick={() => void onKick(member)}
+          >
+            移除
+          </Button>
+        )}
       </div>
     </div>
   );

@@ -120,14 +120,14 @@ export const makeMessageService = (
         throw new ValidationError(validationMessage(parsed.error.issues));
       }
 
-      await assertRoomMembership(userId, parsed.data.roomId);
+      const { member } = await assertRoomMembership(userId, parsed.data.roomId);
 
       const existing = await messageRepo.findById(parsed.data.messageId);
       if (!existing || existing.roomId !== parsed.data.roomId) {
         throw new NotFoundError('message', parsed.data.messageId);
       }
-      if (existing.senderId !== userId) {
-        throw new ForbiddenError('Only the original sender can recall this message');
+      if (existing.senderId !== userId && member.role !== 'owner' && member.role !== 'admin') {
+        throw new ForbiddenError('Only the original sender or an admin can recall this message');
       }
 
       return messageRepo.markRecalled(parsed.data.messageId);
