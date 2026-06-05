@@ -31,6 +31,27 @@ export interface ChatBubbleProps {
   canEdit?: boolean;
 }
 
+const renderMentionContent = (
+  content: string,
+  isOutgoing: boolean,
+  isHighEmphasis: boolean,
+) => {
+  const parts = content.split(/(@[^\s@]+)/g);
+  const mentionClass = isOutgoing && isHighEmphasis
+    ? "rounded px-1 py-0.5 bg-white/15 text-white font-semibold"
+    : "rounded px-1 py-0.5 bg-primary/10 text-primary font-semibold";
+
+  return parts.map((part, index) =>
+    part.startsWith("@") ? (
+      <span key={`${part}-${index}`} className={mentionClass}>
+        {part}
+      </span>
+    ) : (
+      <React.Fragment key={`${part}-${index}`}>{part}</React.Fragment>
+    ),
+  );
+};
+
 export function ChatBubble({
   content,
   senderName,
@@ -182,8 +203,13 @@ export function ChatBubble({
               </div>
             )}
 
-            <div className={cn("text-sm break-words", isRecalled && "italic text-text-muted/70")}>
-              {isRecalled ? "訊息已收回" : content}
+            <div
+              className={cn(
+                "text-sm break-words whitespace-pre-wrap",
+                isRecalled && "italic text-text-muted/70",
+              )}
+            >
+              {isRecalled ? "訊息已收回" : renderMentionContent(content, isOutgoing, isHighEmphasis)}
             </div>
 
             {attachments.length > 0 && (

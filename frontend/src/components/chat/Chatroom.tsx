@@ -16,6 +16,28 @@ interface ChatroomProps {
   onOpenGroupSettings?: () => void;
 }
 
+interface MentionDraft {
+  start: number;
+  end: number;
+  query: string;
+}
+
+const getMentionDraft = (value: string, cursorPosition: number): MentionDraft | null => {
+  const beforeCursor = value.slice(0, cursorPosition);
+  const match = beforeCursor.match(/(?:^|\s)@([^\s@]*)$/);
+
+  if (!match) return null;
+
+  const start = beforeCursor.lastIndexOf("@");
+  if (start < 0) return null;
+
+  return {
+    start,
+    end: cursorPosition,
+    query: match[1] ?? "",
+  };
+};
+
 export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps) {
   const router = useRouter();
   const {
@@ -37,13 +59,30 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
   } = useChat();
 
   const [inputText, setInputText] = useState("");
+  const [mentionDraft, setMentionDraft] = useState<MentionDraft | null>(null);
+  const [selectedMentionIndex, setSelectedMentionIndex] = useState(0);
   const [replyTarget, setReplyTarget] = useState<Message | null>(null);
   const [showHeaderPopover, setShowHeaderPopover] = useState(false);
   const messageEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { t } = useTranslation();
 
   const activeRoom = rooms.find((r) => r.id === roomId);
+  const mentionCandidates =
+    activeRoom?.type === "group" && mentionDraft
+      ? (activeRoom.members ?? [])
+          .filter((member) => member.userId !== user.userId)
+          .filter((member) =>
+            mentionDraft.query
+              ? member.name.toLowerCase().startsWith(mentionDraft.query.toLowerCase())
+              : true,
+          )
+      : [];
+
+  useEffect(() => {
+    setSelectedMentionIndex(0);
+  }, [mentionDraft?.query, roomId]);
 
   // Scroll to bottom when room or messages change
   useEffect(() => {
@@ -104,6 +143,51 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
           router.push("/");
         }
       }
+    }
+  };
+
+  const handleMentionSelect = (memberName: string) => {
+    if (!mentionDraft) return;
+
+    const nextText =
+      `${inputText.slice(0, mentionDraft.start)}@${memberName} ${inputText.slice(mentionDraft.end)}`;
+    const nextCursorPosition = mentionDraft.start + memberName.length + 2;
+
+    setInputText(nextText);
+    setMentionDraft(null);
+
+    requestAnimationFrame(() => {
+      inputRef.current?.focus();
+      inputRef.current?.setSelectionRange(nextCursorPosition, nextCursorPosition);
+    });
+  };
+
+  const handleMentionKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!mentionDraft || mentionCandidates.length === 0) return;
+
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setSelectedMentionIndex((current) => (current + 1) % mentionCandidates.length);
+      return;
+    }
+
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setSelectedMentionIndex((current) =>
+        current === 0 ? mentionCandidates.length - 1 : current - 1,
+      );
+      return;
+    }
+
+    if (event.key === "Enter" || event.key === "Tab") {
+      event.preventDefault();
+      handleMentionSelect(mentionCandidates[selectedMentionIndex]?.name ?? mentionCandidates[0].name);
+      return;
+    }
+
+    if (event.key === "Escape") {
+      event.preventDefault();
+      setMentionDraft(null);
     }
   };
 
@@ -312,17 +396,71 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
               </svg>
             </button>
 
-            <input
-              type="text"
-              placeholder={t("chatroom.inputPlaceholder")}
-              value={inputText}
-              onChange={(e) => {
-                setInputText(e.target.value);
-                handleTyping(activeRoom.id, e.target.value.length > 0);
-              }}
-              onBlur={() => handleTyping(activeRoom.id, false)}
-              className="flex-1 bg-surface-card border border-border-secondary hover:border-border-primary focus:border-primary focus:outline-none rounded-sm px-3.5 py-2.5 text-sm text-foreground transition-colors"
-            />
+            <div className="relative flex-1">
+              {mentionCandidates.length > 0 && (
+                <div className="absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-sm border border-border-primary bg-surface-card shadow-lg">
+                  {mentionCandidates.map((member) => (
+                    <button
+                      key={member.userId}
+                      type="button"
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => handleMentionSelect(member.name)}
+                      className={`flex w-full items-center justify-between gap-3 border-b border-border-secondary/40 px-3 py-2 text-left text-xs text-foreground transition-colors last:border-b-0 ${
+                        mentionCandidates[selectedMentionIndex]?.userId === member.userId
+                          ? "bg-primary/10 text-primary"
+                          : "hover:bg-surface-muted"
+                      }`}
+                    >
+                      <span className="truncate font-semibold">{member.name}</span>
+                      <span className="shrink-0 text-[10px] uppercase tracking-wider text-text-muted">
+                        @{member.name}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              <input
+                ref={inputRef}
+                type="text"
+                placeholder={t("chatroom.inputPlaceholder")}
+                value={inputText}
+                onChange={(e) => {
+                  const nextText = e.target.value;
+                  const nextCursorPosition = e.target.selectionStart ?? nextText.length;
+
+                  setInputText(nextText);
+                  setMentionDraft(
+                    activeRoom.type === "group"
+                      ? getMentionDraft(nextText, nextCursorPosition)
+                      : null,
+                  );
+                  handleTyping(activeRoom.id, nextText.length > 0);
+                }}
+                onClick={(e) => {
+                  const nextCursorPosition = e.currentTarget.selectionStart ?? inputText.length;
+                  setMentionDraft(
+                    activeRoom.type === "group"
+                      ? getMentionDraft(inputText, nextCursorPosition)
+                      : null,
+                  );
+                }}
+                onKeyUp={(e) => {
+                  const nextCursorPosition = e.currentTarget.selectionStart ?? inputText.length;
+                  setMentionDraft(
+                    activeRoom.type === "group"
+                      ? getMentionDraft(inputText, nextCursorPosition)
+                      : null,
+                  );
+                }}
+                onBlur={() => {
+                  handleTyping(activeRoom.id, false);
+                  setMentionDraft(null);
+                }}
+                onKeyDown={handleMentionKeyDown}
+                className="w-full bg-surface-card border border-border-secondary hover:border-border-primary focus:border-primary focus:outline-none rounded-sm px-3.5 py-2.5 text-sm text-foreground transition-colors"
+              />
+            </div>
 
             <Button type="submit" variant="primary" className="py-2.5 px-5 shrink-0 select-none">
               {t("chatroom.send")}

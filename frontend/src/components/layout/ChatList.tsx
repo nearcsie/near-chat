@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { useParams, useRouter, usePathname } from "next/navigation";
+import { useParams, usePathname, useRouter } from "next/navigation";
 import { ChatRoom, getAvatarForUser, useChat } from "@/context/ChatContext";
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
@@ -19,8 +19,8 @@ export default function ChatList({ searchQuery }: ChatListProps) {
     rooms,
     folders,
     user,
-    activeRoomNicknames,
     toggleFolder,
+    handleDeleteFolder,
     handleCategorizeRoom,
   } = useChat();
 
@@ -30,15 +30,15 @@ export default function ChatList({ searchQuery }: ChatListProps) {
 
   const [draggedRoomId, setDraggedRoomId] = React.useState<string | null>(null);
   const [dragOverFolderId, setDragOverFolderId] = React.useState<string | null>(null);
+  const [dragOverUncategorized, setDragOverUncategorized] = React.useState(false);
   const [isRootDropActive, setIsRootDropActive] = React.useState(false);
   const [isUncategorizedCollapsed, setIsUncategorizedCollapsed] = React.useState(false);
-  const [dragOverUncategorized, setDragOverUncategorized] = React.useState(false);
 
   const resetDragState = () => {
     setDraggedRoomId(null);
     setDragOverFolderId(null);
-    setIsRootDropActive(false);
     setDragOverUncategorized(false);
+    setIsRootDropActive(false);
   };
 
   const getDroppedRoomId = (event: React.DragEvent) =>
@@ -75,38 +75,56 @@ export default function ChatList({ searchQuery }: ChatListProps) {
   const visibleFolders = folders.filter((folder) => {
     const folderMatches = folder.name.toLowerCase().includes(searchQuery.toLowerCase());
     const hasMatchingRooms = rooms.some(
-      (room) => room.folderId === folder.id && room.name.toLowerCase().includes(searchQuery.toLowerCase())
+      (room) =>
+        room.folderId === folder.id &&
+        room.name.toLowerCase().includes(searchQuery.toLowerCase()),
     );
     return folderMatches || hasMatchingRooms;
   });
 
   const getFolderRooms = (folderId: string) => {
-    const folder = folders.find((f) => f.id === folderId);
-    const folderMatches = folder?.name.toLowerCase().includes(searchQuery.toLowerCase()) || false;
+    const folder = folders.find((item) => item.id === folderId);
+    const folderMatches = folder?.name.toLowerCase().includes(searchQuery.toLowerCase()) ?? false;
     if (folderMatches) {
       return rooms.filter((room) => room.folderId === folderId);
     }
+
     return rooms.filter(
       (room) =>
         room.folderId === folderId &&
-        room.name.toLowerCase().includes(searchQuery.toLowerCase())
+        room.name.toLowerCase().includes(searchQuery.toLowerCase()),
     );
   };
 
   const rootRooms = rooms.filter(
     (room) =>
       !room.folderId &&
-      room.name.toLowerCase().includes(searchQuery.toLowerCase())
+      room.name.toLowerCase().includes(searchQuery.toLowerCase()),
   );
+
+  const handleDeleteFolderClick = async (event: React.MouseEvent, folderId: string) => {
+    event.stopPropagation();
+    if (!window.confirm("Delete this folder? Chats inside it will move back to Uncategorized.")) {
+      return;
+    }
+
+    try {
+      await handleDeleteFolder(folderId);
+    } catch (error) {
+      console.error(error);
+      window.alert(error instanceof Error ? error.message : "Failed to delete folder");
+    }
+  };
 
   return (
     <>
       <SectionLabel label={t("sidebar.chats")} />
 
       {rootRooms.length > 0 && (
-        <div key="uncategorized-folder">
+        <div>
           <button
-            onClick={() => setIsUncategorizedCollapsed(!isUncategorizedCollapsed)}
+            type="button"
+            onClick={() => setIsUncategorizedCollapsed((current) => !current)}
             onDragOver={(event) => {
               if (!draggedRoomId) return;
               event.preventDefault();
@@ -123,7 +141,6 @@ export default function ChatList({ searchQuery }: ChatListProps) {
                   setIsUncategorizedCollapsed(false);
                 }
               }
-              setDragOverUncategorized(false);
               resetDragState();
             }}
             className={`w-full px-4 py-2 flex items-center justify-between text-xs font-semibold text-foreground hover:bg-surface-muted transition-colors ${
@@ -131,13 +148,14 @@ export default function ChatList({ searchQuery }: ChatListProps) {
             }`}
           >
             <span className="flex items-center gap-2">
-              <span className={isUncategorizedCollapsed ? "" : "rotate-90"}>›</span>
+              <span className={isUncategorizedCollapsed ? "" : "rotate-90"}>{">"}</span>
               {t("chatroom.noCategory")}
             </span>
             <Badge variant="default" className="scale-90">
               {rootRooms.length}
             </Badge>
           </button>
+
           {!isUncategorizedCollapsed && (
             <div
               onDragOver={(event) => {
@@ -175,8 +193,7 @@ export default function ChatList({ searchQuery }: ChatListProps) {
             const folderRooms = getFolderRooms(folder.id);
             return (
               <div key={folder.id}>
-                <button
-                  onClick={() => toggleFolder(folder.id)}
+                <div
                   onDragOver={(event) => {
                     if (!draggedRoomId) return;
                     event.preventDefault();
@@ -185,18 +202,35 @@ export default function ChatList({ searchQuery }: ChatListProps) {
                   }}
                   onDragLeave={() => setDragOverFolderId(null)}
                   onDrop={(event) => handleDropToFolder(event, folder.id)}
-                  className={`w-full px-4 py-2 flex items-center justify-between text-xs font-semibold text-foreground hover:bg-surface-muted transition-colors ${
+                  className={`group w-full px-4 py-2 flex items-center justify-between text-xs font-semibold text-foreground hover:bg-surface-muted transition-colors ${
                     dragOverFolderId === folder.id ? "bg-primary/10 text-primary" : ""
                   }`}
                 >
-                  <span className="flex items-center gap-2">
-                    <span className={folder.collapsed ? "" : "rotate-90"}>›</span>
-                    {folder.name}
+                  <button
+                    type="button"
+                    onClick={() => toggleFolder(folder.id)}
+                    className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                  >
+                    <span className={folder.collapsed ? "" : "rotate-90"}>{">"}</span>
+                    <span className="truncate">{folder.name}</span>
+                  </button>
+
+                  <span className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      aria-label={`${t("friends.remove")} ${folder.name}`}
+                      title={t("friends.remove")}
+                      onClick={(event) => void handleDeleteFolderClick(event, folder.id)}
+                      className="rounded-sm border border-transparent px-1.5 py-0.5 text-[10px] text-text-muted opacity-0 transition-all hover:border-border-primary hover:text-red-600 group-hover:opacity-100"
+                    >
+                      Del
+                    </button>
+                    <Badge variant="default" className="scale-90">
+                      {folderRooms.length}
+                    </Badge>
                   </span>
-                  <Badge variant="default" className="scale-90">
-                    {folderRooms.length}
-                  </Badge>
-                </button>
+                </div>
+
                 {!folder.collapsed && (
                   <div className="pl-4 border-l border-border-secondary/40 ml-5">
                     {folderRooms.map((room) => (
@@ -249,6 +283,7 @@ function RoomItem({
 }) {
   return (
     <button
+      type="button"
       onClick={onClick}
       draggable
       onDragStart={onDragStart}
@@ -265,7 +300,9 @@ function RoomItem({
           <span className="text-[9px] text-text-muted font-mono shrink-0">{room.lastMessageAt}</span>
         </span>
         <span className="mt-0.5 flex items-center gap-2">
-          <span className="text-[10px] text-text-muted truncate flex-1">{room.lastMessagePreview || noMessagesText}</span>
+          <span className="text-[10px] text-text-muted truncate flex-1">
+            {room.lastMessagePreview || noMessagesText}
+          </span>
           {room.unreadCount ? <Badge variant="danger">{room.unreadCount}</Badge> : null}
         </span>
       </span>

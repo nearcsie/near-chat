@@ -1,58 +1,22 @@
 # Project Report 3
 第 9 組
-
+專題名稱：即時通訊系統
 組員：江禹叡、楊銘煌、趙偉恆、姚承希
 
 ## 一、ER-diagram
 
 ![ER-digram](./ER_Digram.png)
 
-### E-R diagram 說明
+- RoomMember 改為關係而非原本的弱實體關係
+- send、last_read 改為與 User, ChatRoom 兩表 aggregation 的關係
 
-本版 E-R diagram 為在 `Report 2` 基礎上修正後的版本，主要調整方向如下：
-
-- 將 `RoomMember` 明確視為描述使用者與聊天室之間成員身分的關聯實體，用以承載 `role`、`nickname`、`join_time`、`is_muted` 與 `last_read_id` 等欄位。
-- 將私聊與群組統一建模為 `ChatRoom`，再依 `type` 區分 `private` 與 `group` 兩種使用情境。
-- 將訊息、附件、提及、回覆、已讀與緊急聯絡等需求，拆分為獨立實體或關聯，以利後續轉換為 PostgreSQL 的關聯式資料表。
-- 配合最新規劃，將舊版 `Report 2` 中的部分命名修正為目前系統預定採用的欄位名稱，例如 `created_at`、`sent_at`、`invite_code`、`original_name`、`warning_days`、`last_activity` 等。
-
-### 1. 核心實體說明
-
-- **User**：系統中的基本使用者實體，記錄帳號、密碼雜湊、個人資料、偏好設定、活躍時間與軟刪除資訊。
-- **ChatRoom**：聊天互動的主要容器，可表示私聊或群組，並記錄名稱、邀請碼、是否需審核、是否可檢視歷史訊息、封存與唯讀狀態。
-- **Message**：聊天室中的訊息內容，支援回覆、自我關聯與收回狀態。
-- **Attachment**：訊息附件資料，規劃支援先上傳、後綁定訊息的流程。
-- **Folder**：使用者自訂的聊天室分類資料夾。
-
-### 2. 關聯與弱實體說明
-
-- **RoomMember**：表示使用者加入聊天室後的成員身分與狀態，屬於 `User` 與 `ChatRoom` 的關聯實體。
-- **Friendship**：表示兩位使用者之間的好友邀請與接受狀態。
-- **Block**：表示單向封鎖關係，用於限制互動與唯讀規則。
-- **FolderRoom**：表示資料夾與聊天室之間的多對多對應，並限制同一使用者不可將同一聊天室放入多個資料夾。
-- **EmergencyContact**：表示使用者與其緊急聯絡人之間的通知任務設定。
-- **MessageMention**：表示訊息中提及了哪些使用者。
-- **EmergencyAlertLog**：表示系統在特定 `last_activity` 狀態下是否已對該使用者發送過緊急通知。
-
-### 3. 關聯規則說明
-
-- 一位使用者可擁有多個資料夾，資料夾與聊天室之間為多對多。
-- 一個聊天室可擁有多位成員，一位成員在同一聊天室中僅能有一筆 `RoomMember` 紀錄。
-- 一個聊天室可包含多則訊息；一則訊息只屬於一個聊天室。
-- 一則訊息可附帶多個附件；單一附件最終只對應一則訊息。
-- 一則訊息可回覆另一則訊息，形成訊息之間的自我關聯。
-- 一則訊息可提及多位使用者；一位使用者也可在多則訊息中被提及。
-- 好友、封鎖與緊急聯絡皆屬於使用者對使用者的自我關聯，但業務語意彼此不同。
-
-## 二、E-R diagram 轉成 Relational Table 之 DDL 形式
+## 二、DDL 
 
 本章節以 PostgreSQL DDL 形式描述系統規劃採用的主要資料表、關聯表與支援表。
 
-### 1. 核心實體表
+### 核心實體表
 
 ```sql
-CREATE EXTENSION IF NOT EXISTS "pgcrypto";
-
 CREATE TABLE users (
   user_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name VARCHAR(255) NOT NULL,
@@ -65,11 +29,6 @@ CREATE TABLE users (
   last_activity TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   deleted_at TIMESTAMPTZ DEFAULT NULL,
-  lang_preference VARCHAR(10) NOT NULL DEFAULT 'en',
-  app_theme VARCHAR(10) NOT NULL DEFAULT 'light',
-  notify_desktop BOOLEAN NOT NULL DEFAULT true,
-  notify_sound BOOLEAN NOT NULL DEFAULT true,
-  CONSTRAINT users_app_theme_check CHECK (app_theme IN ('light', 'dark'))
 );
 
 CREATE TABLE chat_rooms (
@@ -81,7 +40,6 @@ CREATE TABLE chat_rooms (
   require_approval BOOLEAN NOT NULL DEFAULT false,
   view_history BOOLEAN NOT NULL DEFAULT true,
   is_archived BOOLEAN NOT NULL DEFAULT false,
-  is_readonly BOOLEAN NOT NULL DEFAULT false,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -113,7 +71,7 @@ CREATE TABLE attachments (
 );
 ```
 
-### 2. 關係、弱實體與支援表
+### 關係、弱實體與支援表
 
 ```sql
 CREATE TABLE room_members (
@@ -182,78 +140,63 @@ CREATE TABLE emergency_alert_logs (
 );
 ```
 
-### 3. 補充說明
+### 補充說明
 
-- `users.lang_preference`、`users.app_theme`、`users.notify_desktop`、`users.notify_sound` 將作為資料庫欄位名；對外 API 則規劃採用 `language`、`theme`、`notifyDesktop`、`notifySound`。
-- `attachments.message_id` 規劃允許為 `NULL`，以支援先上傳附件、後綁定訊息的流程。
-- `chat_rooms.is_archived` 規劃對應封存狀態；`chat_rooms.is_readonly` 則作為系統內部的唯讀控制欄位，用於封鎖、限制互動或其他受限房間狀態。
+- `attachments.message_id` 規劃允許為 `NULL`，以支援先上傳附件、後綁定訊息，因為附件上傳使用 http，而訊息使用 socket.io，傳送時間可能有落差。
 
-## 三、業務規則
+## 三、系統內容功能詳細敘述
 
-- `private` 聊天室將限制為一對一；若需要三人以上對話，則必須建立 `group` 聊天室。
-- 建立私聊時，後端將採用「若已存在則回傳、否則建立」的 open-or-create 語意，避免同一對使用者重複產生多個 `private` 聊天室。
-- `group` 聊天室將維持且僅維持一位 `owner`。Owner 離開群組前，必須先完成擁有權轉移。
-- `is_archived = true` 將表示聊天室進入封存狀態；封存後保留歷史訊息，但不可再發送新訊息。
-- `is_readonly = true` 將表示聊天室進入唯讀限制狀態；常見情境為封鎖關係、受限房間或其他系統管制。
-- `attachments` 與 `messages` 規劃為一對多：單一訊息可綁定多個附件，而單一附件最終只屬於一則訊息。
-- `room_members.last_read_id` 將必須指向同一聊天室中的訊息，以避免跨房間 message id 汙染已讀狀態。
-- `join_room` Socket 事件將僅允許聊天室成員訂閱對應房間頻道。
-- 帳號刪除將採 soft delete；系統以 `deleted_at` 標記帳號刪除時間，歷史訊息仍保留，對外 API 中訊息的 `sender` 可為 `null`。
-- v1 版本規劃不實作端對端加密（E2E encryption）；訊息內容將以 plaintext 儲存於資料庫中，後續若要擴充，需重新定義金鑰管理、訊息格式與附件加密策略。
-
-## 四、系統內容功能詳細敘述
-
-### 1. 帳號身分驗證與個人設定
-
-- **使用者註冊與登入**：系統規劃允許使用者以 email 與密碼註冊，密碼將以 `bcrypt` 雜湊後寫入資料庫。登入成功後，系統將核發 JWT，並可透過 `HttpOnly Cookie` 或 `Bearer Token` 使用後續 API。
-- **個人資料管理**：使用者將可修改名稱、簡介、頭像與密碼，並分別管理個人檔案與偏好設定。
-- **偏好設定**：系統規劃支援語言 (`language`)、主題 (`theme`)、桌面通知 (`notifyDesktop`) 與音效通知 (`notifySound`) 等設定。
-- **帳號刪除**：帳號刪除規劃採軟刪除，不直接移除歷史訊息。已刪除帳號對外將不可再搜尋或登入，但其既有聊天紀錄仍可被其他成員閱讀。
-- **遺言 / 緊急聯絡模式**：使用者將可啟用 `warning_enabled` 並設定 `warning_days`；當超過門檻未活躍時，系統將依 `emergency_contacts` 與 `emergency_alert_logs` 觸發與記錄通知。
+### 1. 帳號與個人設定
+- **註冊與登入**：使用者可透過電子郵件與密碼進行註冊與登入。
+- **個人資料管理**：系統紀錄使用者資訊，如顯示名稱、頭像、個人簡介等，使用者可隨時進行修改。
+- **個人偏好設定**：使用者可自訂系統介面主題（深色/淺色模式）、顯示語言（繁體中文/英文），以及啟用或禁用桌面通知與訊息音效。
+- **帳號刪除**：使用者可申請刪除帳號。帳號刪除後將無法被搜尋且無法再次登入，但為了保持對話歷史的完整性與脈絡，其先前發送的聊天訊息仍會保留並呈現給其他聊天成員。
+- **自動聯絡模式**：使用者可啟用或禁用自動聯絡功能，自訂未上線的天數時限，並指定多位緊急聯絡人以及預設的聯絡訊息。當使用者未活躍上線的天數超過設定時限，系統會自動發送警報並將訊息送達指定的緊急聯絡人。
 
 ### 2. 好友與社交關係管理
-
-- **好友申請**：使用者將可透過搜尋名稱、email 或 user id 發送好友邀請。
-- **好友回應**：被邀請者將可接受或拒絕。接受後，雙方建立 `friendships.status = 'accepted'` 關係。
-- **私聊建立**：接受好友後，系統將先嘗試尋找既有私聊；若不存在，則建立新的 `private` 聊天室並新增雙方 `room_members` 記錄。
-- **封鎖機制**：使用者將可單向封鎖其他使用者。封鎖後，系統將拒絕新的互動請求，必要時可將對應私聊設為唯讀。
-- **一致化回應格式**：對外 REST API 規劃採 camelCase 欄位格式，避免前端在 repository 層以外處理 snake_case。
+- **好友搜尋與邀請**：使用者可透過帳號名稱、電子信箱或使用者 ID 搜尋其他使用者，並送出好友邀請，對方收到通知後可選擇接受或拒絕。
+- **自動建立私聊**：當好友邀請被接受時，系統會建立雙方的好友關係。若雙方先前未曾建立私聊，系統會自動為雙方建立一個新的私訊聊天室；若已存在既有私訊聊天室，系統則會直接導向該聊天室，避免重複建立聊天室。
+- **好友刪除**：使用者可刪除好友關係，刪除後雙方不再是好友，但可重新發送好友邀請。
+- **封鎖機制**：使用者可單向封鎖其他使用者，封鎖後系統將拒絕對方的任何好友邀請或互動請求，且雙方的私訊聊天室將被限制為唯讀狀態。使用者亦可隨時解除封鎖。
 
 ### 3. 聊天室與群組管理
-
-- **聊天室類型**：系統規劃支援 `private` 與 `group` 兩種聊天室。
-- **建立群組**：建立群組時將新增 `chat_rooms` 記錄，並為建立者加入一筆 `room_members(role='owner')`。
-- **群組角色**：
-  - **Owner**：唯一擁有者，可修改群組設定、封存群組、管理角色、轉移 ownership。
-  - **Admin**：協助 Owner 管理成員，可調整暱稱、禁言、處理待審核成員、移除一般成員。
-  - **Member**：一般成員，可傳送訊息、查看歷史訊息、使用邀請碼加入流程。
-  - **Pending**：待審核成員，需經核准後才成為正式成員。
-- **群組設定**：系統規劃支援群組名稱、頭像、是否需審核 (`requireApproval`)、新成員是否可見歷史訊息 (`viewHistory`) 與封存狀態 (`isArchived`)。
-- **群組生命週期**：Owner 若要退出群組，必須先轉移 ownership；群組封存後將進入唯讀狀態，歷史資料仍保留。
+系統支援「私訊」與「群組」兩類聊天室。群組擁有四種身份等級：擁有者、管理員、一般成員、待審核，各自具備不同的操作與管理權限。
+- **一般成員以上權限**：
+  - 設定自己在該群組內的專屬暱稱。
+  - 分享群組邀請代碼。
+- **管理員與擁有者權限**：
+  - 設定群組名稱與群組圖像。
+  - 設定或修改其他成員的群組暱稱。
+  - 控制新加入成員是否能查看加入之前的群組歷史訊息。
+  - 將違規成員禁言（限制其發送訊息的權限）或解除禁言。
+  - 踢出一般成員。
+  - 刪除其他成員發送的訊息。
+  - 開啟或關閉加入審核機制；若開啟，負責審核新成員的加入申請。
+- **僅擁有者權限**：
+  - **群組所有權轉移**：擁有者若欲退出群組，必須先指派並將所有權轉移給群組內的另一位成員，以確保群組在任何時候都有且僅有一位擁有者。
+  - **封存群組**：擁有者可將群組封存，封存後群組將進入唯讀狀態，成員無法再傳送新訊息，但仍可閱讀歷史對話。
+  - **刪除群組**：擁有者可將群組徹底刪除。
+  - 指派或取消管理員身分。
 
 ### 4. 即時訊息與多媒體互動
-
-- **即時訊息傳輸**：系統規劃使用 Socket.IO，提供 `join_room`、`send_message`、`recall_message`、`typing`、`read_receipt` 等事件。
-- **聊天室授權**：Socket 連線規劃須先通過 JWT 驗證；`join_room` 還必須進一步確認該使用者是否為聊天室成員。
-- **訊息回覆與收回**：使用者將可引用既有訊息作為回覆內容，也可收回自己先前送出的訊息。
-- **提及標記**：訊息內的 `@使用者名稱` 將被解析並寫入 `message_mentions`，提供前端後續高亮或通知依據。
-- **附件流程**：附件規劃可先經 `POST /attachments` 上傳，先取得 `attachmentId`；發送訊息時，再透過 `attachmentIds` 將附件綁定到新訊息上。
-- **已讀標示**：系統將以 `room_members.last_read_id` 作為已讀游標；更新時必須驗證 `messageId` 確實屬於該 `roomId`。
-- **刪除帳號的訊息呈現**：若發送者帳號已軟刪除，訊息本體仍保留，但 API 中的 `sender` 將回傳 `null`。
+- **即時訊息傳送**：使用者可在加入的聊天室中發送文字訊息。
+- **訊息回覆與引用**：使用者可指定回覆聊天室中的某一則特定訊息，並在介面上顯示被回覆的引用內容。
+- **提及標記 (@Mention)**：使用者可在訊息中以 `@成員名稱` 的格式標記聊天室內的其他成員。被標記的成員將在介面上獲得高亮顯示或特別通知。
+- **訊息收回**：使用者可收回自己發送的訊息，收回後該訊息內容對所有成員隱藏，不會顯示。
+- **已讀標示**：聊天介面會即時顯示其他成員的已讀進度（顯示誰讀到了哪一則訊息），系統在更新成員已讀進度時會進行房間安全比對，確保不會發生跨聊天室的已讀狀態混亂。
+- **輸入狀態提示**：當使用者正在聊天室內輸入訊息時，其他成員可在聊天介面上看到即時的「正在輸入中...」狀態提示。
+- **媒體附件**：使用者可上傳並發送圖片或檔案作為訊息附件，供聊天室成員下載或預覽。
+- **刪除帳號訊息呈現**：若發送訊息的使用者帳號已被刪除，其發送的歷史訊息仍會保留，但訊息發送者將會顯示為空值（表示發送者已刪除）。
 
 ### 5. 聊天室資料夾分類
+- **建立分類資料夾**：使用者可建立自訂資料夾，並將不同的私聊或群組聊天室加入資料夾中進行分類收納。
+- **收納限制**：每個資料夾均屬於單一使用者。為維持側邊欄清晰度，同一個聊天室在同一位使用者的版面上，只能被歸類到最多一個資料夾中，不可重複分類。
 
-- 使用者將可建立自訂資料夾（如「學術討論」、「休閒生活」、「工作組別」）。
-- 每個資料夾將屬於單一使用者，透過 `folder_rooms` 維護與聊天室的多對多對應。
-- 同一使用者不可將同一聊天室同時放入兩個資料夾，這項限制將由 `UNIQUE (user_id, room_id)` 保證。
+## 四、系統功能實作規劃
 
-## 五、系統功能實作規劃
+### 1. 系統流程
 
-### 1. 核心業務流程圖 (Core Business Flowcharts)
-
-以下流程圖描述本系統最終規劃中的主要 API、Service、Repository 與 PostgreSQL 資料流向。
-
-#### A. 身分驗證與註冊流程
+#### 身分驗證與註冊流程
 
 ```mermaid
 flowchart TD
@@ -279,13 +222,12 @@ flowchart TD
     RedirectMain --> End([結束])
 ```
 
-#### B. 好友社交與封鎖邏輯流程
+#### 好友社交與封鎖邏輯流程
 
+##### 1. 發送好友邀請流程
 ```mermaid
 flowchart TD
-    Start([開始]) --> Action{選擇社交動作}
-
-    Action -- 發送好友邀請 --> CheckSelf{是否為自己？}
+    Start([開始]) --> CheckSelf{是否為自己？}
     CheckSelf -- 是 --> FailMsg[拒絕操作並報錯]
     CheckSelf -- 否 --> CheckBlocked{雙方是否存在封鎖關係？}
     CheckBlocked -- 是 --> FailMsg
@@ -293,56 +235,70 @@ flowchart TD
     CheckPending -- 是 --> FailMsg
     CheckPending -- 否 --> InsertFriend[(寫入 friendships, status='pending')]
     InsertFriend --> NotifyUser[透過 Socket 發送好友邀請通知] --> End([結束])
+```
 
-    Action -- 回應好友邀請 --> AcceptOrReject{接受或拒絕？}
+##### 2. 回應好友邀請流程
+```mermaid
+flowchart TD
+    Start([開始]) --> AcceptOrReject{接受或拒絕？}
     AcceptOrReject -- 接受 --> UpdateFriendAccepted[(更新 friendships 為 accepted)]
     UpdateFriendAccepted --> FindPrivateRoom{是否已有既有私聊？}
     FindPrivateRoom -- 是 --> ReturnExistingRoom[回傳既有 private room]
     FindPrivateRoom -- 否 --> CreatePrivateRoom[(建立 private chat_rooms)]
     CreatePrivateRoom --> InsertRoomMembers[(寫入雙方 room_members)]
-    ReturnExistingRoom --> End
+    ReturnExistingRoom --> End([結束])
     InsertRoomMembers --> End
 
     AcceptOrReject -- 拒絕 --> DeletePending[(刪除 pending 好友邀請)] --> End
-
-    Action -- 封鎖對象 --> InsertBlock[(寫入 blocks)]
-    InsertBlock --> SetRoomReadonly[若存在私聊則設為 is_readonly=true]
-    SetRoomReadonly --> End
 ```
 
-#### C. 聊天室與群組生命週期流程
-
+##### 3. 封鎖對象流程
 ```mermaid
 flowchart TD
-    Start([開始]) --> GroupAction{群組操作類型}
+    Start([開始]) --> InsertBlock[(寫入 blocks)]
+    InsertBlock --> SetRoomReadonly[若存在私聊則設為 is_readonly=true]
+    SetRoomReadonly --> End([結束])
+```
 
-    GroupAction -- 建立群組 --> CreateGroupRoom[(寫入 chat_rooms, type='group')]
+#### 聊天室與群組生命週期流程
+
+##### 1. 建立群組流程
+```mermaid
+flowchart TD
+    Start([開始]) --> CreateGroupRoom[(寫入 chat_rooms, type='group')]
     CreateGroupRoom --> InsertOwnerMember[(寫入 room_members, role='owner')]
     InsertOwnerMember --> InitFolder{是否加入資料夾？}
     InitFolder -- 是 --> GroupFolderMapping[(寫入 folder_rooms)] --> End([結束])
-    InitFolder -- 否 --> End
+    InitFolder -- 否 --> End([結束])
+```
 
-    GroupAction -- 加入成員 --> JoinMethod{加入方式}
-    JoinMethod -- 邀請碼加入 --> ValidateInvite[驗證 invite_code 與聊天室狀態]
-    ValidateInvite --> ReviewNeeded{是否需審核？}
-    ReviewNeeded -- 是 --> InsertPending[(寫入 room_members, role='pending')] --> End
-    ReviewNeeded -- 否 --> InsertNewMember[(寫入 room_members, role='member')] --> End
-    JoinMethod -- Owner 或 Admin 邀請 --> CheckInvitePerm{操作者是否具備邀請權限？}
-    CheckInvitePerm -- 否 --> DenyAlert[權限不足] --> End
-    CheckInvitePerm -- 是 --> InsertNewMember
+##### 2. 使用邀請碼加入群組流程
+```mermaid
+flowchart TD
+    Start([開始]) --> ReviewNeeded{是否需審核？}
+    ReviewNeeded -- 是 --> InsertPending[(寫入 room_members, role='pending')] --> End([結束])
+    ReviewNeeded -- 否 --> InsertNewMember[(寫入 room_members, role='member')] --> End([結束])
+```
 
-    GroupAction -- 退出群組 --> CheckRole{成員角色}
-    CheckRole -- 一般成員或管理員 --> DeleteMember[(刪除 room_members)] --> End
+##### 3. 退出群組流程
+```mermaid
+flowchart TD
+    Start([開始]) --> CheckRole{成員角色}
+    CheckRole -- 一般成員或管理員 --> DeleteMember[(刪除 room_members)] --> End([結束])
     CheckRole -- 擁有者 --> NeedTransfer[需先轉移 ownership]
     NeedTransfer --> TransferFlow[指定新 owner]
     TransferFlow --> DBUpdateOwner[(更新舊 owner 為 member, 新 owner 為 owner)]
     DBUpdateOwner --> DeleteMember
-
-    GroupAction -- 封存群組 --> ArchiveRoom[(更新 chat_rooms.is_archived=true)]
-    ArchiveRoom --> End
 ```
 
-#### D. 即時訊息發送與讀取狀態流程
+##### 4. 封存群組流程
+```mermaid
+flowchart TD
+    Start([開始]) --> ArchiveRoom[(更新 chat_rooms.is_archived=true)]
+    ArchiveRoom --> End([結束])
+```
+
+#### 即時訊息發送與讀取狀態流程
 
 ```mermaid
 flowchart TD
@@ -356,7 +312,7 @@ flowchart TD
     CheckRoomState -- 否 --> ErrorDeny[回傳 403 或 error]
     CheckRoomState -- 是 --> CheckMuted{是否被禁言？}
     CheckMuted -- 是 --> ErrorDeny
-    CheckMuted -- 否 --> ValidateAttachments{attachmentIds 是否存在且可綁定？}
+    CheckMuted -- 否 --> ValidateAttachments{附件是否存在且可綁定？}
     ValidateAttachments -- 否 --> ErrorDeny
     ValidateAttachments -- 是 --> InsertMsg[(寫入 messages)]
     InsertMsg --> BindAttachments[(更新 attachments.message_id)]
@@ -364,17 +320,17 @@ flowchart TD
     ParseMentions -- 是 --> ResolveUsers[解析聊天室內使用者]
     ResolveUsers --> InsertMentions[(寫入 message_mentions)]
     ResolveUsers --> EmitRealtime
-    ParseMentions -- 否 --> EmitRealtime[透過 Socket.IO 廣播 new_message]
+    ParseMentions -- 否 --> EmitRealtime[透過 Socket.io 廣播給其他成員]
 
     EmitRealtime --> ReceiversRead[其他成員閱讀訊息]
-    ReceiversRead --> EmitReadReceipt[客戶端送出 read_receipt]
+    ReceiversRead --> EmitReadReceipt[客戶端送出已讀回應]
     EmitReadReceipt --> CheckMsgRoom{messageId 是否屬於該 roomId？}
     CheckMsgRoom -- 否 --> IgnoreReceipt[拒絕更新並回傳 error]
     CheckMsgRoom -- 是 --> DBUpdateRead[(更新 room_members.last_read_id)]
     DBUpdateRead --> EmitReadUpdate[廣播 read_update] --> End([結束])
 ```
 
-#### E. 緊急聯絡與不活躍檢查流程
+#### 緊急聯絡與不活躍檢查流程
 
 ```mermaid
 flowchart TD
@@ -391,82 +347,56 @@ flowchart TD
     CheckAlreadyAlerted -- 否 --> FetchContacts[查詢 emergency_contacts]
     FetchContacts --> LoopContacts{逐一通知聯絡人}
 
-    LoopContacts -- 有聯絡人 --> SendAlert[發送 emergency_alert 通知]
+    LoopContacts -- 有聯絡人 --> SendAlert[發送訊息通知]
     SendAlert --> LoopContacts
     LoopContacts -- 結束 --> InsertLog[(寫入 emergency_alert_logs)] --> LoopUsers
 ```
 
 ### 2. 介面設計規劃
-
-本系統介面將遵循 **Border UI** 的極簡規範，強調清晰邊界、明確資訊層級與高密度工作介面。
-
 - **A. 登入與註冊頁面**
-  - 將提供 email、password 與必要註冊欄位。
-  - 登入成功後將自動建立授權狀態並導向主對話頁。
+  - 註冊提供 email, password, name 等基本欄位，其餘之後至個人設定頁面中設定。
+  - 登入成功後導向主界面。
 
 - **B. 主介面**
-  - 將採三欄配置：左側資料夾與聊天室列表、中間訊息區、右側群組成員欄。
+  - 以類似分頁的型態切換四個頁面：聊天室、好友列表（包含新增好友與同意邀請功能）、緊急自動聯絡設定、個人設定
+  - 聊天室採三欄配置：左側資料夾與聊天室列表、中間訊息區、右側群組為成員列表，私聊顯示好友個人資料。
   - 訊息區規劃支援回覆、提及、附件下載、已讀標示與輸入中提示。
-  - 封存或唯讀聊天室在輸入區應有明確禁用狀態。
 
-- **C. 設定頁面**
-  - 將區分個人資料、偏好設定與安全設定。
-  - 偏好設定將包含 `language`、`theme`、`notifyDesktop`、`notifySound`。
-  - 安全設定將包含密碼變更、緊急聯絡人管理與自動警示天數設定。
+### 3. 專案開發技術
 
-### 3. 連結資料庫與分層實作技術
+採用容器化開發，將系統劃分為前端、後端與資料庫，並以 Docker Compose 進行本機與部署的統籌管理。
 
-#### A. 資料庫連線與操作
+#### Docker 容器化技術
+- 使用 `Docker Compose` 來統籌並連接三個主要容器服務：`db`、`backend`以及 `frontend`。
+- 所有環境變數皆於專案根目錄的 `.env` 檔中統一宣告，由 Docker Compose 自動注入各個容器，確保開發與生產環境設定分離。
 
-- 後端規劃使用 Node.js 官方 PostgreSQL 客戶端 `pg`，於 `src/db.ts` 建立共享 `pg.Pool`。
-- 所有資料異動皆採參數化 SQL，例如：
+#### 前端開發技術
+- 採用 `Next.js` 框架開發。
+- 使用 React Context (`ChatContext`) 管理全域對話狀態與認證狀態；即時連線方面使用 `socket.io-client` 處理 WebSocket 即時事件。
 
-```sql
-INSERT INTO users (name, email, password_hash) VALUES ($1, $2, $3);
-```
+#### 後端開發技術
+- 使用 `Node.js`、`Express` 與 `TypeScript` 建立 RESTful API 伺服器，並搭載 `Socket.IO` 實作實時雙向事件發送。
+- 身分驗證基於 `JSON Web Token (JWT)`，密碼加密採用 `bcryptjs` 進行高安全性單向雜湊。
+- 使用 `Routes -> Controllers -> Services -> Repositories` 分層設計。
+  1. **Routes**：定義 REST API 與 middleware 組裝方式。
+  2. **Controllers**：處理 HTTP request / response，呼叫對應的 Service 來執行核心邏輯。
+  3. **Services**：封裝系統規則邏輯，例如群組權限檢查、封鎖限制、訊息驗證。
+  4. **Repositories**：與資料庫溝通，使用 SQL 操作資料庫。
 
-- 透過參數化查詢，可避免 SQL Injection，並維持 Repository 層的查詢可讀性與可測試性。
 
-#### B. 資料庫版本控制與遷移管理
+#### 資料庫管理與操作 
+- 使用 `PostgreSQL` 作為系統的主要關聯式資料庫。
+- 使用原生 `pg` 客戶端連線池 (`pg.Pool`) 直接對資料庫下達參數化 SQL 查詢指令，確保最優化且安全的 SQL 語法執行速度。
+- 使用 `node-pg-migrate` 管理資料庫結構版本，以 SQL Migration 腳本形式紀錄資料表的每一次結構變動。
 
-- 本專案規劃使用 `node-pg-migrate` 管理 schema 版本。
-- migration 除建立資料表外，也將包含：
-  - `chat_rooms.invite_code` 的 partial unique index
-  - `messages(room_id, sent_at DESC, message_id DESC)` 的複合分頁索引
-  - `users.deleted_at`、`attachments.uploaded_by` 等後續擴充欄位
-  - 無法自指的 check constraints，例如 `friendships_no_self_friendship`
-
-#### C. 後端分層架構設計
-
-後端規劃採用 `Routes -> Controllers -> Services -> Repositories` 分層設計：
-
-1. **Routes**：定義 REST API 與 middleware 組裝方式。
-2. **Controllers**：處理 HTTP request / response，不直接撰寫業務邏輯與 SQL。
-3. **Services**：封裝商業規則，例如群組權限檢查、封鎖限制、私聊 open-or-create、訊息驗證。
-4. **Repositories**：專注於 SQL 與資料映射，包含訊息分頁、附件綁定、好友關係查詢等細節。
-
-#### D. Socket 與資料庫寫入協同
-
-- `send_message` 事件將先驗證成員資格、聊天室狀態、附件綁定資格，再將訊息寫入 PostgreSQL。
-- 寫入成功後，系統將廣播完整的 `MessageWithSender` 結構，包含 `messageId`、`sentAt`、`attachments`、`mentions` 與 `sender`。
-- `read_receipt` 與 `join_room` 都必須先通過授權驗證，以避免跨房間竄改或竊聽。
-- Socket 錯誤事件與 HTTP 錯誤回應應維持一致的 `statusCode / message / code` 結構。
-
-#### E. 範圍界定
-
-- v1 版本規劃不納入端對端加密。
-- 若後續要納入 E2E encryption，則需重新設計金鑰管理、密文 payload、附件加密與本地搜尋策略。
-
-## 六、預定工作分配
+## 五、預定工作分配
 
 - 楊銘煌：前端界面設計、好友功能、Docker 維護
 - 姚承希：前端架構、聊天室
 - 趙偉恆：使用者帳號、緊急聯絡功能
 - 江禹叡：後端伺服器架構、聊天訊息
 
-## 附錄：Report 1 內容
-
-# Project Report 1
+# 附錄：Project Report 1
 
 ## 專題名稱
 即時文字通訊系統
@@ -486,9 +416,6 @@ INSERT INTO users (name, email, password_hash) VALUES ($1, $2, $3);
 ### 第二階段目標（Out of Scope）
 
 在第一階段實做完成後，挑戰導入端對端加密（E2E Encryption），讓歷史訊息以密文形式儲存於資料庫，並實作前端本地解密搜尋，達到極致的隱私安全。
-
-> [!NOTE]
-> 此功能已被評估為 **Out of Scope**，目前 v1 版本後端僅儲存明文訊息，前端亦不進行本地加解密。此目標僅保留作為未來專案進階擴展的挑戰方向。
 
 ## 2. 名詞界定
 

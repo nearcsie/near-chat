@@ -17,6 +17,7 @@ CREATE INDEX IF NOT EXISTS idx_attachments_message_id ON attachments (message_id
 CREATE INDEX IF NOT EXISTS idx_messages_sender_id ON messages (sender_id);
 
 -- user search: pg_trgm GIN index for efficient ILIKE '%query%', partial for active users only
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
 CREATE INDEX IF NOT EXISTS idx_users_name_trgm ON users USING gin (name gin_trgm_ops) WHERE deleted_at IS NULL;
 
 --- Down migration

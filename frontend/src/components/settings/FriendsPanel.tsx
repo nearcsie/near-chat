@@ -111,7 +111,7 @@ export default function FriendsPanel() {
         </section>
 
         <section className="border border-border-primary rounded-sm bg-surface-card">
-          <PanelHeader title={t("friends.addFriend")} meta={t("friends.mockRequest")} />
+          <PanelHeader title={t("friends.addFriend")} meta={t("friends.liveRequest")} />
           <form onSubmit={handleSendRequest} className="p-4 flex flex-col gap-4">
             <Input
               label={t("friends.searchPlaceholder") + " / User ID / Email"}
