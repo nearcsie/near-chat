@@ -97,8 +97,10 @@ export interface ChatRoom {
 export interface Message {
   id: string;
   roomId: string;
+  senderId: string | null;
   senderName: string;
   content: string;
+  sentAt: string;
   timestamp: string;
   isOutgoing?: boolean;
   isRecalled?: boolean;
@@ -107,6 +109,7 @@ export interface Message {
     content: string;
   } | null;
   attachments?: { filename: string; filetype: string; url?: string }[];
+  mentions?: string[];
   isRead?: boolean;
 }
 
@@ -294,16 +297,30 @@ const mapAttachment = (attachment: ApiAttachment) => {
   };
 };
 
+const summarizeMessagePreview = (message: {
+  content: string;
+  attachments?: { filename: string }[];
+  isRecalled?: boolean;
+}) => {
+  if (message.isRecalled) return "";
+  if (message.content.trim()) return message.content.trim();
+  if (message.attachments?.length) return message.attachments[0].filename;
+  return "";
+};
+
 const mapMessage = (message: MessageWithSender, currentUserId?: string): Message => ({
   id: message.messageId,
   roomId: message.roomId,
+  senderId: message.senderId,
   senderName: message.sender?.name ?? "Deleted User",
   content: message.content,
+  sentAt: new Date(message.sentAt).toISOString(),
   timestamp: formatMessageTime(message.sentAt),
   isOutgoing: Boolean(currentUserId && message.senderId === currentUserId),
   isRecalled: message.isRecalled,
   replyTo: null,
   attachments: message.attachments?.map(mapAttachment) ?? [],
+  mentions: message.mentions ?? [],
 });
 
 const mapRooms = (
@@ -311,7 +328,7 @@ const mapRooms = (
   apiFolders: ApiFolder[],
   currentRooms: ChatRoom[],
 ): ChatRoom[] => {
-  const collapsedById = new Map(currentRooms.map((room) => [room.id, room.folderId]));
+  const currentRoomById = new Map(currentRooms.map((room) => [room.id, room]));
   const folderByRoom = new Map<string, string>();
   for (const folder of apiFolders) {
     for (const roomId of folder.roomIds) {
@@ -319,17 +336,36 @@ const mapRooms = (
     }
   }
 
-  return apiRooms.map((room) => ({
-    id: room.roomId,
-    type: room.type === "group" ? "group" : "msg",
-    name: room.name || `Private ${room.roomId.slice(0, 8)}`,
-    folderId: folderByRoom.get(room.roomId) ?? collapsedById.get(room.roomId) ?? null,
-    inviteCode: room.inviteCode,
-    requireApproval: room.requireApproval,
-    viewHistory: room.viewHistory,
-    isArchived: room.isArchived,
-    members: room.type === "group" ? [] : undefined,
-  }));
+  return apiRooms.map((room) => {
+    const currentRoom = currentRoomById.get(room.roomId);
+    const latestMessage =
+      room.latestMessage
+        ? {
+            content: room.latestMessage.content,
+            attachments: [],
+            isRecalled: false,
+          }
+        : null;
+
+    return {
+      id: room.roomId,
+      type: room.type === "group" ? "group" : "msg",
+      name: room.name || `Private ${room.roomId.slice(0, 8)}`,
+      folderId: folderByRoom.get(room.roomId) ?? currentRoom?.folderId ?? null,
+      inviteCode: room.inviteCode,
+      requireApproval: room.requireApproval,
+      viewHistory: room.viewHistory,
+      isArchived: room.isArchived,
+      members: currentRoom?.members ?? (room.type === "group" ? [] : undefined),
+      unreadCount: room.unreadCount ?? currentRoom?.unreadCount ?? 0,
+      lastMessagePreview: latestMessage
+        ? summarizeMessagePreview(latestMessage)
+        : currentRoom?.lastMessagePreview,
+      lastMessageAt: room.latestMessage
+        ? formatMessageTime(room.latestMessage.sentAt)
+        : currentRoom?.lastMessageAt,
+    };
+  });
 };
 
 const mapFolders = (apiFolders: ApiFolder[], currentFolders: Folder[]): Folder[] => {
@@ -404,7 +440,11 @@ const findRequestedUser = (
 };
 
 const sortMessages = (items: Message[]) =>
-  [...items].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+  [...items].sort((a, b) => {
+    const sentAtCompare = new Date(a.sentAt).getTime() - new Date(b.sentAt).getTime();
+    if (sentAtCompare !== 0) return sentAtCompare;
+    return a.id.localeCompare(b.id);
+  });
 
 export function ChatProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -634,6 +674,17 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         const withoutDuplicate = current.filter((message) => message.id !== incoming.id);
         return sortMessages([...withoutDuplicate, incoming]);
       });
+      setRooms((current) =>
+        current.map((room) =>
+          room.id === incoming.roomId
+            ? {
+                ...room,
+                lastMessagePreview: summarizeMessagePreview(incoming),
+                lastMessageAt: incoming.timestamp,
+              }
+            : room,
+        ),
+      );
     });
     const cleanupRecall = onMessageRecalled(socket, ({ messageId }) => {
       setMessages((current) =>
