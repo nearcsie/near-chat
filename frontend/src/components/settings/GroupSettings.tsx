@@ -27,6 +27,8 @@ export default function GroupSettings({ roomId, onClose }: GroupSettingsProps) {
     transferGroupOwner,
     handleDeleteGroupRoom,
     searchUsersForInvite,
+    handleOpenPrivateRoom,
+    handleSendMessage,
   } = useChat();
 
   const activeRoom = rooms.find((room) => room.id === roomId);
@@ -212,14 +214,19 @@ export default function GroupSettings({ roomId, onClose }: GroupSettingsProps) {
     }, 400);
   };
 
-  const handleCopyCodeForUser = async (userName: string) => {
+  const handleSendInviteMessage = async (targetUser: PublicUser) => {
     const code = activeRoom.inviteCode;
-    if (!code) return;
+    if (!code) {
+      setFeedback("此群組尚未產生邀請碼，無法傳送邀請");
+      return;
+    }
     try {
-      await navigator.clipboard.writeText(code);
-      setFeedback(`邀請碼已複製！請將邀請碼分享給 ${userName}`);
-    } catch {
-      window.prompt(`請將以下邀請碼分享給 ${userName}：`, code);
+      const privateRoomId = await handleOpenPrivateRoom(targetUser.userId);
+      const msg = `【群組邀請】\n我邀請你加入群組「${activeRoom.name}」！\n邀請碼：${code}`;
+      handleSendMessage(privateRoomId, msg, null);
+      setFeedback(`已傳送邀請訊息給 ${targetUser.name}`);
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : "傳送邀請失敗");
     }
   };
 
@@ -309,9 +316,9 @@ export default function GroupSettings({ roomId, onClose }: GroupSettingsProps) {
                           type="button"
                           variant="secondary"
                           className="text-[10px] py-1 px-2"
-                          onClick={() => void handleCopyCodeForUser(u.name)}
+                          onClick={() => void handleSendInviteMessage(u)}
                         >
-                          複製邀請碼給此用戶
+                          傳送邀請訊息
                         </Button>
                       </div>
                     ))}
