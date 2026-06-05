@@ -61,6 +61,7 @@ import {
 import {
   createChatSocket,
   joinRoom,
+  onEmergencyAlert,
   onFriendRequest,
   onMessageRecalled,
   onNewMessage,
@@ -793,6 +794,9 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     const cleanupFriendRequest = onFriendRequest(socket, () => {
       void refreshSocialData(token);
     });
+    const cleanupEmergencyAlert = onEmergencyAlert(socket, (payload) => {
+      window.alert(`[EMERGENCY ALERT]\nFrom User: ${payload.userId}\nMessage: ${payload.message}`);
+    });
 
     socket.on("connect", joinKnownRooms);
     socket.connect();
@@ -804,6 +808,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       cleanupTyping();
       cleanupError();
       cleanupFriendRequest();
+      cleanupEmergencyAlert();
       socket.off("connect", joinKnownRooms);
       socket.disconnect();
       if (socketRef.current === socket) {
