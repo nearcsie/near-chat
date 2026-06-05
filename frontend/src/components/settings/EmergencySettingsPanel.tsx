@@ -10,15 +10,46 @@ import FeedbackMessage, { SettingsFeedback } from "@/components/settings/Feedbac
 import SectionTitle from "@/components/settings/SectionTitle";
 import { useTranslation } from "@/hooks/useTranslation";
 
+const manualAlertCopy = {
+  "zh-TW": {
+    title: "手動緊急警報",
+    description: "立即向目前設定的緊急聯絡人發送一則測試警報。",
+    send: "立即發送警報",
+    sending: "警報發送中...",
+    sent: "已成功送出緊急警報給 {count} 位聯絡人。",
+    noContacts: "請先新增至少一位緊急聯絡人，再發送警報。",
+    skipped: "緊急警報未送出（{reason}）。",
+    failed: "發送緊急警報失敗。",
+  },
+  en: {
+    title: "Manual emergency alert",
+    description: "Send a test emergency alert immediately to your current emergency contacts.",
+    send: "Send alert now",
+    sending: "Sending alert...",
+    sent: "Emergency alert sent to {count} contact(s).",
+    noContacts: "Add at least one emergency contact before sending an alert.",
+    skipped: "Emergency alert was not sent ({reason}).",
+    failed: "Failed to send emergency alert.",
+  },
+} as const;
+
 export default function EmergencySettingsPanel() {
   const router = useRouter();
-  const { rooms, friends, emergencySettings, saveEmergencySettings } = useChat();
+  const {
+    rooms,
+    friends,
+    emergencySettings,
+    saveEmergencySettings,
+    triggerEmergencyAlertNow,
+  } = useChat();
   const [warningEnabled, setWarningEnabled] = useState(true);
   const [warningDays, setWarningDays] = useState(7);
   const [emergencyContacts, setEmergencyContacts] = useState<EmergencyContact[]>([]);
   const [defaultEmergencyMessage, setDefaultEmergencyMessage] = useState("");
   const [feedback, setFeedback] = useState<SettingsFeedback | null>(null);
-  const { t } = useTranslation();
+  const [isTriggeringAlert, setIsTriggeringAlert] = useState(false);
+  const { t, locale } = useTranslation();
+  const manualAlertText = manualAlertCopy[locale];
 
   useEffect(() => {
     setWarningEnabled(emergencySettings.warningEnabled);
@@ -80,6 +111,41 @@ export default function EmergencySettingsPanel() {
     }
   };
 
+  const handleTriggerAlert = async () => {
+    setFeedback(null);
+    setIsTriggeringAlert(true);
+
+    try {
+      const result = await triggerEmergencyAlertNow(defaultEmergencyMessage);
+
+      if (result.alerted) {
+        setFeedback({
+          type: "success",
+          text: manualAlertText.sent.replace("{count}", String(result.recipients.length)),
+        });
+        return;
+      }
+
+      if (result.reason === "NO_CONTACTS") {
+        setFeedback({ type: "error", text: manualAlertText.noContacts });
+        return;
+      }
+
+      setFeedback({
+        type: "error",
+        text: manualAlertText.skipped.replace("{reason}", result.reason ?? "UNKNOWN"),
+      });
+    } catch (error) {
+      console.error(error);
+      setFeedback({
+        type: "error",
+        text: error instanceof Error ? error.message : manualAlertText.failed,
+      });
+    } finally {
+      setIsTriggeringAlert(false);
+    }
+  };
+
   return (
     <>
       <FeedbackMessage feedback={feedback} />
@@ -106,6 +172,17 @@ export default function EmergencySettingsPanel() {
               onChange={(event) => setDefaultEmergencyMessage(event.target.value)}
             />
           </div>
+        </div>
+
+        <SectionTitle title={manualAlertText.title} />
+        <div className="border border-border-primary rounded-sm bg-surface-card p-4 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div className="max-w-2xl">
+            <p className="text-sm font-semibold text-foreground">{manualAlertText.title}</p>
+            <p className="mt-1 text-xs text-text-muted">{manualAlertText.description}</p>
+          </div>
+          <Button type="button" variant="primary" disabled={isTriggeringAlert} onClick={() => void handleTriggerAlert()}>
+            {isTriggeringAlert ? manualAlertText.sending : manualAlertText.send}
+          </Button>
         </div>
 
         <SectionTitle title={t("emergency.emergencyContacts")} />

@@ -27,6 +27,7 @@ import {
   createPrivateRoom,
   deleteEmergencyContact,
   deleteFriend,
+  deleteFolder as deleteFolderApi,
   getBlockedUsers,
   getMe,
   getMySettings,
@@ -44,6 +45,7 @@ import {
   respondFriendRequest,
   searchUsers,
   sendFriendRequest as sendFriendRequestApi,
+  triggerEmergencyAlert as triggerEmergencyAlertApi,
   unblockUser as unblockUserApi,
   updateFolderRooms,
   updateMe,
@@ -171,6 +173,12 @@ export interface EmergencySettings {
   contacts: EmergencyContact[];
 }
 
+interface TriggerEmergencyAlertResult {
+  alerted: boolean;
+  recipients: string[];
+  reason?: string;
+}
+
 export type UiLanguage = "zh-TW" | "en";
 
 export const getAvatarForUser = (
@@ -237,6 +245,7 @@ interface ChatContextType {
   handleCreateRoom: (name: string, type: "msg" | "group", folderId: string) => Promise<string>;
   handleOpenPrivateRoom: (targetUserId: string) => Promise<string>;
   handleCreateFolder: (name: string) => Promise<void>;
+  handleDeleteFolder: (folderId: string) => Promise<void>;
   handleCategorizeRoom: (roomId: string, folderId: string | null) => Promise<void>;
   handleModifyNickname: (roomId: string, nickname: string) => void;
   handleLeaveOrBlock: (roomId: string) => Promise<{ isDeleted: boolean; newActiveId?: string }>;
@@ -261,6 +270,7 @@ interface ChatContextType {
   blockFriend: (friendId: string) => Promise<void>;
   unblockUser: (blockedId: string) => Promise<void>;
   saveEmergencySettings: (settings: EmergencySettings) => Promise<void>;
+  triggerEmergencyAlertNow: (message?: string) => Promise<TriggerEmergencyAlertResult>;
   setUiLanguage: (language: UiLanguage) => void;
 }
 
@@ -380,6 +390,9 @@ const mapFolders = (apiFolders: ApiFolder[], currentFolders: Folder[]): Folder[]
 
 const normalizeLanguage = (language?: string): UiLanguage =>
   language === "zh-TW" || language === "en" ? language : "en";
+
+const formatUploadedAttachmentMessage = (language: UiLanguage, fileName: string) =>
+  language === "zh-TW" ? `已上傳附件：${fileName}` : `Shared attachment: ${fileName}`;
 
 const mapFriend = (item: FriendResponse, emergencyContactIds: Set<string>): Friend => ({
   id: item.friend.userId,
@@ -826,7 +839,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     const uploaded = await uploadAttachment(token, file);
     sendMessage(socketRef.current, {
       roomId,
-      content: `Uploaded ${file.name}`,
+      content: formatUploadedAttachmentMessage(uiLanguage, file.name),
       attachmentIds: [uploaded.attachmentId],
     });
   };
@@ -869,6 +882,18 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     if (!token) return;
     const folder = await createFolder(token, name);
     setFolders((current) => [...current, { id: folder.folderId, name: folder.name, collapsed: false }]);
+  };
+
+  const handleDeleteFolder = async (folderId: string) => {
+    if (!token) return;
+
+    await deleteFolderApi(token, folderId);
+    setFolders((current) => current.filter((folder) => folder.id !== folderId));
+    setRooms((current) =>
+      current.map((room) =>
+        room.folderId === folderId ? { ...room, folderId: null } : room,
+      ),
+    );
   };
 
   const handleCategorizeRoom = async (roomId: string, folderId: string | null) => {
@@ -1174,6 +1199,14 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     }));
   };
 
+  const triggerEmergencyAlertNow = async (message?: string): Promise<TriggerEmergencyAlertResult> => {
+    if (!token) {
+      throw new Error("Not authenticated");
+    }
+
+    return triggerEmergencyAlertApi(token, message?.trim() ? message.trim() : undefined);
+  };
+
   const setUiLanguage = (language: UiLanguage) => {
     localStorage.setItem("language", language);
     setUiLanguageState(language);
@@ -1304,6 +1337,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         handleCreateRoom,
         handleOpenPrivateRoom,
         handleCreateFolder,
+        handleDeleteFolder,
         handleCategorizeRoom,
         handleModifyNickname,
         handleLeaveOrBlock,
@@ -1323,6 +1357,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         blockFriend,
         unblockUser,
         saveEmergencySettings,
+        triggerEmergencyAlertNow,
         setUiLanguage,
       }}
     >

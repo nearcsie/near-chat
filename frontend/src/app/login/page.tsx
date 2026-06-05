@@ -8,6 +8,24 @@ import { Button } from "@/components/ui/Button";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { login } from "@/lib/api";
 
+const getFriendlyLoginError = (error: unknown) => {
+  const message = error instanceof Error ? error.message : "";
+
+  if (message === "Invalid email or password") {
+    return "帳號或密碼錯誤，請重新確認後再試一次。";
+  }
+
+  if (message === "Invalid email format") {
+    return "Email 格式不正確，請重新輸入。";
+  }
+
+  if (message === "Failed to fetch" || message.includes("fetch")) {
+    return "目前無法連線到伺服器，請確認系統服務已啟動後再試一次。";
+  }
+
+  return "登入失敗，請稍後再試一次。";
+};
+
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
@@ -19,11 +37,11 @@ export default function LoginPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) {
-      setError("Please enter email and password.");
+      setError("請輸入 Email 與密碼。");
       return;
     }
     if (password.length < 8) {
-      setError("Password must be at least 8 characters.");
+      setError("密碼至少需要 8 個字元。");
       return;
     }
 
@@ -43,7 +61,7 @@ export default function LoginPage() {
       );
       router.push("/");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Login failed.");
+      setError(getFriendlyLoginError(err));
     } finally {
       setIsSubmitting(false);
     }
