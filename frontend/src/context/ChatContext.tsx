@@ -391,6 +391,9 @@ const mapFolders = (apiFolders: ApiFolder[], currentFolders: Folder[]): Folder[]
 const normalizeLanguage = (language?: string): UiLanguage =>
   language === "zh-TW" || language === "en" ? language : "en";
 
+const formatUploadedAttachmentMessage = (language: UiLanguage, fileName: string) =>
+  language === "zh-TW" ? `已上傳附件：${fileName}` : `Shared attachment: ${fileName}`;
+
 const mapFriend = (item: FriendResponse, emergencyContactIds: Set<string>): Friend => ({
   id: item.friend.userId,
   name: item.friend.name,
@@ -836,7 +839,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     const uploaded = await uploadAttachment(token, file);
     sendMessage(socketRef.current, {
       roomId,
-      content: `Uploaded ${file.name}`,
+      content: formatUploadedAttachmentMessage(uiLanguage, file.name),
       attachmentIds: [uploaded.attachmentId],
     });
   };
