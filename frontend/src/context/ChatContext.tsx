@@ -30,6 +30,7 @@ import {
   deleteFolder as deleteFolderApi,
   getBlockedUsers,
   getMe,
+  joinRoomByCode,
   getMySettings,
   getUserProfile,
   kickRoomMember,
@@ -263,6 +264,8 @@ interface ChatContextType {
   handleDeleteGroupRoom: (roomId: string) => Promise<string | null>;
   getReadAvatarsForMessage: (room: ChatRoom, msg: Message) => string[];
 
+  searchUsersForInvite: (query: string) => Promise<PublicUser[]>;
+  handleJoinByInviteCode: (inviteCode: string) => Promise<string>;
   sendFriendRequest: (query: string) => Promise<void>;
   acceptFriendRequest: (requestId: string) => Promise<void>;
   rejectFriendRequest: (requestId: string) => Promise<void>;
@@ -1095,6 +1098,20 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       .map(() => "");
   };
 
+  const searchUsersForInvite = async (query: string): Promise<PublicUser[]> => {
+    if (!token) throw new Error("Not authenticated");
+    const trimmed = query.trim();
+    if (!trimmed) return [];
+    return searchUsers(token, { query: trimmed });
+  };
+
+  const handleJoinByInviteCode = async (inviteCode: string): Promise<string> => {
+    if (!token) throw new Error("Not authenticated");
+    const room = await joinRoomByCode(token, inviteCode.trim());
+    await refreshRoomsAndFolders(token);
+    return room.roomId;
+  };
+
   const sendFriendRequest = async (query: string) => {
     if (!token) throw new Error("Not authenticated");
     const trimmedQuery = query.trim();
@@ -1350,6 +1367,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         transferGroupOwner,
         handleDeleteGroupRoom,
         getReadAvatarsForMessage,
+        searchUsersForInvite,
+        handleJoinByInviteCode,
         sendFriendRequest,
         acceptFriendRequest,
         rejectFriendRequest,

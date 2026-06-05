@@ -241,6 +241,16 @@ export const createPrivateRoom = (token: string, data: CreatePrivateRequest): Pr
     { token },
   );
 
+export const joinRoomByCode = (token: string, inviteCode: string): Promise<Room> =>
+  requestJson<Room>(
+    '/rooms/join',
+    {
+      method: 'POST',
+      ...withJsonBody({ inviteCode }),
+    },
+    { token },
+  );
+
 export const updateRoom = (
   token: string,
   roomId: string,

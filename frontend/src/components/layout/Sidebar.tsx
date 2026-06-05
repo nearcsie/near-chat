@@ -25,6 +25,7 @@ export default function Sidebar() {
     handleCreateRoom,
     handleCreateFolder,
     handleCategorizeRoom,
+    handleJoinByInviteCode,
     handleLogout,
     friendRequests,
     uiLanguage,
@@ -38,6 +39,9 @@ export default function Sidebar() {
   const isChatPage = pathname === "/" || pathname.startsWith("/chat");
   const [isCreateRoomOpen, setIsCreateRoomOpen] = useState(false);
   const [isCreateFolderOpen, setIsCreateFolderOpen] = useState(false);
+  const [isJoinRoomOpen, setIsJoinRoomOpen] = useState(false);
+  const [joinInviteCode, setJoinInviteCode] = useState("");
+  const [joinError, setJoinError] = useState("");
   const [newRoomName, setNewRoomName] = useState("");
   const [newRoomType, setNewRoomType] = useState<"msg" | "group">("msg");
   const [newRoomFolder, setNewRoomFolder] = useState("");
@@ -80,6 +84,20 @@ export default function Sidebar() {
   };
 
 
+
+  const handleJoinRoomSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!joinInviteCode.trim()) return;
+    setJoinError("");
+    try {
+      const newId = await handleJoinByInviteCode(joinInviteCode);
+      setJoinInviteCode("");
+      setIsJoinRoomOpen(false);
+      router.push(`/chat/${newId}`);
+    } catch (error) {
+      setJoinError(error instanceof Error ? error.message : "加入失敗，請確認邀請碼是否正確");
+    }
+  };
 
   const pendingIncoming = friendRequests?.filter((request) => request.direction === "incoming").length || 0;
   const firstChatPath = rooms[0] ? `/chat/${rooms[0].id}` : "/";
@@ -171,6 +189,9 @@ export default function Sidebar() {
             </IconButton>
             <IconButton label={t("sidebar.newChat")} onClick={() => setIsCreateRoomOpen(true)}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+            </IconButton>
+            <IconButton label="加入群組" onClick={() => { setJoinInviteCode(""); setJoinError(""); setIsJoinRoomOpen(true); }}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M11 16l-4-4m0 0l4-4m-4 4h14" />
             </IconButton>
           </div>
         </div>
@@ -318,6 +339,29 @@ export default function Sidebar() {
             </Button>
             <Button type="submit" variant="primary">
               {t("sidebar.create")}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal isOpen={isJoinRoomOpen} onClose={() => setIsJoinRoomOpen(false)} title="加入群組">
+        <form onSubmit={handleJoinRoomSubmit} className="flex flex-col gap-5">
+          <Input
+            label="邀請碼"
+            value={joinInviteCode}
+            onChange={(e) => setJoinInviteCode(e.target.value)}
+            required
+            placeholder="請輸入邀請碼…"
+          />
+          {joinError && (
+            <p className="text-xs text-red-600">{joinError}</p>
+          )}
+          <div className="border-t border-border-primary pt-5 flex items-center justify-end gap-3">
+            <Button type="button" variant="secondary" onClick={() => setIsJoinRoomOpen(false)}>
+              取消
+            </Button>
+            <Button type="submit" variant="primary">
+              加入
             </Button>
           </div>
         </form>
