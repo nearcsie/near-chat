@@ -28,6 +28,7 @@ import {
   deleteEmergencyContact,
   deleteFriend,
   deleteFolder as deleteFolderApi,
+  deleteMe as deleteMeApi,
   getBlockedUsers,
   getMe,
   joinRoomByCode,
@@ -202,6 +203,7 @@ interface PersonalSettingsInput {
   notifyDesktop: boolean;
   notifySound: boolean;
   password?: string;
+  bio?: string;
   warningEnabled?: boolean;
   warningDays?: number;
 }
@@ -251,6 +253,7 @@ interface ChatContextType {
   handleModifyNickname: (roomId: string, nickname: string) => void;
   handleLeaveOrBlock: (roomId: string) => Promise<{ isDeleted: boolean; newActiveId?: string }>;
   handleSavePersonalSettings: (settings: PersonalSettingsInput) => Promise<void>;
+  handleDeleteAccount: () => Promise<void>;
   loadGroupMembers: (roomId: string) => Promise<Member[]>;
   saveGroupSettings: (roomId: string, settings: GroupSettingsInput) => Promise<void>;
   approveGroupMember: (roomId: string, userId: string) => Promise<void>;
@@ -589,12 +592,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       socialDataRefreshResolversRef.current = [resolveFn!];
     } else {
       let resolveFn: () => void;
-      const p = new Promise<void>((resolve) => { resolveFn = resolve; });
+      new Promise<void>((resolve) => { resolveFn = resolve; });
       socialDataRefreshResolversRef.current.push(resolveFn!);
-      // We still return the single promise that represents the batch,
-      // but wait, if we push a new resolver, we should make sure we return a promise 
-      // that resolves when THIS specific call resolves. 
-      // It's easier to just return the shared promise:
     }
     const currentPromise = socialDataRefreshPromiseRef.current;
 
@@ -802,9 +801,6 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     };
   }, [token, currentUserId]);
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const roomById = useMemo(() => new Map(rooms.map((room) => [room.id, room])), [rooms]);
-
   const toggleFolder = (folderId: string) => {
     setFolders((current) =>
       current.map((folder) =>
@@ -970,7 +966,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       username: settings.username,
       email: settings.email,
       avatar: settings.avatar,
-      bio: user.bio ?? "",
+      bio: settings.bio ?? user.bio ?? "",
       language: settings.language,
       theme: settings.theme === "dark" ? "dark" : "light",
       notifyDesktop: settings.notifyDesktop,
@@ -985,6 +981,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           name: settings.username,
           email: settings.email,
           avatarUrl: settings.avatar,
+          bio: settings.bio,
           ...(settings.password ? { password: settings.password } : {}),
         }),
         updateMySettings(token, {
@@ -1012,6 +1009,12 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       warningEnabled: nextUser.warningEnabled ?? false,
       warningDays: nextUser.warningDays ?? 0,
     }));
+  };
+
+  const handleDeleteAccount = async () => {
+    if (!token) throw new Error("Not authenticated");
+    await deleteMeApi(token);
+    handleLogout();
   };
 
   const loadGroupMembers = async (roomId: string): Promise<Member[]> => {
@@ -1359,6 +1362,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         handleModifyNickname,
         handleLeaveOrBlock,
         handleSavePersonalSettings,
+        handleDeleteAccount,
         loadGroupMembers,
         saveGroupSettings,
         approveGroupMember,
