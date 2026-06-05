@@ -68,9 +68,23 @@ const folderRepo = new FolderRepository(pool);
 const attachmentRepo = new AttachmentRepository(pool);
 const friendRepo = makeFriendRepository(pool);
 
-const userService = makeUserService(userRepo, emergencyContactRepo, { signToken }, (contactId, payload) =>
-  io.to(`user_${contactId}`).emit('emergency_alert', payload),
-);
+const userService = makeUserService(userRepo, emergencyContactRepo, { signToken }, async (contactId, payload) => {
+  // Send a real chat message
+  const room = await roomRepo.findPrivateRoomByMembers(payload.userId, contactId);
+  if (room) {
+    try {
+      const message = await messageService.sendMessage(payload.userId, room.roomId, payload.message);
+      io.to(`room_${room.roomId}`).emit('new_message', message);
+    } catch (err) {
+      console.error('Failed to auto-send emergency message:', err);
+      // Fallback to basic socket alert if messaging fails
+      io.to(`user_${contactId}`).emit('emergency_alert', payload);
+    }
+  } else {
+    // Fallback to basic socket alert if they have no private room
+    io.to(`user_${contactId}`).emit('emergency_alert', payload);
+  }
+});
 const roomService = makeRoomService(roomRepo, roomMemberRepo, (roomId, eventName, payload) =>
   io.to(`room_${roomId}`).emit(eventName as any, payload),
   friendRepo,
