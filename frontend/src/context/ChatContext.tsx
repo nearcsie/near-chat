@@ -194,16 +194,19 @@ export const getAvatarForUser = (
   return "";
 };
 
-interface PersonalSettingsInput {
+export interface ProfileInput {
   username: string;
   email: string;
   avatar: string;
+  password?: string;
+  bio?: string;
+}
+
+export interface PreferencesInput {
   theme: string;
   language: UiLanguage;
   notifyDesktop: boolean;
   notifySound: boolean;
-  password?: string;
-  bio?: string;
   warningEnabled?: boolean;
   warningDays?: number;
 }
@@ -245,6 +248,8 @@ interface ChatContextType {
   handleTyping: (roomId: string, isTyping: boolean) => void;
   handleUploadAttachment: (roomId: string, file: File) => Promise<void>;
   handleRecallMessage: (msgId: string) => void;
+  handleUpdateProfile: (profile: ProfileInput) => Promise<void>;
+  handleUpdatePreferences: (preferences: PreferencesInput) => Promise<void>;
   handleCreateRoom: (name: string, type: "msg" | "group", folderId: string) => Promise<string>;
   handleOpenPrivateRoom: (targetUserId: string) => Promise<string>;
   handleCreateFolder: (name: string) => Promise<void>;
@@ -252,7 +257,6 @@ interface ChatContextType {
   handleCategorizeRoom: (roomId: string, folderId: string | null) => Promise<void>;
   handleModifyNickname: (roomId: string, nickname: string) => void;
   handleLeaveOrBlock: (roomId: string) => Promise<{ isDeleted: boolean; newActiveId?: string }>;
-  handleSavePersonalSettings: (settings: PersonalSettingsInput) => Promise<void>;
   handleDeleteAccount: () => Promise<void>;
   loadGroupMembers: (roomId: string) => Promise<Member[]>;
   saveGroupSettings: (roomId: string, settings: GroupSettingsInput) => Promise<void>;
@@ -855,6 +859,86 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     recallMessage(socketRef.current, msgId);
   };
 
+  const handleUpdateProfile = async (profile: ProfileInput) => {
+    let nextUser: StoredUser = {
+      ...user,
+      username: profile.username,
+      email: profile.email,
+      avatar: profile.avatar,
+      bio: profile.bio ?? user.bio ?? "",
+    };
+
+    if (token) {
+      const updatedProfile = await updateMe(token, {
+        name: profile.username,
+        email: profile.email,
+        avatarUrl: profile.avatar,
+        bio: profile.bio,
+        ...(profile.password ? { password: profile.password } : {}),
+      });
+      nextUser = { ...nextUser, ...toStoredUser(updatedProfile, {
+        language: user.language ?? uiLanguage,
+        theme: user.theme ?? "light",
+        notifyDesktop: user.notifyDesktop ?? true,
+        notifySound: user.notifySound ?? true,
+        warningEnabled: user.warningEnabled ?? false,
+        warningDays: user.warningDays ?? 14,
+      }) };
+    }
+
+    localStorage.setItem("user", JSON.stringify(nextUser));
+    setUser(nextUser);
+  };
+
+  const handleUpdatePreferences = async (preferences: PreferencesInput) => {
+    const nextWarningEnabled = preferences.warningEnabled ?? user.warningEnabled ?? false;
+    const nextWarningDays = preferences.warningDays ?? user.warningDays ?? 0;
+    
+    let nextUser: StoredUser = {
+      ...user,
+      language: preferences.language,
+      theme: preferences.theme === "dark" ? "dark" : "light",
+      notifyDesktop: preferences.notifyDesktop,
+      notifySound: preferences.notifySound,
+      warningEnabled: nextWarningEnabled,
+      warningDays: nextWarningDays,
+    };
+
+    if (token) {
+      const updatedSettings = await updateMySettings(token, {
+        language: preferences.language,
+        theme: preferences.theme === "dark" ? "dark" : "light",
+        notifyDesktop: preferences.notifyDesktop,
+        notifySound: preferences.notifySound,
+        ...(preferences.warningEnabled !== undefined ? { warningEnabled: nextWarningEnabled } : {}),
+        ...(preferences.warningDays !== undefined ? { warningDays: nextWarningDays } : {}),
+      });
+      nextUser = { 
+        ...nextUser, 
+        language: updatedSettings.language as UiLanguage, 
+        theme: updatedSettings.theme as "light" | "dark", 
+        notifyDesktop: updatedSettings.notifyDesktop, 
+        notifySound: updatedSettings.notifySound, 
+        warningEnabled: updatedSettings.warningEnabled, 
+        warningDays: updatedSettings.warningDays 
+      };
+    }
+
+    localStorage.setItem("user", JSON.stringify(nextUser));
+    localStorage.setItem("theme", preferences.theme);
+    localStorage.setItem("language", preferences.language);
+    localStorage.setItem("notify-desktop", String(preferences.notifyDesktop));
+    localStorage.setItem("notify-sound", String(preferences.notifySound));
+    document.documentElement.classList.toggle("dark", preferences.theme === "dark");
+    setUser(nextUser);
+    setUiLanguageState(preferences.language);
+    setEmergencySettings((current) => ({
+      ...current,
+      warningEnabled: nextWarningEnabled,
+      warningDays: nextWarningDays,
+    }));
+  };
+
   const handleCreateRoom = async (name: string, type: "msg" | "group", folderId: string) => {
     if (!token) return "";
 
@@ -963,59 +1047,6 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       ),
     );
     return { isDeleted: false };
-  };
-
-  const handleSavePersonalSettings = async (settings: PersonalSettingsInput) => {
-    const nextWarningEnabled = settings.warningEnabled ?? user.warningEnabled ?? false;
-    const nextWarningDays = settings.warningDays ?? user.warningDays ?? 0;
-    let nextUser: StoredUser = {
-      userId: currentUserId,
-      username: settings.username,
-      email: settings.email,
-      avatar: settings.avatar,
-      bio: settings.bio ?? user.bio ?? "",
-      language: settings.language,
-      theme: settings.theme === "dark" ? "dark" : "light",
-      notifyDesktop: settings.notifyDesktop,
-      notifySound: settings.notifySound,
-      warningEnabled: nextWarningEnabled,
-      warningDays: nextWarningDays,
-    };
-
-    if (token) {
-      const [updatedProfile, updatedSettings] = await Promise.all([
-        updateMe(token, {
-          name: settings.username,
-          email: settings.email,
-          avatarUrl: settings.avatar,
-          bio: settings.bio,
-          ...(settings.password ? { password: settings.password } : {}),
-        }),
-        updateMySettings(token, {
-          language: settings.language,
-          theme: settings.theme === "dark" ? "dark" : "light",
-          notifyDesktop: settings.notifyDesktop,
-          notifySound: settings.notifySound,
-          ...(settings.warningEnabled !== undefined ? { warningEnabled: nextWarningEnabled } : {}),
-          ...(settings.warningDays !== undefined ? { warningDays: nextWarningDays } : {}),
-        }),
-      ]);
-      nextUser = toStoredUser(updatedProfile, updatedSettings);
-    }
-
-    localStorage.setItem("user", JSON.stringify(nextUser));
-    localStorage.setItem("theme", settings.theme);
-    localStorage.setItem("language", settings.language);
-    localStorage.setItem("notify-desktop", String(settings.notifyDesktop));
-    localStorage.setItem("notify-sound", String(settings.notifySound));
-    document.documentElement.classList.toggle("dark", settings.theme === "dark");
-    setUser(nextUser);
-    setUiLanguageState(settings.language);
-    setEmergencySettings((current) => ({
-      ...current,
-      warningEnabled: nextUser.warningEnabled ?? false,
-      warningDays: nextUser.warningDays ?? 0,
-    }));
   };
 
   const handleDeleteAccount = async () => {
@@ -1361,6 +1392,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         handleTyping,
         handleUploadAttachment,
         handleRecallMessage,
+        handleUpdateProfile,
+        handleUpdatePreferences,
         handleCreateRoom,
         handleOpenPrivateRoom,
         handleCreateFolder,
@@ -1368,7 +1401,6 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         handleCategorizeRoom,
         handleModifyNickname,
         handleLeaveOrBlock,
-        handleSavePersonalSettings,
         handleDeleteAccount,
         loadGroupMembers,
         saveGroupSettings,

@@ -13,7 +13,7 @@ import { useTranslation } from "@/hooks/useTranslation";
 
 export default function ProfileSettings() {
   const router = useRouter();
-  const { user, rooms, uiLanguage, handleSavePersonalSettings, handleDeleteAccount, setUiLanguage } = useChat();
+  const { user, rooms, uiLanguage, handleUpdateProfile, handleUpdatePreferences, handleDeleteAccount, setUiLanguage } = useChat();
   const [personalUsername, setPersonalUsername] = useState("");
   const [personalEmail, setPersonalEmail] = useState("");
   const [personalAvatar, setPersonalAvatar] = useState("");
@@ -24,7 +24,8 @@ export default function ProfileSettings() {
   const [personalLanguage, setPersonalLanguage] = useState<UiLanguage>("zh-TW");
   const [personalNewPassword, setPersonalNewPassword] = useState("");
   const [personalConfirmPassword, setPersonalConfirmPassword] = useState("");
-  const [feedback, setFeedback] = useState<SettingsFeedback | null>(null);
+  const [profileFeedback, setProfileFeedback] = useState<SettingsFeedback | null>(null);
+  const [preferencesFeedback, setPreferencesFeedback] = useState<SettingsFeedback | null>(null);
 
   useEffect(() => {
     const savedUser = localStorage.getItem("user");
@@ -80,47 +81,63 @@ export default function ProfileSettings() {
 
   const handleProfileSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
-    setFeedback(null);
+    setProfileFeedback(null);
 
     if (personalNewPassword && personalNewPassword.length < 8) {
-      setFeedback({ type: "error", text: t("profile.passwordTooShort") });
+      setProfileFeedback({ type: "error", text: t("profile.passwordTooShort") });
       return;
     }
 
     if (personalNewPassword !== personalConfirmPassword) {
-      setFeedback({ type: "error", text: t("profile.passwordMismatch") });
+      setProfileFeedback({ type: "error", text: t("profile.passwordMismatch") });
       return;
     }
 
     try {
-      await handleSavePersonalSettings({
+      await handleUpdateProfile({
         username: personalUsername,
         email: personalEmail,
         avatar: personalAvatar,
-        theme: personalTheme,
-        language: personalLanguage,
-        notifyDesktop: desktopNotifications,
-        notifySound: messageSounds,
         password: personalNewPassword || undefined,
         bio: personalBio,
       });
       setPersonalNewPassword("");
       setPersonalConfirmPassword("");
-      setFeedback({ type: "success", text: t("profile.profileSaved") });
+      setProfileFeedback({ type: "success", text: t("profile.profileSaved") });
     } catch (error) {
       console.error(error);
-      setFeedback({
+      setProfileFeedback({
         type: "error",
         text: error instanceof Error ? error.message : "Failed to save profile.",
       });
     }
   };
 
+  const handlePreferencesSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setPreferencesFeedback(null);
+
+    try {
+      await handleUpdatePreferences({
+        theme: personalTheme,
+        language: personalLanguage,
+        notifyDesktop: desktopNotifications,
+        notifySound: messageSounds,
+      });
+      setPreferencesFeedback({ type: "success", text: "Preferences saved successfully" });
+    } catch (error) {
+      console.error(error);
+      setPreferencesFeedback({
+        type: "error",
+        text: error instanceof Error ? error.message : "Failed to save preferences.",
+      });
+    }
+  };
+
   return (
     <>
-      <FeedbackMessage feedback={feedback} />
-
       <form onSubmit={handleProfileSubmit} className="flex flex-col gap-6 max-w-4xl">
+        <FeedbackMessage feedback={profileFeedback} />
         <SectionTitle title={t("profile.profile")} />
         <div className="flex items-center gap-6 py-2">
           <Avatar name={personalUsername} src={personalAvatar} size="lg" />
@@ -137,6 +154,24 @@ export default function ProfileSettings() {
           <Input label="Bio" value={personalBio} onChange={(event) => setPersonalBio(event.target.value)} />
         </div>
 
+        <SectionTitle title={t("profile.security")} />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Input label={t("profile.newPassword")} type="password" value={personalNewPassword} onChange={(event) => setPersonalNewPassword(event.target.value)} />
+          <Input label={t("profile.confirmPassword")} type="password" value={personalConfirmPassword} onChange={(event) => setPersonalConfirmPassword(event.target.value)} />
+        </div>
+
+        <div className="border-t border-border-primary pt-6 flex items-center justify-end gap-3">
+          <Button type="button" variant="secondary" onClick={handleBack}>
+            {t("profile.cancel")}
+          </Button>
+          <Button type="submit" variant="primary">
+            {t("profile.saveProfile")}
+          </Button>
+        </div>
+      </form>
+
+      <form onSubmit={handlePreferencesSubmit} className="flex flex-col gap-6 max-w-4xl mt-12">
+        <FeedbackMessage feedback={preferencesFeedback} />
         <SectionTitle title={t("profile.notifications")} />
         <div className="flex flex-col gap-3">
           <Checkbox label={t("profile.desktopNotifications")} checked={desktopNotifications} onChange={(event) => setDesktopNotifications(event.target.checked)} />
@@ -165,18 +200,12 @@ export default function ProfileSettings() {
           <option value="en">English</option>
         </select>
 
-        <SectionTitle title={t("profile.security")} />
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Input label={t("profile.newPassword")} type="password" value={personalNewPassword} onChange={(event) => setPersonalNewPassword(event.target.value)} />
-          <Input label={t("profile.confirmPassword")} type="password" value={personalConfirmPassword} onChange={(event) => setPersonalConfirmPassword(event.target.value)} />
-        </div>
-
         <div className="border-t border-border-primary pt-6 flex items-center justify-end gap-3">
           <Button type="button" variant="secondary" onClick={handleBack}>
             {t("profile.cancel")}
           </Button>
           <Button type="submit" variant="primary">
-            {t("profile.saveProfile")}
+            Save Preferences
           </Button>
         </div>
       </form>
@@ -195,7 +224,7 @@ export default function ProfileSettings() {
               try {
                 await handleDeleteAccount();
               } catch (err) {
-                setFeedback({ type: "error", text: "Failed to delete account." });
+                setProfileFeedback({ type: "error", text: "Failed to delete account." });
               }
             }
           }}
