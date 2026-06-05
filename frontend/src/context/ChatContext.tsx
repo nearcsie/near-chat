@@ -1244,8 +1244,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         const roomMessages = sortMessages(messagesByRoom[room.id] ?? []);
         const latestMessage = roomMessages.at(-1);
         const roomLastReadId =
-          room.members?.find((member) => member.userId === currentUserId)?.lastReadId ??
           groupReadStates[room.id]?.[currentUserId] ??
+          room.members?.find((member) => member.userId === currentUserId)?.lastReadId ??
           null;
         const nextUnreadCount =
           activeRoomId === room.id ? 0 : computeUnreadCount(roomMessages, currentUserId, roomLastReadId);
@@ -1284,8 +1284,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     if (!latestIncoming) return;
 
     const currentLastReadId =
-      activeRoom.members?.find((member) => member.userId === currentUserId)?.lastReadId ??
       groupReadStates[activeRoomId]?.[currentUserId] ??
+      activeRoom.members?.find((member) => member.userId === currentUserId)?.lastReadId ??
       null;
 
     if (currentLastReadId === latestIncoming.id) return;
