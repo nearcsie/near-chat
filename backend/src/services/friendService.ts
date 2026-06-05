@@ -6,7 +6,7 @@ export function makeFriendService(
   notifyUser?: (userId: string, eventName: string, payload: any) => void,
   privateRooms?: {
     markPrivateReadOnly(userA: string, userB: string): Promise<void>;
-    unarchivePrivateRoom?(userA: string, userB: string): Promise<void>;
+    reopenPrivateRoom?(userA: string, userB: string): Promise<void>;
   }
 ) {
   return {

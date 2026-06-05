@@ -69,6 +69,9 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
   const { t } = useTranslation();
 
   const activeRoom = rooms.find((r) => r.id === roomId);
+  const currentMember = activeRoom?.members?.find((m) => m.userId === user.userId || m.name === user.username);
+  const canManageMembers = currentMember?.role === "owner" || currentMember?.role === "admin";
+
   const mentionCandidates =
     activeRoom?.type === "group" && mentionDraft
       ? (activeRoom.members ?? [])
@@ -327,7 +330,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
                 roomType={activeRoom.type}
                 onReply={() => setReplyTarget(msg)}
                 onRecall={() => handleRecallMessage(msg.id)}
-                canRecall={Boolean(msg.isOutgoing)}
+                canRecall={Boolean(msg.isOutgoing) || canManageMembers}
               />
 
               {!msg.isRecalled && (
@@ -338,7 +341,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
                   >
                     {t("chatroom.reply")}
                   </button>
-                  {msg.isOutgoing && (
+                  {(msg.isOutgoing || canManageMembers) && (
                     <button
                       onClick={() => handleRecallMessage(msg.id)}
                       className="hover:text-red-600 transition-colors cursor-pointer"
