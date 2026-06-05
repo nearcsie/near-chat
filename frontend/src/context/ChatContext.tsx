@@ -405,11 +405,18 @@ const mapFriend = (item: FriendResponse, emergencyContactIds: Set<string>): Frie
   isEmergencyContact: emergencyContactIds.has(item.friend.userId),
 });
 
-const mapFriendRequest = (item: FriendRequestResponse): FriendRequest => {
-  const requester = item.requester;
+const mapFriendRequest = (item: FriendRequestResponse, currentUserId: string): FriendRequest => {
+  if (item.requesterId === currentUserId) {
+    return {
+      id: item.addresseeId,
+      name: item.addressee?.name ?? item.addresseeId,
+      email: "",
+      direction: "outgoing",
+    };
+  }
   return {
     id: item.requesterId,
-    name: requester?.name ?? item.requesterId,
+    name: item.requester?.name ?? item.requesterId,
     email: "",
     direction: "incoming",
   };
@@ -615,7 +622,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         const emergencyContactIds = new Set(contacts.map((contact) => contact.contactId));
 
         setFriends(apiFriends.map((friend) => mapFriend(friend, emergencyContactIds)));
-        setFriendRequests(apiRequests.map(mapFriendRequest));
+        setFriendRequests(apiRequests.map(req => mapFriendRequest(req, currentUserId!)));
         setBlockedUsers(apiBlockedUsers.map(u => ({ id: u.userId, name: u.name, email: u.email })));
         setEmergencySettings(prev => ({
           warningEnabled: settings?.warningEnabled ?? user.warningEnabled ?? false,

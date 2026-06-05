@@ -42,10 +42,12 @@ export const makeFriendRepository = (db: Pool) => {
     async getPendingRequests(userId: string): Promise<FriendRequestResult[]> {
       const res = await db.query(
         `SELECT f.requester_id, f.addressee_id, f.status, f.created_at,
-                u.user_id, u.name, u.avatar_url
+                ur.user_id as req_user_id, ur.name as req_name, ur.avatar_url as req_avatar_url,
+                ua.user_id as add_user_id, ua.name as add_name, ua.avatar_url as add_avatar_url
          FROM friendships f
-         JOIN users u ON u.user_id = f.requester_id AND u.deleted_at IS NULL
-         WHERE f.addressee_id = $1 AND f.status = 'pending'`,
+         JOIN users ur ON ur.user_id = f.requester_id AND ur.deleted_at IS NULL
+         JOIN users ua ON ua.user_id = f.addressee_id AND ua.deleted_at IS NULL
+         WHERE (f.addressee_id = $1 OR f.requester_id = $1) AND f.status = 'pending'`,
         [userId]
       );
       return res.rows.map(row => ({
@@ -54,9 +56,14 @@ export const makeFriendRepository = (db: Pool) => {
         status: row.status,
         createdAt: row.created_at,
         requester: {
-          userId: row.user_id,
-          name: row.name,
-          avatarUrl: row.avatar_url ?? undefined
+          userId: row.req_user_id,
+          name: row.req_name,
+          avatarUrl: row.req_avatar_url ?? undefined
+        },
+        addressee: {
+          userId: row.add_user_id,
+          name: row.add_name,
+          avatarUrl: row.add_avatar_url ?? undefined
         }
       }));
     },
