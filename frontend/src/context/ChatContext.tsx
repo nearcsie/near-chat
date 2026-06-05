@@ -425,7 +425,7 @@ const mapEmergencyContact = (item: EmergencyContactResponse): EmergencyContact =
 
 const mapRoomMember = (member: ApiRoomMember, profile?: UserProfile): Member => ({
   userId: member.userId,
-  name: member.nickname || profile?.name || member.userId,
+  name: profile?.name || member.userId,
   role: member.role,
   nickname: member.nickname,
   isMuted: member.isMuted,
