@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import type { PublicUser } from "@shared/types";
 import { useChat, getAvatarForUser, Member } from "@/context/ChatContext";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
@@ -25,6 +26,7 @@ export default function GroupSettings({ roomId, onClose }: GroupSettingsProps) {
     kickGroupMember,
     transferGroupOwner,
     handleDeleteGroupRoom,
+    searchUsersForInvite,
   } = useChat();
 
   const activeRoom = rooms.find((room) => room.id === roomId);
@@ -34,6 +36,10 @@ export default function GroupSettings({ roomId, onClose }: GroupSettingsProps) {
   const [members, setMembers] = useState<Member[]>([]);
   const [feedback, setFeedback] = useState<string>("");
   const [isSaving, setIsSaving] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<PublicUser[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const currentMember = useMemo(
     () => members.find((member) => member.userId === user.userId || member.name === user.username),
@@ -174,6 +180,49 @@ export default function GroupSettings({ roomId, onClose }: GroupSettingsProps) {
     }
   };
 
+  const handleCopyInviteCode = async () => {
+    const code = activeRoom.inviteCode;
+    if (!code) return;
+    try {
+      await navigator.clipboard.writeText(code);
+      setFeedback("邀請碼已複製到剪貼簿！");
+    } catch {
+      window.prompt("請手動複製以下邀請碼：", code);
+    }
+  };
+
+  const handleSearchQueryChange = (value: string) => {
+    setSearchQuery(value);
+    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+    if (!value.trim()) {
+      setSearchResults([]);
+      return;
+    }
+    searchTimeoutRef.current = setTimeout(() => {
+      setIsSearching(true);
+      searchUsersForInvite(value)
+        .then((results) => {
+          const memberIds = new Set(members.map((m) => m.userId));
+          setSearchResults(results.filter((u) => !memberIds.has(u.userId)));
+        })
+        .catch((error) => {
+          setFeedback(error instanceof Error ? error.message : "搜尋失敗");
+        })
+        .finally(() => setIsSearching(false));
+    }, 400);
+  };
+
+  const handleCopyCodeForUser = async (userName: string) => {
+    const code = activeRoom.inviteCode;
+    if (!code) return;
+    try {
+      await navigator.clipboard.writeText(code);
+      setFeedback(`邀請碼已複製！請將邀請碼分享給 ${userName}`);
+    } catch {
+      window.prompt(`請將以下邀請碼分享給 ${userName}：`, code);
+    }
+  };
+
   return (
     <div className="flex-1 flex flex-col bg-background h-full overflow-hidden">
       <div className="h-14 border-b border-border-primary px-6 flex items-center justify-between select-none shrink-0 bg-surface-card z-10">
@@ -221,13 +270,56 @@ export default function GroupSettings({ roomId, onClose }: GroupSettingsProps) {
                 onChange={(event) => setViewHistory(event.target.checked)}
               />
             </div>
-            <div className="flex items-center justify-between border border-border-secondary bg-surface-muted px-3 py-2">
-              <div>
+            <div className="flex items-center justify-between border border-border-secondary bg-surface-muted px-3 py-2 gap-3">
+              <div className="min-w-0">
                 <p className="text-xs font-semibold text-foreground">邀請碼</p>
-                <p className="text-[10px] text-text-muted mt-1">使用 `POST /rooms/:id/members` 加入群組時需要。</p>
+                <p className="text-[10px] text-text-muted mt-1">
+                  將邀請碼分享給想加入的人，對方在加入群組時輸入此碼即可。
+                </p>
+                <code className="text-xs font-mono text-primary mt-1 block">{activeRoom.inviteCode ?? "尚未產生"}</code>
               </div>
-              <code className="text-xs font-mono text-primary">{activeRoom.inviteCode ?? "尚未產生"}</code>
+              {activeRoom.inviteCode && (
+                <Button type="button" variant="secondary" className="text-xs py-1 px-3 shrink-0" onClick={() => void handleCopyInviteCode()}>
+                  複製邀請碼
+                </Button>
+              )}
             </div>
+            {canManageMembers && (
+              <div className="flex flex-col gap-2 border border-border-secondary bg-surface-muted px-3 py-3">
+                <p className="text-xs font-semibold text-foreground">搜尋並邀請成員</p>
+                <p className="text-[10px] text-text-muted">輸入名稱搜尋用戶，將邀請碼複製後分享給對方。</p>
+                <div className="flex gap-2">
+                  <Input
+                    label=""
+                    value={searchQuery}
+                    onChange={(e) => handleSearchQueryChange(e.target.value)}
+                    placeholder="輸入名稱搜尋用戶…"
+                  />
+                </div>
+                {isSearching && <p className="text-[10px] text-text-muted">搜尋中…</p>}
+                {!isSearching && searchQuery.trim() && searchResults.length === 0 && (
+                  <p className="text-[10px] text-text-muted">找不到符合的用戶（已在群組中的成員不會顯示）</p>
+                )}
+                {searchResults.length > 0 && (
+                  <div className="flex flex-col divide-y divide-border-secondary border border-border-secondary rounded-sm overflow-hidden">
+                    {searchResults.map((u) => (
+                      <div key={u.userId} className="flex items-center justify-between px-3 py-2 text-xs bg-surface-card">
+                        <span className="font-medium text-foreground">{u.name}</span>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          className="text-[10px] py-1 px-2"
+                          onClick={() => void handleCopyCodeForUser(u.name)}
+                        >
+                          複製邀請碼給此用戶
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="flex justify-end">
               <Button type="submit" variant="primary" disabled={isSaving}>
                 {isSaving ? "儲存中..." : "儲存設定"}

@@ -263,6 +263,7 @@ interface ChatContextType {
   handleDeleteGroupRoom: (roomId: string) => Promise<string | null>;
   getReadAvatarsForMessage: (room: ChatRoom, msg: Message) => string[];
 
+  searchUsersForInvite: (query: string) => Promise<PublicUser[]>;
   sendFriendRequest: (query: string) => Promise<void>;
   acceptFriendRequest: (requestId: string) => Promise<void>;
   rejectFriendRequest: (requestId: string) => Promise<void>;
@@ -1095,6 +1096,13 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       .map(() => "");
   };
 
+  const searchUsersForInvite = async (query: string): Promise<PublicUser[]> => {
+    if (!token) throw new Error("Not authenticated");
+    const trimmed = query.trim();
+    if (!trimmed) return [];
+    return searchUsers(token, { query: trimmed });
+  };
+
   const sendFriendRequest = async (query: string) => {
     if (!token) throw new Error("Not authenticated");
     const trimmedQuery = query.trim();
@@ -1350,6 +1358,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         transferGroupOwner,
         handleDeleteGroupRoom,
         getReadAvatarsForMessage,
+        searchUsersForInvite,
         sendFriendRequest,
         acceptFriendRequest,
         rejectFriendRequest,
