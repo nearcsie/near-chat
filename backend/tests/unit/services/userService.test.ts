@@ -334,7 +334,7 @@ describe('userService', () => {
       expect(result).toEqual({ alerted: true, recipients: ['u2'] });
       expect(notifyEmergencyContact).toHaveBeenCalledWith('u2', {
         userId: 'u1',
-        message: 'please check on me',
+        message: '(測試) please check on me',
       });
     });
 

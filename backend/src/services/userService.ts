@@ -66,9 +66,9 @@ export const makeUserService = (
   repo: IUserRepository,
   emergencyContactRepo: IEmergencyContactRepository,
   jwt: JwtHelper,
-  notifyEmergencyContact?: (contactId: string, payload: { userId: string; message: string }) => void,
+  notifyEmergencyContact?: (contactId: string, payload: { userId: string; message: string }) => void | Promise<void>,
 ) => {
-  const notifyContacts = async (userId: string, fallbackMessage: string): Promise<EmergencyAlertResult> => {
+  const notifyContacts = async (userId: string, fallbackMessage: string, isTest: boolean = false): Promise<EmergencyAlertResult> => {
     const user = await repo.findById(userId);
     if (!user) throw new NotFoundError('user', userId);
 
@@ -79,10 +79,13 @@ export const makeUserService = (
 
     const recipients: string[] = [];
     for (const contact of contacts) {
-      notifyEmergencyContact?.(contact.contactId, {
-        userId,
-        message: contact.message || fallbackMessage,
-      });
+      const msg = (isTest ? '(測試) ' : '') + (contact.message || fallbackMessage);
+      if (notifyEmergencyContact) {
+        await notifyEmergencyContact(contact.contactId, {
+          userId,
+          message: msg,
+        });
+      }
       recipients.push(contact.contactId);
     }
 
@@ -229,7 +232,7 @@ export const makeUserService = (
     },
 
     async triggerEmergencyAlert(userId: string, message = 'Emergency alert triggered'): Promise<EmergencyAlertResult> {
-      return notifyContacts(userId, message);
+      return notifyContacts(userId, message, true);
     },
 
     async checkInactivity(userId: string, now = new Date()): Promise<EmergencyAlertResult> {
