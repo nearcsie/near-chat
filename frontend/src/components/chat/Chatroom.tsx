@@ -310,49 +310,54 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
       <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-4">
         {messages
           .filter((m) => m.roomId === activeRoom.id)
-          .map((msg) => (
-            <div
-              key={msg.id}
-              className={`group/msg flex flex-col ${msg.isOutgoing ? "items-end" : "items-start"}`}
-            >
-              <ChatBubble
-                content={msg.content}
-                senderName={msg.senderName}
-                timestamp={msg.timestamp}
-                isOutgoing={msg.isOutgoing}
-                isHighEmphasis={msg.isOutgoing}
-                isRecalled={msg.isRecalled}
-                replyTo={msg.replyTo || undefined}
-                attachments={msg.attachments}
-                senderAvatar={msg.isOutgoing ? user.avatar : getAvatarForUser(msg.senderName, user.avatar, user.username)}
-                isRead={msg.isRead}
-                readByAvatars={getReadAvatarsForMessage(activeRoom, msg)}
-                roomType={activeRoom.type}
-                onReply={() => setReplyTarget(msg)}
-                onRecall={() => handleRecallMessage(msg.id)}
-                canRecall={Boolean(msg.isOutgoing) || canManageMembers}
-              />
+          .map((msg) => {
+            const senderMember = activeRoom.members?.find((m) => m.userId === msg.senderId);
+            const displayName = senderMember?.nickname || msg.senderName;
 
-              {!msg.isRecalled && (
-                <div className="opacity-0 group-hover/msg:opacity-100 flex gap-2.5 mt-1 select-none text-[10px] text-text-muted transition-opacity">
-                  <button
-                    onClick={() => setReplyTarget(msg)}
-                    className="hover:text-primary transition-colors cursor-pointer"
-                  >
-                    {t("chatroom.reply")}
-                  </button>
-                  {(msg.isOutgoing || canManageMembers) && (
+            return (
+              <div
+                key={msg.id}
+                className={`group/msg flex flex-col ${msg.isOutgoing ? "items-end" : "items-start"}`}
+              >
+                <ChatBubble
+                  content={msg.content}
+                  senderName={displayName}
+                  timestamp={msg.timestamp}
+                  isOutgoing={msg.isOutgoing}
+                  isHighEmphasis={msg.isOutgoing}
+                  isRecalled={msg.isRecalled}
+                  replyTo={msg.replyTo || undefined}
+                  attachments={msg.attachments}
+                  senderAvatar={msg.isOutgoing ? user.avatar : getAvatarForUser(msg.senderName, user.avatar, user.username)}
+                  isRead={msg.isRead}
+                  readByAvatars={getReadAvatarsForMessage(activeRoom, msg)}
+                  roomType={activeRoom.type}
+                  onReply={() => setReplyTarget(msg)}
+                  onRecall={() => handleRecallMessage(msg.id)}
+                  canRecall={Boolean(msg.isOutgoing) || canManageMembers}
+                />
+
+                {!msg.isRecalled && (
+                  <div className="opacity-0 group-hover/msg:opacity-100 flex gap-2.5 mt-1 select-none text-[10px] text-text-muted transition-opacity">
                     <button
-                      onClick={() => handleRecallMessage(msg.id)}
-                      className="hover:text-red-600 transition-colors cursor-pointer"
+                      onClick={() => setReplyTarget(msg)}
+                      className="hover:text-primary transition-colors cursor-pointer"
                     >
-                      {t("chatroom.recall")}
+                      {t("chatroom.reply")}
                     </button>
-                  )}
-                </div>
-              )}
-            </div>
-          ))}
+                    {(Boolean(msg.isOutgoing) || canManageMembers) && (
+                      <button
+                        onClick={() => handleRecallMessage(msg.id)}
+                        className="hover:text-danger transition-colors cursor-pointer"
+                      >
+                        {t("chatroom.recall")}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         <div ref={messageEndRef} />
       </div>
 
@@ -360,7 +365,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
       {replyTarget && (
         <div className="bg-surface-muted border-t border-border-primary px-6 py-2 flex items-center justify-between text-xs select-none">
           <div className="flex-1 min-w-0 border-l-2 border-primary pl-2">
-            <span className="font-bold text-foreground block">{t("chatroom.replyTo", { name: replyTarget.senderName })}</span>
+            <span className="font-bold text-foreground block">{t("chatroom.replyTo", { name: activeRoom.members?.find((m) => m.userId === replyTarget.senderId)?.nickname || replyTarget.senderName })}</span>
             <p className="text-text-muted truncate mt-0.5">{replyTarget.content}</p>
           </div>
           <button

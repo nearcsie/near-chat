@@ -426,7 +426,9 @@ function MemberRow({
         />
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <p className="font-semibold text-foreground truncate">{member.name}</p>
+            <p className="font-semibold text-foreground truncate">
+              {member.nickname ? `${member.nickname} (${member.name})` : member.name}
+            </p>
             {isSelf && <span className="text-[9px] text-primary font-mono">YOU</span>}
             {member.isMuted && <span className="text-[9px] text-red-600 font-mono">MUTED</span>}
           </div>
