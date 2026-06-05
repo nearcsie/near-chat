@@ -19,6 +19,7 @@ interface ChatroomProps {
 interface MentionDraft {
   start: number;
   end: number;
+  query: string;
 }
 
 const getMentionDraft = (value: string, cursorPosition: number): MentionDraft | null => {
@@ -33,6 +34,7 @@ const getMentionDraft = (value: string, cursorPosition: number): MentionDraft | 
   return {
     start,
     end: cursorPosition,
+    query: match[1] ?? "",
   };
 };
 
@@ -58,6 +60,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
 
   const [inputText, setInputText] = useState("");
   const [mentionDraft, setMentionDraft] = useState<MentionDraft | null>(null);
+  const [selectedMentionIndex, setSelectedMentionIndex] = useState(0);
   const [replyTarget, setReplyTarget] = useState<Message | null>(null);
   const [showHeaderPopover, setShowHeaderPopover] = useState(false);
   const messageEndRef = useRef<HTMLDivElement>(null);
@@ -68,8 +71,18 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
   const activeRoom = rooms.find((r) => r.id === roomId);
   const mentionCandidates =
     activeRoom?.type === "group" && mentionDraft
-      ? (activeRoom.members ?? []).filter((member) => member.userId !== user.userId)
+      ? (activeRoom.members ?? [])
+          .filter((member) => member.userId !== user.userId)
+          .filter((member) =>
+            mentionDraft.query
+              ? member.name.toLowerCase().startsWith(mentionDraft.query.toLowerCase())
+              : true,
+          )
       : [];
+
+  useEffect(() => {
+    setSelectedMentionIndex(0);
+  }, [mentionDraft?.query, roomId]);
 
   // Scroll to bottom when room or messages change
   useEffect(() => {
@@ -147,6 +160,35 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
       inputRef.current?.focus();
       inputRef.current?.setSelectionRange(nextCursorPosition, nextCursorPosition);
     });
+  };
+
+  const handleMentionKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!mentionDraft || mentionCandidates.length === 0) return;
+
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setSelectedMentionIndex((current) => (current + 1) % mentionCandidates.length);
+      return;
+    }
+
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setSelectedMentionIndex((current) =>
+        current === 0 ? mentionCandidates.length - 1 : current - 1,
+      );
+      return;
+    }
+
+    if (event.key === "Enter" || event.key === "Tab") {
+      event.preventDefault();
+      handleMentionSelect(mentionCandidates[selectedMentionIndex]?.name ?? mentionCandidates[0].name);
+      return;
+    }
+
+    if (event.key === "Escape") {
+      event.preventDefault();
+      setMentionDraft(null);
+    }
   };
 
   return (
@@ -363,7 +405,11 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
                       type="button"
                       onMouseDown={(event) => event.preventDefault()}
                       onClick={() => handleMentionSelect(member.name)}
-                      className="flex w-full items-center justify-between gap-3 border-b border-border-secondary/40 px-3 py-2 text-left text-xs text-foreground transition-colors hover:bg-surface-muted last:border-b-0"
+                      className={`flex w-full items-center justify-between gap-3 border-b border-border-secondary/40 px-3 py-2 text-left text-xs text-foreground transition-colors last:border-b-0 ${
+                        mentionCandidates[selectedMentionIndex]?.userId === member.userId
+                          ? "bg-primary/10 text-primary"
+                          : "hover:bg-surface-muted"
+                      }`}
                     >
                       <span className="truncate font-semibold">{member.name}</span>
                       <span className="shrink-0 text-[10px] uppercase tracking-wider text-text-muted">
@@ -411,6 +457,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
                   handleTyping(activeRoom.id, false);
                   setMentionDraft(null);
                 }}
+                onKeyDown={handleMentionKeyDown}
                 className="w-full bg-surface-card border border-border-secondary hover:border-border-primary focus:border-primary focus:outline-none rounded-sm px-3.5 py-2.5 text-sm text-foreground transition-colors"
               />
             </div>
