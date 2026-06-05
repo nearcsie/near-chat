@@ -27,6 +27,7 @@ import {
   createPrivateRoom,
   deleteEmergencyContact,
   deleteFriend,
+  deleteFolder as deleteFolderApi,
   getBlockedUsers,
   getMe,
   getMySettings,
@@ -244,6 +245,7 @@ interface ChatContextType {
   handleCreateRoom: (name: string, type: "msg" | "group", folderId: string) => Promise<string>;
   handleOpenPrivateRoom: (targetUserId: string) => Promise<string>;
   handleCreateFolder: (name: string) => Promise<void>;
+  handleDeleteFolder: (folderId: string) => Promise<void>;
   handleCategorizeRoom: (roomId: string, folderId: string | null) => Promise<void>;
   handleModifyNickname: (roomId: string, nickname: string) => void;
   handleLeaveOrBlock: (roomId: string) => Promise<{ isDeleted: boolean; newActiveId?: string }>;
@@ -879,6 +881,18 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     setFolders((current) => [...current, { id: folder.folderId, name: folder.name, collapsed: false }]);
   };
 
+  const handleDeleteFolder = async (folderId: string) => {
+    if (!token) return;
+
+    await deleteFolderApi(token, folderId);
+    setFolders((current) => current.filter((folder) => folder.id !== folderId));
+    setRooms((current) =>
+      current.map((room) =>
+        room.folderId === folderId ? { ...room, folderId: null } : room,
+      ),
+    );
+  };
+
   const handleCategorizeRoom = async (roomId: string, folderId: string | null) => {
     if (!token) return;
 
@@ -1320,6 +1334,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         handleCreateRoom,
         handleOpenPrivateRoom,
         handleCreateFolder,
+        handleDeleteFolder,
         handleCategorizeRoom,
         handleModifyNickname,
         handleLeaveOrBlock,
