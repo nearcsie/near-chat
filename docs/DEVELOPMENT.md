@@ -83,7 +83,7 @@ docker compose exec backend pnpm run db:seed
 - Roll migrations back: `docker compose exec backend pnpm run migrate:down`
 - Seed database with mock data: `docker compose exec backend pnpm run db:seed`
 
-**Note on Seeding**: The seed script (`backend/src/db/seed.ts`) generates 6 test users (e.g. `alice@test.com`, `bob@test.com`), mock friendships, and a sample group room. Default password is `password123`. It is idempotent and resets existing mock data each time.
+**Note on Seeding**: The seed script (`backend/src/db/seed.ts`) generates 6 test users (e.g. `alice@test.com`, `bob@test.com`), mock friendships, and a sample group room. Default password is `password123`. It is idempotent and resets existing mock data each time. For more details on the testing data, see [test-data.md](./test-data.md).
 
 ### Repairing a Broken Dev Database
 If you encounter `relation ... already exists` errors during migration, or if `node-pg-migrate` reports that a new migration is preceding an already-run migration, your local database state is out of sync with the migration history (e.g. missing `pgmigrations` table). 
