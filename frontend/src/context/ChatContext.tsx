@@ -1,7 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import type {
   Attachment as ApiAttachment,
   EmergencyContactResponse,
@@ -76,6 +76,7 @@ export interface Member {
   role: RoomMemberRole;
   nickname?: string;
   isMuted?: boolean;
+  lastReadId?: string | null;
 }
 
 export interface ChatRoom {
@@ -412,6 +413,7 @@ const mapRoomMember = (member: ApiRoomMember, profile?: UserProfile): Member => 
   role: member.role,
   nickname: member.nickname,
   isMuted: member.isMuted,
+  lastReadId: member.lastReadId ?? null,
 });
 
 const fetchRoomMembers = async (authToken: string, roomId: string): Promise<Member[]> => {
@@ -446,8 +448,26 @@ const sortMessages = (items: Message[]) =>
     return a.id.localeCompare(b.id);
   });
 
+const computeUnreadCount = (
+  roomMessages: Message[],
+  currentUserId?: string,
+  lastReadId?: string | null,
+) => {
+  if (!roomMessages.length) return 0;
+
+  const firstUnreadIndex = lastReadId
+    ? roomMessages.findIndex((message) => message.id === lastReadId) + 1
+    : 0;
+
+  return roomMessages
+    .slice(Math.max(firstUnreadIndex, 0))
+    .filter((message) => message.senderId !== currentUserId)
+    .length;
+};
+
 export function ChatProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
+  const pathname = usePathname();
   const socketRef = useRef<ChatSocket | null>(null);
   const roomsRef = useRef<ChatRoom[]>([]);
   const socialDataRefreshTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -476,6 +496,11 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const [selectedFriendForSidebar, setSelectedFriendForSidebar] = useState<Friend | null>(null);
   const [showRightPanel, setShowRightPanel] = useState<boolean>(true);
 
+  const activeRoomId = useMemo(() => {
+    const match = pathname.match(/^\/chat\/([^/]+)$/);
+    return match?.[1] ?? null;
+  }, [pathname]);
+
   const clearSession = () => {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
@@ -501,6 +526,19 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       nextRooms.map(async (room) => [room.id, await fetchRoomMembers(authToken, room.id)] as const),
     );
     const membersByRoomId = new Map(entries);
+    const nextReadStates = entries.reduce<Record<string, Record<string, string>>>((acc, [roomId, members]) => {
+      const roomReads = members.reduce<Record<string, string>>((reads, member) => {
+        if (member.lastReadId) {
+          reads[member.userId] = member.lastReadId;
+        }
+        return reads;
+      }, {});
+
+      if (Object.keys(roomReads).length > 0) {
+        acc[roomId] = roomReads;
+      }
+      return acc;
+    }, {});
 
     setRooms((current) =>
       current.map((room) =>
@@ -509,6 +547,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           : room,
       ),
     );
+    setGroupReadStates((current) => ({ ...current, ...nextReadStates }));
   };
 
   const refreshRoomsAndFolders = async (authToken: string, userId = currentUserId) => {
@@ -701,6 +740,23 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           [userId]: messageId,
         },
       }));
+      setRooms((current) =>
+        current.map((room) => {
+          if (room.id !== roomId || !room.members) return room;
+
+          let memberChanged = false;
+          const nextMembers = room.members.map((member) => {
+            if (member.userId !== userId || member.lastReadId === messageId) {
+              return member;
+            }
+
+            memberChanged = true;
+            return { ...member, lastReadId: messageId };
+          });
+
+          return memberChanged ? { ...room, members: nextMembers } : room;
+        }),
+      );
     });
     const cleanupTyping = onUserTyping(socket, ({ roomId, userId, isTyping }) => {
       console.debug("typing", { roomId, userId, isTyping });
@@ -1124,14 +1180,79 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   };
 
   useEffect(() => {
-    const lastMessage = messages.at(-1);
-    if (lastMessage && socketRef.current && !lastMessage.isOutgoing) {
-      sendReadReceipt(socketRef.current, {
-        roomId: lastMessage.roomId,
-        messageId: lastMessage.id,
+    if (!currentUserId) return;
+
+    const messagesByRoom = messages.reduce<Record<string, Message[]>>((acc, message) => {
+      (acc[message.roomId] ??= []).push(message);
+      return acc;
+    }, {});
+
+    setRooms((current) => {
+      let changed = false;
+
+      const nextRooms = current.map((room) => {
+        const roomMessages = sortMessages(messagesByRoom[room.id] ?? []);
+        const latestMessage = roomMessages.at(-1);
+        const roomLastReadId =
+          room.members?.find((member) => member.userId === currentUserId)?.lastReadId ??
+          groupReadStates[room.id]?.[currentUserId] ??
+          null;
+        const nextUnreadCount =
+          activeRoomId === room.id ? 0 : computeUnreadCount(roomMessages, currentUserId, roomLastReadId);
+        const nextPreview = latestMessage ? summarizeMessagePreview(latestMessage) : room.lastMessagePreview;
+        const nextLastMessageAt = latestMessage ? latestMessage.timestamp : room.lastMessageAt;
+
+        if (
+          room.unreadCount === nextUnreadCount &&
+          room.lastMessagePreview === nextPreview &&
+          room.lastMessageAt === nextLastMessageAt
+        ) {
+          return room;
+        }
+
+        changed = true;
+        return {
+          ...room,
+          unreadCount: nextUnreadCount,
+          lastMessagePreview: nextPreview,
+          lastMessageAt: nextLastMessageAt,
+        };
       });
-    }
-  }, [messages]);
+
+      return changed ? nextRooms : current;
+    });
+  }, [activeRoomId, currentUserId, groupReadStates, messages]);
+
+  useEffect(() => {
+    if (!socketRef.current || !activeRoomId || !currentUserId) return;
+
+    const activeRoom = roomsRef.current.find((room) => room.id === activeRoomId);
+    if (!activeRoom) return;
+
+    const roomMessages = sortMessages(messages.filter((message) => message.roomId === activeRoomId));
+    const latestIncoming = [...roomMessages].reverse().find((message) => message.senderId !== currentUserId);
+    if (!latestIncoming) return;
+
+    const currentLastReadId =
+      activeRoom.members?.find((member) => member.userId === currentUserId)?.lastReadId ??
+      groupReadStates[activeRoomId]?.[currentUserId] ??
+      null;
+
+    if (currentLastReadId === latestIncoming.id) return;
+
+    sendReadReceipt(socketRef.current, {
+      roomId: activeRoomId,
+      messageId: latestIncoming.id,
+    });
+
+    setGroupReadStates((current) => ({
+      ...current,
+      [activeRoomId]: {
+        ...(current[activeRoomId] ?? {}),
+        [currentUserId]: latestIncoming.id,
+      },
+    }));
+  }, [activeRoomId, currentUserId, groupReadStates, messages]);
 
   const derivedRooms = useMemo(() => {
     return rooms.map((room) => {
