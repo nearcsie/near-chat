@@ -73,8 +73,8 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
   const canManageMembers = currentMember?.role === "owner" || currentMember?.role === "admin";
 
   const mentionCandidates =
-    activeRoom?.type === "group" && mentionDraft
-      ? (activeRoom.members ?? [])
+    mentionDraft
+      ? (activeRoom?.members ?? [])
           .filter((member) => member.userId !== user.userId)
           .filter((member) =>
             mentionDraft.query
@@ -438,28 +438,16 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
                   const nextCursorPosition = e.target.selectionStart ?? nextText.length;
 
                   setInputText(nextText);
-                  setMentionDraft(
-                    activeRoom.type === "group"
-                      ? getMentionDraft(nextText, nextCursorPosition)
-                      : null,
-                  );
+                  setMentionDraft(getMentionDraft(nextText, nextCursorPosition));
                   handleTyping(activeRoom.id, nextText.length > 0);
                 }}
                 onClick={(e) => {
                   const nextCursorPosition = e.currentTarget.selectionStart ?? inputText.length;
-                  setMentionDraft(
-                    activeRoom.type === "group"
-                      ? getMentionDraft(inputText, nextCursorPosition)
-                      : null,
-                  );
+                  setMentionDraft(getMentionDraft(inputText, nextCursorPosition));
                 }}
                 onKeyUp={(e) => {
                   const nextCursorPosition = e.currentTarget.selectionStart ?? inputText.length;
-                  setMentionDraft(
-                    activeRoom.type === "group"
-                      ? getMentionDraft(inputText, nextCursorPosition)
-                      : null,
-                  );
+                  setMentionDraft(getMentionDraft(inputText, nextCursorPosition));
                 }}
                 onBlur={() => {
                   handleTyping(activeRoom.id, false);
