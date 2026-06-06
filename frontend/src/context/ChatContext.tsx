@@ -330,6 +330,9 @@ const summarizeMessagePreview = (message: {
   return "";
 };
 
+const isPrivateRoomFallbackName = (roomName: string | undefined, roomId: string) =>
+  roomName === `Private ${roomId.slice(0, 8)}`;
+
 const mapMessage = (message: MessageWithSender, currentUserId?: string): Message => ({
   id: message.messageId,
   roomId: message.roomId,
@@ -372,7 +375,13 @@ const mapRooms = (
     return {
       id: room.roomId,
       type: room.type === "group" ? "group" : "msg",
-      name: room.name || `Private ${room.roomId.slice(0, 8)}`,
+      name:
+        room.name ||
+        (currentRoom?.name && !isPrivateRoomFallbackName(currentRoom.name, room.roomId)
+          ? currentRoom.name
+          : room.type === "group"
+            ? `Group ${room.roomId.slice(0, 8)}`
+            : ""),
       folderId: folderByRoom.get(room.roomId) ?? currentRoom?.folderId ?? null,
       inviteCode: room.inviteCode,
       requireApproval: room.requireApproval,
