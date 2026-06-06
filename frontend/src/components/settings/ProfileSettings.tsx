@@ -47,10 +47,13 @@ export default function ProfileSettings() {
     }
 
     setPersonalTheme(user.theme || localStorage.getItem("theme") || "light");
-    setPersonalLanguage(uiLanguage);
     setDesktopNotifications(user.notifyDesktop ?? (localStorage.getItem("notify-desktop") !== "false"));
     setMessageSounds(user.notifySound ?? (localStorage.getItem("notify-sound") !== "false"));
-  }, [uiLanguage, user]);
+  }, [user]);
+
+  useEffect(() => {
+    setPersonalLanguage(user.language ?? uiLanguage);
+  }, [user, uiLanguage]);
 
   const { t } = useTranslation();
 
