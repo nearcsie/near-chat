@@ -1186,8 +1186,27 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
   const acceptFriendRequest = async (requestId: string) => {
     if (!token) return;
+    const request = friendRequests.find(
+      (item) => item.id === requestId && item.direction === "incoming",
+    );
+
     await respondFriendRequest(token, requestId, "accepted");
-    await refreshSocialData(token);
+    if (request) {
+      setFriendRequests((prev) => prev.filter((item) => item.id !== requestId));
+      setFriends((prev) => {
+        if (prev.some((item) => item.id === request.id)) return prev;
+        return [
+          ...prev,
+          {
+            id: request.id,
+            name: request.name,
+            email: request.email,
+            status: "offline",
+          },
+        ];
+      });
+    }
+    await refreshSocialData(token, undefined, currentUserId);
   };
 
   const rejectFriendRequest = async (requestId: string) => {
