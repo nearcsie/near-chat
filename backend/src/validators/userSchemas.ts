@@ -17,7 +17,7 @@ export const updateMeSchema = z
     email: z.string().email('Invalid email format').optional(),
     password: z.string().min(8, 'Password must be at least 8 characters long').optional(),
     bio: z.string().trim().optional(),
-    avatarUrl: z.string().url('Invalid avatar URL').optional(),
+    avatarUrl: z.union([z.literal(''), z.string().url('Invalid avatar URL')]).optional(),
   })
   .refine((v) => Object.keys(v).length > 0, {
     message: 'At least one field must be provided',
