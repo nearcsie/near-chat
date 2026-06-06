@@ -330,6 +330,9 @@ const summarizeMessagePreview = (message: {
   return "";
 };
 
+const isPrivateRoomFallbackName = (roomName: string | undefined, roomId: string) =>
+  roomName === `Private ${roomId.slice(0, 8)}`;
+
 const mapMessage = (message: MessageWithSender, currentUserId?: string): Message => ({
   id: message.messageId,
   roomId: message.roomId,
@@ -372,7 +375,13 @@ const mapRooms = (
     return {
       id: room.roomId,
       type: room.type === "group" ? "group" : "msg",
-      name: room.name || `Private ${room.roomId.slice(0, 8)}`,
+      name:
+        room.name ||
+        (currentRoom?.name && !isPrivateRoomFallbackName(currentRoom.name, room.roomId)
+          ? currentRoom.name
+          : room.type === "group"
+            ? `Group ${room.roomId.slice(0, 8)}`
+            : ""),
       folderId: folderByRoom.get(room.roomId) ?? currentRoom?.folderId ?? null,
       inviteCode: room.inviteCode,
       requireApproval: room.requireApproval,
@@ -591,7 +600,10 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     void refreshGroupMembersForRooms(authToken, nextRooms);
   };
 
-  const refreshSocialData = async (authToken: string, settings?: UserSettings) => {
+  const refreshSocialData = async (authToken: string, settings?: UserSettings, userId = currentUserId) => {
+    const effectiveUserId = userId ?? user.userId;
+    if (!effectiveUserId) return;
+
     if (socialDataRefreshTimerRef.current) {
       clearTimeout(socialDataRefreshTimerRef.current);
     }
@@ -626,7 +638,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         const emergencyContactIds = new Set(contacts.map((contact) => contact.contactId));
 
         setFriends(apiFriends.map((friend) => mapFriend(friend, emergencyContactIds)));
-        setFriendRequests(apiRequests.map(req => mapFriendRequest(req, currentUserId!)));
+        setFriendRequests(apiRequests.map((req) => mapFriendRequest(req, effectiveUserId)));
         setBlockedUsers(apiBlockedUsers.map(u => ({ id: u.userId, name: u.name, email: u.email })));
         setEmergencySettings(prev => ({
           warningEnabled: settings?.warningEnabled ?? user.warningEnabled ?? false,
@@ -701,7 +713,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         setIsAuthenticated(true);
         await Promise.all([
           refreshRoomsAndFolders(savedToken, profile.userId),
-          refreshSocialData(savedToken, settings),
+          refreshSocialData(savedToken, settings, profile.userId),
         ]);
       } catch (error) {
         console.error(error);
@@ -792,7 +804,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       console.error("Socket error", error);
     });
     const cleanupFriendRequest = onFriendRequest(socket, () => {
-      void refreshSocialData(token);
+      void refreshSocialData(token, undefined, currentUserId);
     });
     const cleanupEmergencyAlert = onEmergencyAlert(socket, (payload) => {
       window.alert(`[EMERGENCY ALERT]\nFrom User: ${payload.userId}\nMessage: ${payload.message}`);
@@ -1183,8 +1195,27 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
   const acceptFriendRequest = async (requestId: string) => {
     if (!token) return;
+    const request = friendRequests.find(
+      (item) => item.id === requestId && item.direction === "incoming",
+    );
+
     await respondFriendRequest(token, requestId, "accepted");
-    await refreshSocialData(token);
+    if (request) {
+      setFriendRequests((prev) => prev.filter((item) => item.id !== requestId));
+      setFriends((prev) => {
+        if (prev.some((item) => item.id === request.id)) return prev;
+        return [
+          ...prev,
+          {
+            id: request.id,
+            name: request.name,
+            email: request.email,
+            status: "offline",
+          },
+        ];
+      });
+    }
+    await refreshSocialData(token, undefined, currentUserId);
   };
 
   const rejectFriendRequest = async (requestId: string) => {
