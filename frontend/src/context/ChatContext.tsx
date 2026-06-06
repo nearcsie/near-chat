@@ -108,6 +108,7 @@ export interface Message {
   content: string;
   sentAt: string;
   timestamp: string;
+  replyToId?: string;
   isOutgoing?: boolean;
   isRecalled?: boolean;
   replyTo?: {
@@ -341,12 +342,54 @@ const mapMessage = (message: MessageWithSender, currentUserId?: string): Message
   content: message.content,
   sentAt: new Date(message.sentAt).toISOString(),
   timestamp: formatMessageTime(message.sentAt),
+  replyToId: message.replyToId,
   isOutgoing: Boolean(currentUserId && message.senderId === currentUserId),
   isRecalled: message.isRecalled,
   replyTo: null,
   attachments: message.attachments?.map(mapAttachment) ?? [],
   mentions: message.mentions ?? [],
 });
+
+const hydrateReplyTargets = (items: Message[]): Message[] => {
+  const messageByRoom = new Map<string, Map<string, Message>>();
+
+  for (const item of items) {
+    let roomMessages = messageByRoom.get(item.roomId);
+    if (!roomMessages) {
+      roomMessages = new Map<string, Message>();
+      messageByRoom.set(item.roomId, roomMessages);
+    }
+    roomMessages.set(item.id, item);
+  }
+
+  return items.map((item) => {
+    if (!item.replyToId) {
+      return item.replyTo ? { ...item, replyTo: null } : item;
+    }
+
+    const replyTarget = messageByRoom.get(item.roomId)?.get(item.replyToId);
+    if (!replyTarget) {
+      return item;
+    }
+
+    const nextReplyTo = {
+      senderName: replyTarget.senderName,
+      content: replyTarget.isRecalled ? "" : replyTarget.content,
+    };
+
+    if (
+      item.replyTo?.senderName === nextReplyTo.senderName &&
+      item.replyTo?.content === nextReplyTo.content
+    ) {
+      return item;
+    }
+
+    return {
+      ...item,
+      replyTo: nextReplyTo,
+    };
+  });
+};
 
 const mapRooms = (
   apiRooms: RoomSummary[],
@@ -558,7 +601,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         return rows.reverse().map((message) => mapMessage(message, userId));
       }),
     );
-    setMessages(roomMessages.flat());
+    setMessages(hydrateReplyTargets(roomMessages.flat()));
   };
 
   const refreshGroupMembersForRooms = async (authToken: string, nextRooms: ChatRoom[]) => {
@@ -750,7 +793,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       const incoming = mapMessage(payload, currentUserId);
       setMessages((current) => {
         const withoutDuplicate = current.filter((message) => message.id !== incoming.id);
-        return sortMessages([...withoutDuplicate, incoming]);
+        return hydrateReplyTargets(sortMessages([...withoutDuplicate, incoming]));
       });
       setRooms((current) =>
         current.map((room) =>
@@ -766,8 +809,10 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     });
     const cleanupRecall = onMessageRecalled(socket, ({ messageId }) => {
       setMessages((current) =>
-        current.map((message) =>
-          message.id === messageId ? { ...message, isRecalled: true, content: "" } : message,
+        hydrateReplyTargets(
+          current.map((message) =>
+            message.id === messageId ? { ...message, isRecalled: true, content: "" } : message,
+          ),
         ),
       );
     });
