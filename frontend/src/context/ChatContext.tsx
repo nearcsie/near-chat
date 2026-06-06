@@ -591,7 +591,10 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     void refreshGroupMembersForRooms(authToken, nextRooms);
   };
 
-  const refreshSocialData = async (authToken: string, settings?: UserSettings) => {
+  const refreshSocialData = async (authToken: string, settings?: UserSettings, userId = currentUserId) => {
+    const effectiveUserId = userId ?? user.userId;
+    if (!effectiveUserId) return;
+
     if (socialDataRefreshTimerRef.current) {
       clearTimeout(socialDataRefreshTimerRef.current);
     }
@@ -626,7 +629,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         const emergencyContactIds = new Set(contacts.map((contact) => contact.contactId));
 
         setFriends(apiFriends.map((friend) => mapFriend(friend, emergencyContactIds)));
-        setFriendRequests(apiRequests.map(req => mapFriendRequest(req, currentUserId!)));
+        setFriendRequests(apiRequests.map((req) => mapFriendRequest(req, effectiveUserId)));
         setBlockedUsers(apiBlockedUsers.map(u => ({ id: u.userId, name: u.name, email: u.email })));
         setEmergencySettings(prev => ({
           warningEnabled: settings?.warningEnabled ?? user.warningEnabled ?? false,
@@ -701,7 +704,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         setIsAuthenticated(true);
         await Promise.all([
           refreshRoomsAndFolders(savedToken, profile.userId),
-          refreshSocialData(savedToken, settings),
+          refreshSocialData(savedToken, settings, profile.userId),
         ]);
       } catch (error) {
         console.error(error);
@@ -792,7 +795,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       console.error("Socket error", error);
     });
     const cleanupFriendRequest = onFriendRequest(socket, () => {
-      void refreshSocialData(token);
+      void refreshSocialData(token, undefined, currentUserId);
     });
     const cleanupEmergencyAlert = onEmergencyAlert(socket, (payload) => {
       window.alert(`[EMERGENCY ALERT]\nFrom User: ${payload.userId}\nMessage: ${payload.message}`);
