@@ -262,14 +262,14 @@ interface ChatContextType {
   handleDeleteAccount: () => Promise<void>;
   loadGroupMembers: (roomId: string) => Promise<Member[]>;
   saveGroupSettings: (roomId: string, settings: GroupSettingsInput) => Promise<void>;
-  approveGroupMember: (roomId: string, userId: string) => Promise<void>;
+  approveGroupMember: (roomId: string, userId: string) => Promise<Member[] | undefined>;
   updateGroupMember: (
     roomId: string,
     userId: string,
     data: { role?: "admin" | "member"; nickname?: string; isMuted?: boolean },
-  ) => Promise<void>;
-  kickGroupMember: (roomId: string, userId: string) => Promise<void>;
-  transferGroupOwner: (roomId: string, userId: string) => Promise<void>;
+  ) => Promise<Member[] | undefined>;
+  kickGroupMember: (roomId: string, userId: string) => Promise<Member[] | undefined>;
+  transferGroupOwner: (roomId: string, userId: string) => Promise<Member[] | undefined>;
   handleDeleteGroupRoom: (roomId: string) => Promise<string | null>;
   getReadAvatarsForMessage: (room: ChatRoom, msg: Message) => string[];
 
@@ -1156,7 +1156,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const approveGroupMember = async (roomId: string, userId: string) => {
     if (!token) return;
     await approveRoomMember(token, roomId, userId);
-    await loadGroupMembers(roomId);
+    return loadGroupMembers(roomId);
   };
 
   const updateGroupMember = async (
@@ -1166,19 +1166,19 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   ) => {
     if (!token) return;
     await updateRoomMember(token, roomId, userId, data);
-    await loadGroupMembers(roomId);
+    return loadGroupMembers(roomId);
   };
 
   const kickGroupMember = async (roomId: string, userId: string) => {
     if (!token) return;
     await kickRoomMember(token, roomId, userId);
-    await loadGroupMembers(roomId);
+    return loadGroupMembers(roomId);
   };
 
   const transferGroupOwner = async (roomId: string, userId: string) => {
     if (!token) return;
     await transferRoomOwner(token, roomId, userId);
-    await loadGroupMembers(roomId);
+    return loadGroupMembers(roomId);
   };
 
   const handleDeleteGroupRoom = async (roomId: string) => {
