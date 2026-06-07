@@ -553,6 +553,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const socketRef = useRef<ChatSocket | null>(null);
   const roomsRef = useRef<ChatRoom[]>([]);
+  const roomMembersRequestRef = useRef<Map<string, Promise<Member[]>>>(new Map());
   const socialDataRefreshTimerRef = useRef<NodeJS.Timeout | null>(null);
   const socialDataRefreshPromiseRef = useRef<Promise<void> | null>(null);
   const socialDataRefreshResolversRef = useRef<Array<() => void>>([]);
@@ -604,35 +605,6 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     setMessages(hydrateReplyTargets(roomMessages.flat()));
   };
 
-  const refreshGroupMembersForRooms = async (authToken: string, nextRooms: ChatRoom[]) => {
-    const entries = await Promise.all(
-      nextRooms.map(async (room) => [room.id, await fetchRoomMembers(authToken, room.id)] as const),
-    );
-    const membersByRoomId = new Map(entries);
-    const nextReadStates = entries.reduce<Record<string, Record<string, string>>>((acc, [roomId, members]) => {
-      const roomReads = members.reduce<Record<string, string>>((reads, member) => {
-        if (member.lastReadId) {
-          reads[member.userId] = member.lastReadId;
-        }
-        return reads;
-      }, {});
-
-      if (Object.keys(roomReads).length > 0) {
-        acc[roomId] = roomReads;
-      }
-      return acc;
-    }, {});
-
-    setRooms((current) =>
-      current.map((room) =>
-        membersByRoomId.has(room.id)
-          ? { ...room, members: membersByRoomId.get(room.id) }
-          : room,
-      ),
-    );
-    setGroupReadStates((current) => ({ ...current, ...nextReadStates }));
-  };
-
   const refreshRoomsAndFolders = async (authToken: string, userId = currentUserId) => {
     const [apiRooms, apiFolders] = await Promise.all([listRooms(authToken), listFolders(authToken)]);
     const nextRooms = mapRooms(apiRooms, apiFolders, roomsRef.current);
@@ -640,7 +612,6 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     setFolders((current) => mapFolders(apiFolders, current));
     setRooms(nextRooms);
     void loadMessagesForRooms(authToken, nextRooms, userId);
-    void refreshGroupMembersForRooms(authToken, nextRooms);
   };
 
   const refreshSocialData = async (authToken: string, settings?: UserSettings, userId = currentUserId) => {
@@ -778,6 +749,15 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       rooms.forEach((room) => joinRoom(socketRef.current!, room.id));
     }
   }, [rooms]);
+
+  useEffect(() => {
+    if (!token || !activeRoomId) return;
+
+    const activeRoom = rooms.find((room) => room.id === activeRoomId);
+    if (!activeRoom || activeRoom.members?.length) return;
+
+    void loadGroupMembers(activeRoomId).catch(console.error);
+  }, [activeRoomId, rooms, token]);
 
   useEffect(() => {
     if (!token) return;
@@ -1119,13 +1099,47 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
   const loadGroupMembers = async (roomId: string): Promise<Member[]> => {
     if (!token) return [];
-    const members = await fetchRoomMembers(token, roomId);
-    setRooms((current) =>
-      current.map((room) =>
-        room.id === roomId ? { ...room, members } : room,
-      ),
-    );
-    return members;
+    const existingRequest = roomMembersRequestRef.current.get(roomId);
+    if (existingRequest) {
+      return existingRequest;
+    }
+
+    // Deduplicate concurrent member loads for the same room.
+    const request = fetchRoomMembers(token, roomId)
+      .then((members) => {
+        setRooms((current) =>
+          current.map((room) =>
+            room.id === roomId ? { ...room, members } : room,
+          ),
+        );
+
+        const roomReads = members.reduce<Record<string, string>>((reads, member) => {
+          if (member.lastReadId) {
+            reads[member.userId] = member.lastReadId;
+          }
+          return reads;
+        }, {});
+
+        setGroupReadStates((current) =>
+          Object.keys(roomReads).length === 0
+            ? current
+            : {
+                ...current,
+                [roomId]: {
+                  ...(current[roomId] ?? {}),
+                  ...roomReads,
+                },
+              },
+        );
+
+        return members;
+      })
+      .finally(() => {
+        roomMembersRequestRef.current.delete(roomId);
+      });
+
+    roomMembersRequestRef.current.set(roomId, request);
+    return request;
   };
 
   const saveGroupSettings = async (roomId: string, settings: GroupSettingsInput) => {

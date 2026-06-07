@@ -67,6 +67,17 @@ export default function GroupSettings({ roomId, onClose }: GroupSettingsProps) {
   useEffect(() => {
     let cancelled = false;
     setFeedback("");
+
+    if (activeRoom?.members?.length) {
+      setMembers(activeRoom.members);
+      return () => {
+        cancelled = true;
+        if (searchTimeoutRef.current) {
+          clearTimeout(searchTimeoutRef.current);
+        }
+      };
+    }
+
     void loadGroupMembers(roomId)
       .then((loaded) => {
         if (!cancelled) {
@@ -85,7 +96,7 @@ export default function GroupSettings({ roomId, onClose }: GroupSettingsProps) {
         clearTimeout(searchTimeoutRef.current);
       }
     };
-  }, [roomId]);
+  }, [activeRoom?.members, roomId]);
 
   if (!activeRoom) {
     return (
