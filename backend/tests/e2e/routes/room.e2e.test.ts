@@ -155,4 +155,40 @@ describe('Room E2E', () => {
 
     expect(res.status).toBe(403);
   });
+
+  it('should permanently delete a group room for the owner', async () => {
+    const createRes = await request(app)
+      .post('/api/v1/rooms')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        type: 'group',
+        name: 'Delete Me',
+      });
+
+    await request(app)
+      .post(`/api/v1/rooms/${createRes.body.roomId}/members`)
+      .set('Authorization', `Bearer ${otherToken}`)
+      .send({ inviteCode: createRes.body.inviteCode });
+
+    const deleteRes = await request(app)
+      .delete(`/api/v1/rooms/${createRes.body.roomId}`)
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(deleteRes.status).toBe(204);
+
+    const ownerRooms = await request(app)
+      .get('/api/v1/rooms')
+      .set('Authorization', `Bearer ${token}`);
+    const memberRooms = await request(app)
+      .get('/api/v1/rooms')
+      .set('Authorization', `Bearer ${otherToken}`);
+
+    expect(ownerRooms.body.some((room: { roomId: string }) => room.roomId === createRes.body.roomId)).toBe(false);
+    expect(memberRooms.body.some((room: { roomId: string }) => room.roomId === createRes.body.roomId)).toBe(false);
+
+    const fetchDeleted = await request(app)
+      .get(`/api/v1/rooms/${createRes.body.roomId}`)
+      .set('Authorization', `Bearer ${token}`);
+    expect(fetchDeleted.status).toBe(404);
+  });
 });

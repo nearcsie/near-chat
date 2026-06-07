@@ -268,6 +268,9 @@ export const updateRoom = (
     { token },
   );
 
+export const deleteRoom = (token: string, roomId: string): Promise<void> =>
+  requestJson<void>(`/rooms/${roomId}`, { method: 'DELETE' }, { token });
+
 export const leaveRoom = (token: string, roomId: string): Promise<void> =>
   requestJson<void>(`/rooms/${roomId}/members/me`, { method: 'DELETE' }, { token });
 

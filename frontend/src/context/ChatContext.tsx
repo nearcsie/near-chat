@@ -29,6 +29,7 @@ import {
   deleteFriend,
   deleteFolder as deleteFolderApi,
   deleteMe as deleteMeApi,
+  deleteRoom as deleteRoomApi,
   getBlockedUsers,
   getMe,
   joinRoomByCode,
@@ -1197,7 +1198,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
   const handleDeleteGroupRoom = async (roomId: string) => {
     if (token) {
-      await updateRoom(token, roomId, { isArchived: true });
+      await deleteRoomApi(token, roomId);
     }
     const remaining = rooms.filter((room) => room.id !== roomId);
     setRooms(remaining);

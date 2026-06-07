@@ -11,7 +11,7 @@ interface RoomService {
   listMembers(roomId: string, callerId: string): Promise<RoomMember[]>;
   update(roomId: string, callerId: string, data: UpdateRoomInput): Promise<Room>;
   transferOwnership(roomId: string, callerId: string, targetUserId: string): Promise<void>;
-  archiveGroup(roomId: string, callerId: string): Promise<void>;
+  deleteGroup(roomId: string, callerId: string): Promise<void>;
   joinByCode(userId: string, inviteCode: string): Promise<Room>;
   leave(userId: string, roomId: string): Promise<void>;
   approveMember(roomId: string, callerId: string, targetUserId: string): Promise<void>;
@@ -110,9 +110,9 @@ export const makeRoomController = (service: RoomService) => ({
     }
   },
 
-  async archiveGroup(req: Request<{ id: string }>, res: Response, next: NextFunction): Promise<void> {
+  async deleteGroup(req: Request<{ id: string }>, res: Response, next: NextFunction): Promise<void> {
     try {
-      await service.archiveGroup(req.params.id, req.user!.userId);
+      await service.deleteGroup(req.params.id, req.user!.userId);
       res.status(204).send();
     } catch (err) {
       next(err);
