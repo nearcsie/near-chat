@@ -127,8 +127,8 @@ Open or create private room:
 
 Archive semantics:
 
-- `DELETE /rooms/:id` archives a group.
-- Archived rooms are read-only.
+- `DELETE /rooms/:id` permanently deletes an owner-managed group.
+- Deletion removes the room for every member; private-room read-only behavior still uses `isArchived`/`isReadonly` semantics elsewhere.
 - API responses expose `isArchived`; frontend should not depend on legacy read-only or private-room hash fields.
 
 ## Group Members

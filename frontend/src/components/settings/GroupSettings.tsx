@@ -67,6 +67,17 @@ export default function GroupSettings({ roomId, onClose }: GroupSettingsProps) {
   useEffect(() => {
     let cancelled = false;
     setFeedback("");
+
+    if (activeRoom?.members?.length) {
+      setMembers(activeRoom.members);
+      return () => {
+        cancelled = true;
+        if (searchTimeoutRef.current) {
+          clearTimeout(searchTimeoutRef.current);
+        }
+      };
+    }
+
     void loadGroupMembers(roomId)
       .then((loaded) => {
         if (!cancelled) {
@@ -85,7 +96,7 @@ export default function GroupSettings({ roomId, onClose }: GroupSettingsProps) {
         clearTimeout(searchTimeoutRef.current);
       }
     };
-  }, [roomId]);
+  }, [activeRoom?.members, roomId]);
 
   if (!activeRoom) {
     return (
@@ -195,8 +206,8 @@ export default function GroupSettings({ roomId, onClose }: GroupSettingsProps) {
     );
   };
 
-  const handleArchive = async () => {
-    if (!window.confirm("確定要封存這個群組嗎？封存後聊天室會變成唯讀。")) return;
+  const handleDeleteGroupConfirm = async () => {
+    if (!window.confirm("Delete this group permanently? Messages and members will be removed for everyone.")) return;
 
     const nextActiveId = await handleDeleteGroupRoom(roomId);
     if (nextActiveId) {
@@ -398,11 +409,11 @@ export default function GroupSettings({ roomId, onClose }: GroupSettingsProps) {
             <section className="flex flex-col gap-3 border border-red-500/20 p-4 bg-red-500/5 rounded-sm">
               <SectionTitle title="危險區" danger />
               <div className="flex flex-col items-start gap-2">
-                <Button type="button" variant="secondary" onClick={handleArchive} className="text-red-600 border-red-600 hover:bg-red-500/10">
-                  封存群組
+                <Button type="button" variant="secondary" onClick={handleDeleteGroupConfirm} className="text-red-600 border-red-600 hover:bg-red-500/10">
+                  Delete group
                 </Button>
                 <span className="text-[10px] text-red-600/70 leading-normal">
-                  封存後群組會保留歷史資料，但不可再發送新訊息。
+                  This will permanently remove the group, its members, and its message history.
                 </span>
               </div>
             </section>

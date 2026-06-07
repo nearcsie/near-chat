@@ -173,20 +173,19 @@ export const makeRoomService = (
       }
     },
 
-    // Group rooms use isArchived; private rooms use isReadonly (set by markPrivateReadOnly/reopenPrivateRoom).
-    async archiveGroup(roomId: string, callerId: string): Promise<void> {
+    async deleteGroup(roomId: string, callerId: string): Promise<void> {
       const existing = await repo.findById(roomId);
       if (!existing) throw new NotFoundError('room', roomId);
-      if (existing.type !== 'group') throw new ValidationError('Cannot archive a private room');
+      if (existing.type !== 'group') throw new ValidationError('Cannot delete a private room');
 
       const caller = await roomMemberRepo.findMember(roomId, callerId);
       if (!caller || caller.role !== 'owner') {
-        throw new ForbiddenError('Only the owner can archive the group');
+        throw new ForbiddenError('Only the owner can delete the group');
       }
 
-      await repo.update(roomId, { isArchived: true });
+      await repo.delete(roomId);
       if (emitRoomEvent) {
-        emitRoomEvent(roomId, 'room_update', { type: 'ROOM_ARCHIVED', data: { roomId } });
+        emitRoomEvent(roomId, 'room_update', { type: 'ROOM_DELETED', data: { roomId } });
       }
     },
 
