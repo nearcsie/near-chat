@@ -104,14 +104,15 @@ describe('Friendships & Blocks E2E', () => {
       expect(listRes.body.length).toBe(1);
       expect(listRes.body[0].friend.userId).toBe(userA.userId);
 
+      // accepting the request now auto-creates the private room
       const roomsBeforeOpen = await request(app).get('/api/v1/rooms').set('Authorization', `Bearer ${tokenA}`);
-      expect(roomsBeforeOpen.body.some((room: { type: string }) => room.type === 'private')).toBe(false);
+      expect(roomsBeforeOpen.body.some((room: { type: string }) => room.type === 'private')).toBe(true);
 
       const openRoom = await request(app)
         .post('/api/v1/rooms')
         .set('Authorization', `Bearer ${tokenA}`)
         .send({ type: 'private', targetUserId: userB.userId });
-      expect(openRoom.status).toBe(201);
+      expect(openRoom.status).toBe(200); // room already exists, returns existing
 
       const roomsB = await request(app).get('/api/v1/rooms').set('Authorization', `Bearer ${tokenB}`);
       const privateRoomB = roomsB.body.find((room: { type: string }) => room.type === 'private');
@@ -132,7 +133,7 @@ describe('Friendships & Blocks E2E', () => {
         .post('/api/v1/rooms')
         .set('Authorization', `Bearer ${tokenA}`)
         .send({ type: 'private', targetUserId: userB.userId });
-      expect(privateRoom.status).toBe(201);
+      expect(privateRoom.status).toBe(200); // auto-created on accept, returns existing
 
       const deleteRes = await request(app)
         .delete(`/api/v1/friends/${userB.userId}`)
@@ -221,7 +222,7 @@ describe('Friendships & Blocks E2E', () => {
         .post('/api/v1/rooms')
         .set('Authorization', `Bearer ${tokenA}`)
         .send({ type: 'private', targetUserId: userB.userId });
-      expect(privateRoom.status).toBe(201);
+      expect(privateRoom.status).toBe(200); // auto-created on accept, returns existing
 
       const blockRes = await request(app)
         .post('/api/v1/blocks')
