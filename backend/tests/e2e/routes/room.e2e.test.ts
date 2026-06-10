@@ -122,7 +122,7 @@ describe('Room E2E', () => {
       .set('Authorization', `Bearer ${token}`)
       .send({ type: 'private', target_user_id: otherUserId });
 
-    expect(first.status).toBe(201);
+    expect(first.status).toBe(200); // auto-created when friends accepted, returns existing
     expect(first.body.type).toBe('private');
     expect(first.body.roomHash).toBeUndefined();
     expect(second.status).toBe(200);
