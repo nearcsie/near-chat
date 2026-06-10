@@ -589,6 +589,63 @@ JWT 預設有效期為 `15m`，可透過環境變數 `JWT_EXPIRES_IN` 調整。T
 
 ---
 
+### E2EE 金鑰交換 (E2EE Key Exchange)
+
+端對端加密的金鑰中繼端點；伺服器只儲存公鑰與「被公鑰包裝的房間金鑰」，無法解密訊息。架構設計詳見 [e2e-encryption.md](./e2e-encryption.md)。
+
+#### `PUT /users/me/public-key`
+
+註冊／更新本人 E2EE 公鑰（冪等）。
+
+**Request Body:**
+```json
+{
+  "publicKey": "string (base64 SPKI, 1–8192 chars, required)"
+}
+```
+**Response `200`:** `{ "userId": "uuid", "publicKey": "..." }`
+
+---
+
+#### `GET /users/:id/public-key`
+
+查詢使用者公鑰；未註冊時 `publicKey` 為 `null`。
+
+**Response `200`:** `{ "userId": "uuid", "publicKey": "... | null" }`
+
+---
+
+#### `GET /rooms/:id/keys`
+
+房間成員金鑰狀態（需為非 pending 成員），供客戶端補發金鑰。
+
+**Response `200`:** `[{ "userId": "uuid", "publicKey": "... | null", "hasRoomKey": true }]`
+
+---
+
+#### `GET /rooms/:id/keys/me`
+
+取得本人被包裝的房間金鑰。
+
+**Response `200`:** `{ "roomId": "uuid", "userId": "uuid", "encryptedKey": "base64" }`
+**Response `404`:** 尚未有人分發金鑰給本人
+
+---
+
+#### `POST /rooms/:id/keys`
+
+分發包裝後的房間金鑰；收件人必須是房間成員，**僅插入尚無金鑰者**（既有金鑰不可覆寫）。
+
+**Request Body:**
+```json
+{
+  "keys": [{ "userId": "uuid", "encryptedKey": "base64 (1–8192 chars)" }]
+}
+```
+**Response `201`:** `{ "distributed": ["uuid"] }`
+
+---
+
 ### F. 資料夾分類 (Folders)
 
 #### `GET /folders`

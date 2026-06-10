@@ -1,8 +1,13 @@
 # End-to-End Encryption Scope
 
-## Decision
+> **Superseded (2026-06-11):** E2E encryption has been implemented on top of v1.
+> See [e2e-encryption.md](./e2e-encryption.md) for the architecture design
+> (key hierarchy, `room_keys` schema, key-exchange API, client flows, and
+> known limitations). The notes below are kept for historical context.
 
-End-to-end encryption is out of scope for the current v1 course submission.
+## Decision (historical)
+
+End-to-end encryption was out of scope for the original v1 course submission.
 
 The application currently stores message content as plaintext in the backend database and serves it through the REST message APIs and Socket.IO events. The frontend does not encrypt outgoing messages or decrypt incoming message history locally.
 

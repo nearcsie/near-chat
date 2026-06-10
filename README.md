@@ -39,6 +39,7 @@ A real-time group chat application built as an NTNU Database Theories course pro
    - When a user goes offline exceeding `warning_days`, pre-defined emergency messages are dispatched automatically to emergency contacts.
 4. **Chat Folder Categorization**: Users can organize multiple chat rooms into customizable directories (`folders` and `folder_rooms`).
 5. **Message Lifecycle & Actions**: Supports replying to messages (`reply_to_id`), message recalls (`is_recalled`), attachments, and soft deletes (`deleted_at`).
+6. **End-to-End Encryption**: Messages are encrypted client-side with per-room AES-256-GCM keys (wrapped via RSA-OAEP per member into `room_keys`), so the database only stores `E2E.v1` ciphertext envelopes; search runs locally over decrypted content. See [docs/e2e-encryption.md](docs/e2e-encryption.md).
 
 ## Database & Architecture
 
@@ -282,6 +283,7 @@ For more testing details, see [docs/TESTING.md](docs/TESTING.md).
    - 當使用者離線天數超過設定的 `warning_days` 時，系統會自動向設定好的緊急聯絡人發送預設訊息。
 4. **聊天分類資料夾**: 使用者可透過自訂資料夾分類聊天對話框（透過 `folders` 及 `folder_rooms` 關聯）。
 5. **訊息生命週期控制**: 支援回覆訊息 (`reply_to_id`)、訊息收回 (`is_recalled`)、檔案附件關聯以及軟刪除機制 (`deleted_at`)。
+6. **端對端加密 (E2EE)**: 訊息於客戶端以每房間一把的 AES-256-GCM 金鑰加密（金鑰再以各成員 RSA-OAEP 公鑰包裝存入 `room_keys`），資料庫僅儲存 `E2E.v1` 密文信封，並支援前端本地解密搜尋。架構設計詳見 [docs/e2e-encryption.md](docs/e2e-encryption.md)。
 
 ## 資料庫與架構設計
 

@@ -22,6 +22,7 @@
 | app_theme | VARCHAR(10) | UI 主題偏好（對外 API 欄位名為 `theme`） | NOT NULL, DEFAULT 'light', CHECK IN ('light', 'dark') |
 | notify_desktop | BOOLEAN | 桌面通知偏好（對外 API 欄位名為 `notifyDesktop`） | NOT NULL, DEFAULT TRUE |
 | notify_sound | BOOLEAN | 訊息音效偏好（對外 API 欄位名為 `notifySound`） | NOT NULL, DEFAULT TRUE |
+| public_key | TEXT | E2EE 公鑰（RSA-OAEP SPKI, base64）；私鑰僅存於客戶端 | NULLABLE |
 
 ### chat_rooms (聊天室)
 | 欄位名 | 型別 | 說明 | 限制 |
@@ -110,6 +111,17 @@
 | message | TEXT | 預設發送訊息 | NOT NULL |
 | created_at | TIMESTAMP | 設定時間 | NOT NULL, DEFAULT CURRENT_TIMESTAMP |
 
+### room_keys (端對端加密房間金鑰)
+| 欄位名 | 型別 | 說明 | 限制 |
+| :--- | :--- | :--- | :--- |
+| room_id | UUID | 聊天室 ID | PK, FK(chat_rooms), CASCADE DELETE |
+| user_id | UUID | 成員 ID | PK, FK(users), CASCADE DELETE |
+| encrypted_key | TEXT | 房間 AES-256-GCM 金鑰，以該成員公鑰 RSA-OAEP 包裝後的 base64 | NOT NULL |
+| created_at | TIMESTAMP | 分發時間 | NOT NULL, DEFAULT CURRENT_TIMESTAMP |
+
+> 寫入採 `ON CONFLICT (room_id, user_id) DO NOTHING`：既有金鑰不可被覆寫。
+> 詳細架構見 [e2e-encryption.md](./e2e-encryption.md)。
+
 ### message_mentions (訊息提及)
 | 欄位名 | 型別 | 說明 | 限制 |
 | :--- | :--- | :--- | :--- |
@@ -123,3 +135,4 @@
 - 需要有資料庫或其他後端層級的唯一性保證，避免雙方同時操作時重複建立 `private` 聊天室。
 - `is_archived = true` 表示聊天室已封存，封存後保留歷史資料，但不可再發送新訊息。
 - `attachments` 與 `messages` 的關係為多對一：單一附件最終只屬於一則訊息，但一則訊息可擁有多個附件。
+- 端對端加密：`messages.content` 可儲存 `E2E.v1:<iv>:<ciphertext>` 密文信封（與既有明文共存）；伺服器與資料庫無法解密，金鑰交換見 `room_keys` 與 [e2e-encryption.md](./e2e-encryption.md)。
