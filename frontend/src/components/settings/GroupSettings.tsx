@@ -217,6 +217,27 @@ export default function GroupSettings({ roomId, onClose }: GroupSettingsProps) {
     router.push("/");
   };
 
+  const handleArchiveToggle = async () => {
+    const next = !activeRoom.isArchived;
+    const label = next ? "封存" : "解除封存";
+    if (!window.confirm(`確定要${label}此群組嗎？`)) return;
+    setIsSaving(true);
+    setFeedback("");
+    try {
+      await saveGroupSettings(roomId, {
+        name,
+        requireApproval,
+        viewHistory,
+        isArchived: next,
+      });
+      setFeedback(`群組已${label}。`);
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : `${label}失敗`);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const handleCopyInviteCode = async () => {
     const code = activeRoom.inviteCode;
     if (!code) return;
@@ -408,13 +429,31 @@ export default function GroupSettings({ roomId, onClose }: GroupSettingsProps) {
           {canTransferOwner && (
             <section className="flex flex-col gap-3 border border-red-500/20 p-4 bg-red-500/5 rounded-sm">
               <SectionTitle title="危險區" danger />
-              <div className="flex flex-col items-start gap-2">
-                <Button type="button" variant="secondary" onClick={handleDeleteGroupConfirm} className="text-red-600 border-red-600 hover:bg-red-500/10">
-                  Delete group
-                </Button>
-                <span className="text-[10px] text-red-600/70 leading-normal">
-                  This will permanently remove the group, its members, and its message history.
-                </span>
+              <div className="flex flex-col items-start gap-4">
+                <div className="flex flex-col items-start gap-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => void handleArchiveToggle()}
+                    disabled={isSaving}
+                    className="text-amber-600 border-amber-600 hover:bg-amber-500/10"
+                  >
+                    {activeRoom.isArchived ? "解除封存群組" : "封存群組"}
+                  </Button>
+                  <span className="text-[10px] text-amber-600/70 leading-normal">
+                    {activeRoom.isArchived
+                      ? "解除封存後，成員可以再次傳送訊息。"
+                      : "封存後，群組進入唯讀狀態，成員無法傳送新訊息。"}
+                  </span>
+                </div>
+                <div className="flex flex-col items-start gap-2">
+                  <Button type="button" variant="secondary" onClick={handleDeleteGroupConfirm} className="text-red-600 border-red-600 hover:bg-red-500/10">
+                    Delete group
+                  </Button>
+                  <span className="text-[10px] text-red-600/70 leading-normal">
+                    This will permanently remove the group, its members, and its message history.
+                  </span>
+                </div>
               </div>
             </section>
           )}

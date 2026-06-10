@@ -218,6 +218,7 @@ interface GroupSettingsInput {
   name: string;
   requireApproval: boolean;
   viewHistory: boolean;
+  isArchived?: boolean;
 }
 
 interface ChatContextType {
@@ -1177,6 +1178,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       name: settings.name,
       requireApproval: settings.requireApproval,
       viewHistory: settings.viewHistory,
+      ...(settings.isArchived !== undefined && { isArchived: settings.isArchived }),
     });
 
     setRooms((current) =>
