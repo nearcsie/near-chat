@@ -56,6 +56,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
     getReadAvatarsForMessage,
     showRightPanel,
     setShowRightPanel,
+    typingUsers,
   } = useChat();
 
   const [inputText, setInputText] = useState("");
@@ -378,6 +379,19 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
           </button>
         </div>
       )}
+
+      {(() => {
+        const names = typingUsers[activeRoom.id] ?? [];
+        if (names.length === 0) return null;
+        const label = names.length === 1
+          ? `${names[0]} is typing...`
+          : `${names.slice(0, 2).join(', ')} are typing...`;
+        return (
+          <div className="px-6 py-1 text-xs text-text-muted italic select-none">
+            {label}
+          </div>
+        );
+      })()}
 
       {/* Input Box Area */}
       <div className="border-t border-border-primary bg-surface-card px-6 py-4 shrink-0">

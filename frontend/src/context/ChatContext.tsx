@@ -224,6 +224,7 @@ interface ChatContextType {
   rooms: ChatRoom[];
   folders: Folder[];
   messages: Message[];
+  typingUsers: Record<string, string[]>;
   groupReadStates: Record<string, Record<string, string>>;
   user: User;
   activeRoomNicknames: Record<string, string>;
@@ -580,6 +581,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   });
   const [selectedFriendForSidebar, setSelectedFriendForSidebar] = useState<Friend | null>(null);
   const [showRightPanel, setShowRightPanel] = useState<boolean>(true);
+  const [typingUsers, setTypingUsers] = useState<Record<string, string[]>>({});
+  const typingTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   const activeRoomId = useMemo(() => {
     const match = pathname.match(/^\/chat\/([^/]+)$/);
@@ -824,7 +827,31 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       );
     });
     const cleanupTyping = onUserTyping(socket, ({ roomId, userId, isTyping }) => {
-      console.debug("typing", { roomId, userId, isTyping });
+      const typingRoom = roomsRef.current.find(r => r.id === roomId);
+      const typingMember = typingRoom?.members?.find(m => m.userId === userId);
+      const displayName = typingMember?.nickname ?? typingMember?.name ?? userId;
+      const timerKey = `${roomId}:${userId}`;
+      if (typingTimersRef.current[timerKey]) {
+        clearTimeout(typingTimersRef.current[timerKey]);
+      }
+      if (isTyping) {
+        setTypingUsers(prev => {
+          const current = prev[roomId] ?? [];
+          if (current.includes(displayName)) return prev;
+          return { ...prev, [roomId]: [...current, displayName] };
+        });
+        typingTimersRef.current[timerKey] = setTimeout(() => {
+          setTypingUsers(prev => ({
+            ...prev,
+            [roomId]: (prev[roomId] ?? []).filter(n => n !== displayName),
+          }));
+        }, 3000);
+      } else {
+        setTypingUsers(prev => ({
+          ...prev,
+          [roomId]: (prev[roomId] ?? []).filter(n => n !== displayName),
+        }));
+      }
     });
     const cleanupError = onSocketError(socket, (error) => {
       console.error("Socket error", error);
@@ -1517,6 +1544,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         saveEmergencySettings,
         triggerEmergencyAlertNow,
         setUiLanguage,
+        typingUsers,
       }}
     >
       {children}
