@@ -64,6 +64,8 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
   const [selectedMentionIndex, setSelectedMentionIndex] = useState(0);
   const [replyTarget, setReplyTarget] = useState<Message | null>(null);
   const [showHeaderPopover, setShowHeaderPopover] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const messageEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -87,6 +89,11 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
   useEffect(() => {
     setSelectedMentionIndex(0);
   }, [mentionDraft?.query, roomId]);
+
+  useEffect(() => {
+    setShowSearch(false);
+    setSearchQuery("");
+  }, [roomId]);
 
   // Scroll to bottom when room or messages change
   useEffect(() => {
@@ -243,6 +250,26 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
 
         {/* Header Action Elements */}
         <div className="flex items-center gap-3">
+          {/* Local decrypted-message search toggle */}
+          <button
+            onClick={() => {
+              setShowSearch((current) => {
+                if (current) setSearchQuery("");
+                return !current;
+              });
+            }}
+            className={`p-1.5 border rounded-sm transition-colors cursor-pointer ${
+              showSearch
+                ? "bg-primary/10 border-primary/30 text-primary"
+                : "border-border-secondary hover:border-border-primary text-text-muted hover:text-foreground"
+            }`}
+            title={t("chatroom.searchMessages")}
+          >
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 10.5a6.5 6.5 0 11-13 0 6.5 6.5 0 0113 0z" />
+            </svg>
+          </button>
+
           {/* Panel Toggle Button */}
           <button
             onClick={() => setShowRightPanel(!showRightPanel)}
@@ -307,10 +334,49 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
         </div>
       </div>
 
+      {/* Local Search Bar — messages are decrypted in memory, so search never
+          touches the server (the database only holds ciphertext). */}
+      {showSearch && (
+        <div className="border-b border-border-primary bg-surface-muted px-6 py-2 flex items-center gap-3 shrink-0">
+          <input
+            type="text"
+            autoFocus
+            placeholder={t("chatroom.searchPlaceholder")}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                setShowSearch(false);
+                setSearchQuery("");
+              }
+            }}
+            className="flex-1 bg-surface-card border border-border-secondary focus:border-primary focus:outline-none rounded-sm px-3 py-1.5 text-xs text-foreground transition-colors"
+          />
+          {searchQuery.trim() && (
+            <span className="text-[10px] text-text-muted whitespace-nowrap select-none">
+              {t("chatroom.searchResults", {
+                count: messages.filter(
+                  (m) =>
+                    m.roomId === activeRoom.id &&
+                    !m.isRecalled &&
+                    m.content.toLowerCase().includes(searchQuery.trim().toLowerCase()),
+                ).length,
+              })}
+            </span>
+          )}
+        </div>
+      )}
+
       {/* Chat Messages Area */}
       <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-4">
         {messages
           .filter((m) => m.roomId === activeRoom.id)
+          .filter(
+            (m) =>
+              !searchQuery.trim() ||
+              (!m.isRecalled &&
+                m.content.toLowerCase().includes(searchQuery.trim().toLowerCase())),
+          )
           .map((msg) => {
             const senderMember = activeRoom.members?.find((m) => m.userId === msg.senderId);
             const displayName = senderMember?.nickname || msg.senderName;

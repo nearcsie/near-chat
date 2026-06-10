@@ -231,6 +231,41 @@ export interface EmergencyContactResponse {
   };
 }
 
+// ---------------------------------------------------------------------------
+// E2E encryption (key exchange — the server only ever sees wrapped keys)
+// ---------------------------------------------------------------------------
+
+/** Encrypted message envelope prefix: `E2E.v1:<ivBase64>:<cipherBase64>`. */
+export const E2EE_ENVELOPE_PREFIX = 'E2E.v1:';
+
+export interface PublicKeyResponse {
+  userId: string;
+  /** Base64 SPKI public key; null when the user has not enrolled yet. */
+  publicKey: string | null;
+}
+
+export interface RoomKeyResponse {
+  roomId: string;
+  userId: string;
+  /** Room AES key wrapped with the member's public key (base64). */
+  encryptedKey: string;
+}
+
+/** Per-member key status used by clients to distribute missing room keys. */
+export interface RoomKeyMemberStatus {
+  userId: string;
+  publicKey: string | null;
+  hasRoomKey: boolean;
+}
+
+export interface DistributeRoomKeysRequest {
+  keys: { userId: string; encryptedKey: string }[];
+}
+
+export interface DistributeRoomKeysResponse {
+  distributed: string[];
+}
+
 export interface Attachment {
   attachmentId: string;
   messageId?: string;

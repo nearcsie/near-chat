@@ -1,6 +1,7 @@
 import type {
   Attachment,
   AuthResponse,
+  DistributeRoomKeysResponse,
   EmergencyContactResponse,
   Folder as ApiFolder,
   FriendRequestResponse,
@@ -8,7 +9,10 @@ import type {
   LoginRequest,
   MessageWithSender,
   MyProfile,
+  PublicKeyResponse,
   PublicUser,
+  RoomKeyMemberStatus,
+  RoomKeyResponse,
   RegisterRequest,
   Room,
   RoomMember,
@@ -335,6 +339,42 @@ export const listMessages = (
 
   return requestJson<MessageWithSender[]>(`/rooms/${roomId}/messages${suffix}`, {}, { token });
 };
+
+export const setMyPublicKey = (token: string, publicKey: string): Promise<PublicKeyResponse> =>
+  requestJson<PublicKeyResponse>(
+    '/users/me/public-key',
+    {
+      method: 'PUT',
+      ...withJsonBody({ publicKey }),
+    },
+    { token },
+  );
+
+export const getUserPublicKey = (token: string, userId: string): Promise<PublicKeyResponse> =>
+  requestJson<PublicKeyResponse>(`/users/${userId}/public-key`, {}, { token });
+
+export const getMyRoomKey = (token: string, roomId: string): Promise<RoomKeyResponse> =>
+  requestJson<RoomKeyResponse>(`/rooms/${roomId}/keys/me`, {}, { token });
+
+export const listRoomKeyStatus = (
+  token: string,
+  roomId: string,
+): Promise<RoomKeyMemberStatus[]> =>
+  requestJson<RoomKeyMemberStatus[]>(`/rooms/${roomId}/keys`, {}, { token });
+
+export const distributeRoomKeys = (
+  token: string,
+  roomId: string,
+  keys: { userId: string; encryptedKey: string }[],
+): Promise<DistributeRoomKeysResponse> =>
+  requestJson<DistributeRoomKeysResponse>(
+    `/rooms/${roomId}/keys`,
+    {
+      method: 'POST',
+      ...withJsonBody({ keys }),
+    },
+    { token },
+  );
 
 export const listFolders = (token: string): Promise<ApiFolder[]> =>
   requestJson<ApiFolder[]>('/folders', {}, { token });

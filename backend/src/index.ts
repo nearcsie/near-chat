@@ -17,6 +17,10 @@ import { makeAttachmentService } from "./services/attachmentService";
 import { makeAttachmentController } from "./controllers/attachmentController";
 import { makeAttachmentRoutes } from "./routes/attachmentRoutes";
 import { makeFriendRepository } from "./repositories/friendRepository";
+import { KeyRepository } from "./repositories/keyRepository";
+import { makeKeyService } from "./services/keyService";
+import { makeKeyController } from "./controllers/keyController";
+import { makeKeyRoutes } from "./routes/keyRoutes";
 import { makeUserService } from "./services/userService";
 import { makeRoomService } from "./services/roomService";
 import { makeMessageService } from "./services/messageService";
@@ -67,6 +71,7 @@ const messageRepo = new MessageRepository(pool);
 const folderRepo = new FolderRepository(pool);
 const attachmentRepo = new AttachmentRepository(pool);
 const friendRepo = makeFriendRepository(pool);
+const keyRepo = new KeyRepository(pool);
 
 const userService = makeUserService(userRepo, emergencyContactRepo, { signToken }, async (contactId, payload) => {
   // Send a real chat message
@@ -90,6 +95,7 @@ const roomService = makeRoomService(roomRepo, roomMemberRepo, (roomId, eventName
   friendRepo,
 );
 const messageService = makeMessageService(messageRepo, roomRepo, roomMemberRepo);
+const keyService = makeKeyService(keyRepo, roomRepo, roomMemberRepo);
 const folderService = makeFolderService(folderRepo, roomMemberRepo);
 const attachmentService = makeAttachmentService(attachmentRepo);
 
@@ -111,6 +117,7 @@ app.use("/api/v1/attachments", makeAttachmentRoutes(makeAttachmentController(att
 app.use("/api/v1/friends", makeFriendRoutes(friendController));
 app.use("/api/v1/friend-requests", makeFriendRequestRoutes(friendController));
 app.use("/api/v1/blocks", makeBlockRoutes(friendController));
+app.use("/api/v1", makeKeyRoutes(makeKeyController(keyService)));
 app.use(errorHandler);
 
 attachSocketAuth(io);

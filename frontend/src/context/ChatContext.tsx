@@ -75,6 +75,13 @@ import {
   sendTyping,
   type ChatSocket,
 } from "@/lib/socket";
+import {
+  decryptForRoom,
+  encryptForRoom,
+  initE2ee,
+  isEncryptedEnvelope,
+  resetE2ee,
+} from "@/lib/e2ee";
 
 export interface Member {
   userId: string;
@@ -329,6 +336,7 @@ const summarizeMessagePreview = (message: {
   isRecalled?: boolean;
 }) => {
   if (message.isRecalled) return "";
+  if (isEncryptedEnvelope(message.content)) return "🔒";
   if (message.content.trim()) return message.content.trim();
   if (message.attachments?.length) return message.attachments[0].filename;
   return "";
@@ -591,6 +599,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   }, [pathname]);
 
   const clearSession = () => {
+    resetE2ee();
     localStorage.removeItem("token");
     localStorage.removeItem("user");
     setToken(null);
@@ -600,11 +609,25 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     socketRef.current = null;
   };
 
+  // Resolves E2EE envelopes to plaintext (or a locked placeholder) so all
+  // downstream state — previews, replies, local search — works on cleartext.
+  const decryptMappedMessages = async (authToken: string, items: Message[]): Promise<Message[]> =>
+    Promise.all(
+      items.map(async (item) =>
+        isEncryptedEnvelope(item.content)
+          ? { ...item, content: await decryptForRoom(authToken, item.roomId, item.content) }
+          : item,
+      ),
+    );
+
   const loadMessagesForRooms = async (authToken: string, nextRooms: ChatRoom[], userId?: string) => {
     const roomMessages = await Promise.all(
       nextRooms.map(async (room) => {
         const rows = await listMessages(authToken, room.id, { limit: 50 });
-        return rows.reverse().map((message) => mapMessage(message, userId));
+        return decryptMappedMessages(
+          authToken,
+          rows.reverse().map((message) => mapMessage(message, userId)),
+        );
       }),
     );
     setMessages(hydrateReplyTargets(roomMessages.flat()));
@@ -730,6 +753,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         setUiLanguageState(stored.language ?? "en");
         setToken(savedToken);
         setIsAuthenticated(true);
+        // Enroll this device's E2EE keys before messages are decrypted.
+        await initE2ee(savedToken, profile.userId).catch(console.error);
         await Promise.all([
           refreshRoomsAndFolders(savedToken, profile.userId),
           refreshSocialData(savedToken, settings, profile.userId),
@@ -775,22 +800,27 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     };
 
     const cleanupNewMessage = onNewMessage(socket, (payload) => {
-      const incoming = mapMessage(payload, currentUserId);
-      setMessages((current) => {
-        const withoutDuplicate = current.filter((message) => message.id !== incoming.id);
-        return hydrateReplyTargets(sortMessages([...withoutDuplicate, incoming]));
-      });
-      setRooms((current) =>
-        current.map((room) =>
-          room.id === incoming.roomId
-            ? {
-                ...room,
-                lastMessagePreview: summarizeMessagePreview(incoming),
-                lastMessageAt: incoming.timestamp,
-              }
-            : room,
-        ),
-      );
+      void (async () => {
+        const mapped = mapMessage(payload, currentUserId);
+        const incoming = isEncryptedEnvelope(mapped.content)
+          ? { ...mapped, content: await decryptForRoom(token, mapped.roomId, mapped.content) }
+          : mapped;
+        setMessages((current) => {
+          const withoutDuplicate = current.filter((message) => message.id !== incoming.id);
+          return hydrateReplyTargets(sortMessages([...withoutDuplicate, incoming]));
+        });
+        setRooms((current) =>
+          current.map((room) =>
+            room.id === incoming.roomId
+              ? {
+                  ...room,
+                  lastMessagePreview: summarizeMessagePreview(incoming),
+                  lastMessageAt: incoming.timestamp,
+                }
+              : room,
+          ),
+        );
+      })();
     });
     const cleanupRecall = onMessageRecalled(socket, ({ messageId }) => {
       setMessages((current) =>
@@ -901,13 +931,19 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   };
 
   const handleSendMessage = (roomId: string, content: string, replyTarget: Message | null) => {
-    if (!content.trim() || !socketRef.current) return;
+    if (!content.trim() || !socketRef.current || !token) return;
 
-    sendMessage(socketRef.current, {
-      roomId,
-      content,
-      replyTo: replyTarget?.id,
-    });
+    void (async () => {
+      // Encrypt before the message ever leaves this device; the server and
+      // database only see the E2E.v1 ciphertext envelope.
+      const outgoing = await encryptForRoom(token, roomId, content).catch(() => content);
+      if (!socketRef.current) return;
+      sendMessage(socketRef.current, {
+        roomId,
+        content: outgoing,
+        replyTo: replyTarget?.id,
+      });
+    })();
   };
 
   const handleTyping = (roomId: string, isTyping: boolean) => {
@@ -918,9 +954,12 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const handleUploadAttachment = async (roomId: string, file: File) => {
     if (!token || !socketRef.current) return;
     const uploaded = await uploadAttachment(token, file);
+    const caption = formatUploadedAttachmentMessage(uiLanguage, file.name);
+    const content = await encryptForRoom(token, roomId, caption).catch(() => caption);
+    if (!socketRef.current) return;
     sendMessage(socketRef.current, {
       roomId,
-      content: formatUploadedAttachmentMessage(uiLanguage, file.name),
+      content,
       attachmentIds: [uploaded.attachmentId],
     });
   };
