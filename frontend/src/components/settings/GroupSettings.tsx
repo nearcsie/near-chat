@@ -51,33 +51,44 @@ export default function GroupSettings({ roomId, onClose }: GroupSettingsProps) {
   const canManageMembers = currentMember?.role === "owner" || currentMember?.role === "admin";
   const canTransferOwner = currentMember?.role === "owner";
 
-  useEffect(() => {
-    if (!activeRoom) return;
+  // Sync the form fields when the room data changes
+  // (adjust state during render instead of cascading effects).
+  const roomSyncKey = activeRoom
+    ? `${activeRoom.id}|${activeRoom.name}|${String(Boolean(activeRoom.requireApproval))}|${String(activeRoom.viewHistory ?? true)}`
+    : null;
+  const [prevRoomSyncKey, setPrevRoomSyncKey] = useState<string | null>(null);
+  if (activeRoom && roomSyncKey !== prevRoomSyncKey) {
+    setPrevRoomSyncKey(roomSyncKey);
     setName(activeRoom.name);
     setRequireApproval(Boolean(activeRoom.requireApproval));
     setViewHistory(activeRoom.viewHistory ?? true);
-  }, [activeRoom?.id, activeRoom?.name, activeRoom?.requireApproval, activeRoom?.viewHistory]);
+  }
 
-  useEffect(() => {
-    if (activeRoom?.members) {
-      setMembers(activeRoom.members);
-    }
-  }, [activeRoom?.members]);
-
-  useEffect(() => {
-    let cancelled = false;
+  // Mirror member data from the room context and clear stale feedback
+  // whenever the room or its member list changes.
+  const contextMembers = activeRoom?.members;
+  const [prevMembersSync, setPrevMembersSync] = useState<{
+    roomId: string;
+    members: Member[] | undefined;
+  } | null>(null);
+  if (!prevMembersSync || prevMembersSync.roomId !== roomId || prevMembersSync.members !== contextMembers) {
+    setPrevMembersSync({ roomId, members: contextMembers });
     setFeedback("");
+    if (contextMembers) {
+      setMembers(contextMembers);
+    }
+  }
 
+  useEffect(() => {
     if (activeRoom?.members?.length) {
-      setMembers(activeRoom.members);
       return () => {
-        cancelled = true;
         if (searchTimeoutRef.current) {
           clearTimeout(searchTimeoutRef.current);
         }
       };
     }
 
+    let cancelled = false;
     void loadGroupMembers(roomId)
       .then((loaded) => {
         if (!cancelled) {

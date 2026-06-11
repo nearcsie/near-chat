@@ -27,7 +27,10 @@ export default function ProfileSettings() {
   const [profileFeedback, setProfileFeedback] = useState<SettingsFeedback | null>(null);
   const [preferencesFeedback, setPreferencesFeedback] = useState<SettingsFeedback | null>(null);
 
+  // localStorage is only available after mount, so this hydration must stay in
+  // an effect; reading it during render would break SSR/hydration.
   useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect -- post-mount localStorage hydration */
     const savedUser = localStorage.getItem("user");
     if (savedUser) {
       try {
@@ -49,11 +52,19 @@ export default function ProfileSettings() {
     setPersonalTheme(user.theme || localStorage.getItem("theme") || "light");
     setDesktopNotifications(user.notifyDesktop ?? (localStorage.getItem("notify-desktop") !== "false"));
     setMessageSounds(user.notifySound ?? (localStorage.getItem("notify-sound") !== "false"));
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [user]);
 
-  useEffect(() => {
+  // Sync the language selector when the user profile or UI language changes
+  // (adjust state during render instead of a cascading effect).
+  const [prevLanguageSync, setPrevLanguageSync] = useState<{
+    user: typeof user;
+    uiLanguage: UiLanguage;
+  } | null>(null);
+  if (!prevLanguageSync || prevLanguageSync.user !== user || prevLanguageSync.uiLanguage !== uiLanguage) {
+    setPrevLanguageSync({ user, uiLanguage });
     setPersonalLanguage(user.language ?? uiLanguage);
-  }, [user, uiLanguage]);
+  }
 
   const { t } = useTranslation();
 
