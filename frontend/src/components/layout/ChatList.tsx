@@ -294,7 +294,7 @@ function RoomItem({
         draggable
         onDragStart={onDragStart}
         onDragEnd={onDragEnd}
-        className="flex min-w-0 flex-1 items-center gap-2.5 text-left select-none cursor-grab active:cursor-grabbing"
+        className="flex min-w-0 flex-1 items-center gap-2.5 text-left select-none cursor-pointer"
       >
         <Avatar name={room.name} src={avatarSrc} size="sm" isOnline={room.isOnline} />
         <span className="min-w-0 flex-1">
