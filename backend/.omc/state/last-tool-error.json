@@ -1,7 +1,0 @@
-{
-  "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"DATABASE_URL=\\\"postgresql://chatuser:chatpassword@localhost:5435/chatdb\\\" rtk psql postgresql://chatuser:chatpassword@localhost:5435/chatdb -c \\\"SELECT name FROM pgmigrations ORDER BY run_...",
-  "error": "Exit code 1",
-  "timestamp": "2026-06-04T07:45:46.881Z",
-  "retry_count": 3
-}
