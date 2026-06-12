@@ -264,22 +264,6 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
 
         {/* Header Action Elements */}
         <div className="flex items-center gap-3">
-          {/* Panel Toggle Button */}
-          <button
-            onClick={() => setShowRightPanel(!showRightPanel)}
-            className={`p-1.5 border rounded-sm transition-colors cursor-pointer ${
-              showRightPanel
-                ? "bg-primary/10 border-primary/30 text-primary"
-                : "border-border-secondary hover:border-border-primary text-text-muted hover:text-foreground"
-            }`}
-            title={showRightPanel ? t("chatroom.hideInfoPanel") : t("chatroom.showInfoPanel")}
-          >
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v14a1 1 0 01-1 1H5a1 1 0 01-1-1V5z" />
-              <path strokeLinecap="round" strokeLinejoin="round" d="M16 4v16" />
-            </svg>
-          </button>
-
           {/* Group Settings Button */}
           {activeRoom.type === "group" && onOpenGroupSettings && (
             <Button
@@ -315,6 +299,22 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
               },
             ]}
           />
+
+          {/* Panel Toggle Button */}
+          <button
+            onClick={() => setShowRightPanel(!showRightPanel)}
+            className={`p-1.5 border rounded-sm transition-colors cursor-pointer ${
+              showRightPanel
+                ? "bg-primary/10 border-primary/30 text-primary"
+                : "border-border-secondary hover:border-border-primary text-text-muted hover:text-foreground"
+            }`}
+            title={showRightPanel ? t("chatroom.hideInfoPanel") : t("chatroom.showInfoPanel")}
+          >
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v14a1 1 0 01-1 1H5a1 1 0 01-1-1V5z" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M16 4v16" />
+            </svg>
+          </button>
         </div>
       </div>
 
