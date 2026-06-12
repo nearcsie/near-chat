@@ -47,7 +47,6 @@ export default function Sidebar() {
   const [newRoomFolder, setNewRoomFolder] = useState("");
   const [newFolderName, setNewFolderName] = useState("");
 
-  const activeUserDisplayName = (activeRoomId && activeRoomNicknames[activeRoomId]) || user.username;
   const { t } = useTranslation();
 
   const handleCreateRoomSubmit = async (e: React.FormEvent) => {
@@ -231,7 +230,7 @@ export default function Sidebar() {
         <div className="p-4 flex items-center gap-3">
           <Avatar name={user.username} src={user.avatar} size="sm" isOnline />
           <div className="flex-1 min-w-0">
-            <p className="text-xs font-bold text-foreground truncate leading-tight">{activeUserDisplayName}</p>
+            <p className="text-xs font-bold text-foreground truncate leading-tight">{user.username}</p>
             <p className="text-[10px] text-text-muted truncate font-mono mt-0.5">{user.email}</p>
           </div>
         </div>

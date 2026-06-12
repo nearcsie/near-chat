@@ -8,6 +8,7 @@ import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { Input } from "@/components/ui/Input";
+import { Modal } from "@/components/ui/Modal";
 import { useTranslation } from "@/hooks/useTranslation";
 
 interface GroupSettingsProps {
@@ -43,6 +44,9 @@ export default function GroupSettings({ roomId, onClose }: GroupSettingsProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<PublicUser[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [isModifyNickOpen, setIsModifyNickOpen] = useState(false);
+  const [selectedMember, setSelectedMember] = useState<Member | null>(null);
+  const [nickInputValue, setNickInputValue] = useState("");
   const [memberActionUserId, setMemberActionUserId] = useState<string | null>(null);
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -177,16 +181,26 @@ export default function GroupSettings({ roomId, onClose }: GroupSettingsProps) {
       t("groupSettings.roleFailed"),
     );
 
-  const handleNickname = async (member: Member) => {
-    const nickname = window.prompt(t("groupSettings.nicknamePrompt"), member.nickname ?? "");
-    if (nickname === null) return;
+  const handleNickname = (member: Member) => {
+    setSelectedMember(member);
+    setNickInputValue(member.nickname || member.name);
+    setIsModifyNickOpen(true);
+  };
+
+  const handleModifyNickSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedMember) return;
+    const trimmed = nickInputValue.trim();
+    const finalNick = trimmed || selectedMember.name;
+    setIsModifyNickOpen(false);
 
     await runMemberAction(
-      member,
-      () => updateGroupMember(roomId, member.userId, { nickname: nickname.trim() }),
-      t("groupSettings.nicknameUpdated", { name: member.name }),
+      selectedMember,
+      () => updateGroupMember(roomId, selectedMember.userId, { nickname: finalNick }),
+      t("groupSettings.nicknameUpdated", { name: selectedMember.name }),
       t("groupSettings.nicknameFailed"),
     );
+    setSelectedMember(null);
   };
 
   const handleToggleMute = async (member: Member) =>
@@ -491,6 +505,40 @@ export default function GroupSettings({ roomId, onClose }: GroupSettingsProps) {
           )}
         </form>
       </div>
+
+      <Modal
+        isOpen={isModifyNickOpen}
+        onClose={() => {
+          setIsModifyNickOpen(false);
+          setSelectedMember(null);
+        }}
+        title={t("chatroom.modifyNickname")}
+      >
+        <form onSubmit={handleModifyNickSubmit} className="flex flex-col gap-5">
+          <Input
+            label={t("chatroom.nickname")}
+            value={nickInputValue}
+            onChange={(e) => setNickInputValue(e.target.value)}
+            required
+            placeholder={t("chatroom.nicknamePlaceholder")}
+          />
+          <div className="flex justify-end gap-3">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                setIsModifyNickOpen(false);
+                setSelectedMember(null);
+              }}
+            >
+              {t("chatroom.cancel")}
+            </Button>
+            <Button type="submit">
+              {t("chatroom.save")}
+            </Button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 }
@@ -524,7 +572,7 @@ function MemberRow({
   canTransferOwner: boolean;
   onApprove: (member: Member) => Promise<void>;
   onRoleChange: (member: Member, role: "admin" | "member") => Promise<void>;
-  onNickname: (member: Member) => Promise<void>;
+  onNickname: (member: Member) => Promise<void> | void;
   onToggleMute: (member: Member) => Promise<void>;
   onKick: (member: Member) => Promise<void>;
   onTransferOwner: (member: Member) => Promise<void>;

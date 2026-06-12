@@ -9,6 +9,8 @@ import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
 import { ChatBubble } from "@/components/ui/ChatBubble";
 import { useTranslation } from "@/hooks/useTranslation";
+import { Modal } from "@/components/ui/Modal";
+import { Input } from "@/components/ui/Input";
 import ProfilePopover from "./ProfilePopover";
 
 interface ChatroomProps {
@@ -64,6 +66,8 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
   const [selectedMentionIndex, setSelectedMentionIndex] = useState(0);
   const [replyTarget, setReplyTarget] = useState<Message | null>(null);
   const [showHeaderPopover, setShowHeaderPopover] = useState(false);
+  const [isModifyNickOpen, setIsModifyNickOpen] = useState(false);
+  const [nickInputValue, setNickInputValue] = useState("");
   const messageEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -134,11 +138,23 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
   };
 
   const handleModifyNick = () => {
-    const currentNick = activeRoomNicknames[activeRoom.id] || "我";
-    const nick = prompt(t("chatroom.modifyNicknamePrompt"), currentNick);
-    if (nick !== null) {
-      handleModifyNickname(activeRoom.id, nick || "我");
+    if (!activeRoom) return;
+    const currentNick = activeRoomNicknames[activeRoom.id] || user.username;
+    setNickInputValue(currentNick);
+    setIsModifyNickOpen(true);
+  };
+
+  const handleModifyNickSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeRoom) return;
+    const trimmed = nickInputValue.trim();
+    try {
+      await handleModifyNickname(activeRoom.id, trimmed || user.username);
+    } catch (error) {
+      console.error(error);
+      alert(error instanceof Error ? error.message : "Failed to update nickname");
     }
+    setIsModifyNickOpen(false);
   };
 
   const handleLeaveOrBlockAction = async () => {
@@ -473,6 +489,34 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
           </form>
         )}
       </div>
+
+      <Modal
+        isOpen={isModifyNickOpen}
+        onClose={() => setIsModifyNickOpen(false)}
+        title={t("chatroom.modifyNickname")}
+      >
+        <form onSubmit={handleModifyNickSubmit} className="flex flex-col gap-5">
+          <Input
+            label={t("chatroom.nickname")}
+            value={nickInputValue}
+            onChange={(e) => setNickInputValue(e.target.value)}
+            required
+            placeholder={t("chatroom.nicknamePlaceholder")}
+          />
+          <div className="flex justify-end gap-3">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setIsModifyNickOpen(false)}
+            >
+              {t("chatroom.cancel")}
+            </Button>
+            <Button type="submit">
+              {t("chatroom.save")}
+            </Button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 }

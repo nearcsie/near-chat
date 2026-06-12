@@ -260,7 +260,7 @@ interface ChatContextType {
   handleCreateFolder: (name: string) => Promise<void>;
   handleDeleteFolder: (folderId: string) => Promise<void>;
   handleCategorizeRoom: (roomId: string, folderId: string | null) => Promise<void>;
-  handleModifyNickname: (roomId: string, nickname: string) => void;
+  handleModifyNickname: (roomId: string, nickname: string) => Promise<void>;
   handleLeaveOrBlock: (roomId: string) => Promise<{ isDeleted: boolean; newActiveId?: string }>;
   handleDeleteAccount: () => Promise<void>;
   loadGroupMembers: (roomId: string) => Promise<Member[]>;
@@ -1089,11 +1089,11 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     );
   };
 
-  const handleModifyNickname = (roomId: string, nickname: string) => {
-    setActiveRoomNicknames((current) => ({
-      ...current,
-      [roomId]: nickname || user.username,
-    }));
+  const handleModifyNickname = async (roomId: string, nickname: string) => {
+    if (!token || !user.userId) return;
+    const finalNick = nickname.trim();
+    await updateRoomMember(token, roomId, user.userId, { nickname: finalNick || user.username });
+    await loadGroupMembers(roomId);
   };
 
   const handleLeaveOrBlock = async (roomId: string) => {
@@ -1151,6 +1151,17 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
             room.id === roomId ? { ...room, members } : room,
           ),
         );
+
+        const myMember = members.find((m) => m.userId === currentUserId || m.name === user.username);
+        setActiveRoomNicknames((current) => {
+          const next = { ...current };
+          if (myMember?.nickname) {
+            next[roomId] = myMember.nickname;
+          } else {
+            delete next[roomId];
+          }
+          return next;
+        });
 
         const roomReads = members.reduce<Record<string, string>>((reads, member) => {
           if (member.lastReadId) {
