@@ -242,6 +242,8 @@
     "kickFailed": "移除成員失敗",
     "loadFailed": "載入成員失敗",
     "roleUpdated": "{name} 的角色已更新",
-    "roleFailed": "更新成員角色失敗"
+    "roleFailed": "更新成員角色失敗",
+    "changeRole": "變更角色",
+    "manageMember": "管理"
   }
 }

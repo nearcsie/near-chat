@@ -10,6 +10,7 @@ import { Checkbox } from "@/components/ui/Checkbox";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { useTranslation } from "@/hooks/useTranslation";
+import { Dropdown, DropdownItem } from "@/components/ui/Dropdown";
 
 interface GroupSettingsProps {
   roomId: string;
@@ -584,6 +585,58 @@ function MemberRow({
   const isPending = member.role === "pending";
   const canEditMember = canManageMembers && !isOwner;
 
+  const menuItems: DropdownItem[] = [];
+
+  if (isPending && canManageMembers) {
+    menuItems.push({
+      label: t("groupSettings.approve"),
+      onClick: () => void onApprove(member),
+    });
+  }
+
+  if (!isPending && (isSelf || canManageMembers)) {
+    menuItems.push({
+      label: t("groupSettings.nickname"),
+      onClick: () => void onNickname(member),
+    });
+  }
+
+  if (canManageMembers && !isPending && !isOwner && !isSelf) {
+    menuItems.push({
+      label: member.isMuted ? t("groupSettings.unmute") : t("groupSettings.mute"),
+      onClick: () => void onToggleMute(member),
+    });
+  }
+
+  if (canTransferOwner && !isOwner && !isPending) {
+    menuItems.push({
+      label: t("groupSettings.changeRole") || "Change Role",
+      subMenuItems: [
+        {
+          label: "admin",
+          onClick: () => void onRoleChange(member, "admin"),
+        },
+        {
+          label: "member",
+          onClick: () => void onRoleChange(member, "member"),
+        },
+      ],
+    });
+
+    menuItems.push({
+      label: t("groupSettings.transferOwner"),
+      onClick: () => void onTransferOwner(member),
+    });
+  }
+
+  if (canManageMembers && !isPending && !isOwner && !isSelf) {
+    menuItems.push({
+      label: t("groupSettings.kick"),
+      variant: "danger",
+      onClick: () => void onKick(member),
+    });
+  }
+
   return (
     <div className="flex flex-col gap-3 p-3 text-xs md:flex-row md:items-center md:justify-between">
       <div className="flex items-center gap-3 min-w-0">
@@ -597,82 +650,38 @@ function MemberRow({
             <p className="font-semibold text-foreground truncate">
               {member.nickname ? `${member.nickname} (${member.name})` : member.name}
             </p>
-            {isSelf && <span className="text-[9px] text-primary font-mono">YOU</span>}
-            {member.isMuted && <span className="text-[9px] text-red-600 font-mono">MUTED</span>}
+            {isSelf && <span className="text-[9px] text-primary font-mono font-bold uppercase px-1.5 py-0.5 border border-primary/20 bg-primary/5 rounded-sm">YOU</span>}
+            {member.isMuted && <span className="text-[9px] text-red-600 font-mono font-bold uppercase px-1.5 py-0.5 border border-red-500/20 bg-red-500/5 rounded-sm">MUTED</span>}
+            <span className={`text-[9px] font-mono font-bold uppercase px-1.5 py-0.5 border rounded-sm ${
+              member.role === "owner" ? "text-amber-600 border-amber-500/20 bg-amber-500/5" :
+              member.role === "admin" ? "text-purple-600 border-purple-500/20 bg-purple-500/5" :
+              member.role === "pending" ? "text-amber-500 border-amber-500/20 bg-amber-500/5" :
+              "text-text-muted border-border-secondary/40 bg-surface-muted"
+            }`}>
+              {member.role}
+            </span>
           </div>
         </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-2 md:justify-end">
-        {isPending ? (
-          <span className="text-[10px] text-amber-600 font-mono">PENDING</span>
-        ) : (
-          <select
-            value={member.role}
-            disabled={isBusy || !canTransferOwner || isOwner}
-            onChange={(event) => void onRoleChange(member, event.target.value as "admin" | "member")}
-            className="bg-surface-card border border-border-secondary rounded-sm px-2 py-1 text-[11px] text-foreground disabled:opacity-60"
-          >
-            {isOwner && <option value="owner">owner</option>}
-            <option value="admin">admin</option>
-            <option value="member">member</option>
-          </select>
-        )}
-
-        {isPending && canManageMembers && (
-          <Button
-            type="button"
-            variant="secondary"
-            className="text-[10px] py-1 px-2"
-            disabled={isBusy}
-            onClick={() => void onApprove(member)}
-          >
-            {t("groupSettings.approve")}
-          </Button>
-        )}
-        {!isPending && (isSelf || canManageMembers) && (
-          <Button
-            type="button"
-            variant="ghost"
-            className="text-[10px]"
-            disabled={isBusy}
-            onClick={() => void onNickname(member)}
-          >
-            {t("groupSettings.nickname")}
-          </Button>
-        )}
-        {canManageMembers && (
-          <Button
-            type="button"
-            variant="ghost"
-            className="text-[10px]"
-            disabled={isBusy || !canEditMember || isSelf}
-            onClick={() => void onToggleMute(member)}
-          >
-            {member.isMuted ? t("groupSettings.unmute") : t("groupSettings.mute")}
-          </Button>
-        )}
-        {canTransferOwner && !isOwner && !isPending && (
-          <Button
-            type="button"
-            variant="ghost"
-            className="text-[10px]"
-            disabled={isBusy}
-            onClick={() => void onTransferOwner(member)}
-          >
-            {t("groupSettings.transferOwner")}
-          </Button>
-        )}
-        {canManageMembers && (
-          <Button
-            type="button"
-            variant="ghost"
-            className="text-[10px] text-red-600"
-            disabled={isBusy || !canEditMember || isSelf}
-            onClick={() => void onKick(member)}
-          >
-            {t("groupSettings.kick")}
-          </Button>
+        {menuItems.length > 0 && (
+          <Dropdown
+            trigger={
+              <Button
+                type="button"
+                variant="secondary"
+                className="text-xs py-1 px-2.5 flex items-center gap-1.5 cursor-pointer"
+                disabled={isBusy}
+              >
+                {isBusy ? "..." : t("groupSettings.manageMember") || "Manage"}
+                <svg className="h-3 w-3 opacity-60" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                </svg>
+              </Button>
+            }
+            items={menuItems}
+          />
         )}
       </div>
     </div>

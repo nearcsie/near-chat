@@ -242,6 +242,8 @@
     "kickFailed": "Failed to remove member",
     "loadFailed": "Failed to load members",
     "roleUpdated": "{name}'s role updated.",
-    "roleFailed": "Failed to update member role"
+    "roleFailed": "Failed to update member role",
+    "changeRole": "Change Role",
+    "manageMember": "Manage"
   }
 }
