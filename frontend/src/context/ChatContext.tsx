@@ -679,6 +679,20 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     setIsMounted(true);
   }, []);
 
+  useEffect(() => {
+    const handler = () => {
+      localStorage.removeItem("token");
+      localStorage.removeItem("user");
+      setToken(null);
+      setCurrentUserId(undefined);
+      setIsAuthenticated(false);
+      socketRef.current?.disconnect();
+      socketRef.current = null;
+    };
+    window.addEventListener('auth:token-expired', handler);
+    return () => window.removeEventListener('auth:token-expired', handler);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Session bootstrap: localStorage is only readable after mount, so this
   // hydration must stay in an effect (reading it during render breaks SSR).
   useEffect(() => {

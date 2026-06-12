@@ -99,6 +99,9 @@ const requestJson = async <T>(
 
   if (!response.ok) {
     const payload = (await response.json().catch(() => null)) as { message?: string } | null;
+    if (response.status === 401 && !path.startsWith('/auth/') && typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('auth:token-expired'));
+    }
     throw new Error(payload?.message ?? `Request failed with status ${response.status}`);
   }
 
