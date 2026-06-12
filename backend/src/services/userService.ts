@@ -299,8 +299,11 @@ export const makeUserService = (
       }
 
       if (tokenRecord.revokedAt) {
-        await refreshTokenRepo.revokeAllForUser(tokenRecord.userId);
-        throw new ValidationError('Refresh token has been reused and revoked');
+        if (tokenRecord.replacedBy) {
+          await refreshTokenRepo.revokeAllForUser(tokenRecord.userId);
+          throw new ValidationError('Refresh token has been reused and revoked');
+        }
+        throw new ValidationError('Refresh token has been revoked');
       }
 
       if (new Date() > new Date(tokenRecord.expiresAt)) {

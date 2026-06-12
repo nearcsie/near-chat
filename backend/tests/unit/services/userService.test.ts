@@ -457,6 +457,22 @@ describe('userService', () => {
       expect(mockRefreshTokenRepo.revokeAllForUser).toHaveBeenCalledWith('u1');
     });
 
+    it('rejects a revoked token without revoking other tokens if it was not replaced (manual logout)', async () => {
+      const mockRecord = {
+        tokenId: 'rt1',
+        userId: 'u1',
+        tokenHash: 'hashed-old-token',
+        expiresAt: new Date(Date.now() + 100000),
+        createdAt: new Date(),
+        revokedAt: new Date(),
+        replacedBy: null,
+      };
+      mockRefreshTokenRepo.findByHash.mockResolvedValue(mockRecord);
+
+      await expect(userService.refresh('old-token')).rejects.toThrow(ValidationError);
+      expect(mockRefreshTokenRepo.revokeAllForUser).not.toHaveBeenCalled();
+    });
+
     it('rejects expired refresh token', async () => {
       const mockRecord = {
         tokenId: 'rt1',
