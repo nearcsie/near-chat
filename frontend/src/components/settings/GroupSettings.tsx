@@ -583,7 +583,14 @@ function MemberRow({
   const isSelf = member.userId === currentUser.userId || member.name === currentUser.username;
   const isOwner = member.role === "owner";
   const isPending = member.role === "pending";
-  const canEditMember = canManageMembers && !isOwner;
+  const isCurrentUserOwner = canTransferOwner;
+  const isCurrentUserAdmin = canManageMembers && !canTransferOwner;
+  const canOwnerManageTarget = isCurrentUserOwner && !isPending && !isOwner && !isSelf;
+  const canAdminManageTarget =
+    isCurrentUserAdmin && !isPending && !isSelf && member.role === "member";
+  const canEditNickname =
+    !isPending && (isSelf || canOwnerManageTarget || canAdminManageTarget);
+  const canModerateMember = canOwnerManageTarget || canAdminManageTarget;
 
   const menuItems: DropdownItem[] = [];
 
@@ -594,14 +601,14 @@ function MemberRow({
     });
   }
 
-  if (!isPending && (isSelf || canManageMembers)) {
+  if (canEditNickname) {
     menuItems.push({
       label: t("groupSettings.nickname"),
       onClick: () => void onNickname(member),
     });
   }
 
-  if (canManageMembers && !isPending && !isOwner && !isSelf) {
+  if (canModerateMember) {
     menuItems.push({
       label: member.isMuted ? t("groupSettings.unmute") : t("groupSettings.mute"),
       onClick: () => void onToggleMute(member),
@@ -629,7 +636,7 @@ function MemberRow({
     });
   }
 
-  if (canManageMembers && !isPending && !isOwner && !isSelf) {
+  if (canModerateMember) {
     menuItems.push({
       label: t("groupSettings.kick"),
       variant: "danger",
