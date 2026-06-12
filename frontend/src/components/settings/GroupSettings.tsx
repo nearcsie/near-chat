@@ -600,7 +600,6 @@ function MemberRow({
             {isSelf && <span className="text-[9px] text-primary font-mono">YOU</span>}
             {member.isMuted && <span className="text-[9px] text-red-600 font-mono">MUTED</span>}
           </div>
-          <p className="text-[10px] text-text-muted font-mono">{member.userId}</p>
         </div>
       </div>
 
