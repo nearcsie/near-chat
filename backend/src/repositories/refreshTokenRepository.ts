@@ -52,4 +52,36 @@ export class RefreshTokenRepository implements IRefreshTokenRepository {
       [userId]
     );
   }
+
+  // RTR critical section: creating the new token and revoking the old one must
+  // be atomic, otherwise a crash in between leaves two valid tokens.
+  async rotate(
+    oldTokenId: string,
+    data: { userId: string; tokenHash: string; expiresAt: Date },
+  ): Promise<RefreshToken> {
+    const client = await this.db.connect();
+    try {
+      await client.query('BEGIN');
+      const inserted = await client.query(
+        `INSERT INTO refresh_tokens (user_id, token_hash, expires_at)
+         VALUES ($1, $2, $3)
+         RETURNING *`,
+        [data.userId, data.tokenHash, data.expiresAt]
+      );
+      const newToken = this.mapRow(inserted.rows[0]);
+      await client.query(
+        `UPDATE refresh_tokens
+         SET revoked_at = NOW(), replaced_by = $2
+         WHERE token_id = $1`,
+        [oldTokenId, newToken.tokenId]
+      );
+      await client.query('COMMIT');
+      return newToken;
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
 }

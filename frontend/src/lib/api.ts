@@ -94,6 +94,16 @@ export const refreshTokens = (): Promise<AuthResponse> =>
     method: 'POST',
   });
 
+// The refresh cookie is shared across tabs; two concurrent refreshes would
+// trip the server's reuse detection and revoke every session. Serialize the
+// refresh across tabs with the Web Locks API where available.
+const runExclusiveRefresh = <T,>(task: () => Promise<T>): Promise<T> => {
+  if (typeof navigator !== 'undefined' && 'locks' in navigator) {
+    return navigator.locks.request('auth:refresh', task) as Promise<T>;
+  }
+  return task();
+};
+
 let isRefreshing = false;
 let refreshSubscribers: { resolve: (token: string) => void; reject: (err: any) => void }[] = [];
 
@@ -131,7 +141,7 @@ const requestJson = async <T>(
     if (response.status === 401 && !path.startsWith('/auth/') && typeof window !== 'undefined') {
       if (!isRefreshing) {
         isRefreshing = true;
-        refreshTokens()
+        runExclusiveRefresh(() => refreshTokens())
           .then((refreshResult) => {
             isRefreshing = false;
             setActiveAccessToken(refreshResult.token);

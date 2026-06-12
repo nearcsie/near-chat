@@ -594,7 +594,6 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   }, [pathname]);
 
   const clearSession = () => {
-    localStorage.removeItem("token");
     localStorage.removeItem("user");
     setActiveAccessToken(null);
     setToken(null);
@@ -631,16 +630,14 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       clearTimeout(socialDataRefreshTimerRef.current);
     }
 
+    // All concurrent callers share one debounced promise; the timeout below
+    // resolves it once the batched fetch settles.
     if (!socialDataRefreshPromiseRef.current) {
       let resolveFn: () => void;
       socialDataRefreshPromiseRef.current = new Promise<void>((resolve) => {
         resolveFn = resolve;
       });
       socialDataRefreshResolversRef.current = [resolveFn!];
-    } else {
-      let resolveFn: () => void;
-      new Promise<void>((resolve) => { resolveFn = resolve; });
-      socialDataRefreshResolversRef.current.push(resolveFn!);
     }
     const currentPromise = socialDataRefreshPromiseRef.current;
 
@@ -685,7 +682,6 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const handleExpired = () => {
-      localStorage.removeItem("token");
       localStorage.removeItem("user");
       setActiveAccessToken(null);
       setToken(null);

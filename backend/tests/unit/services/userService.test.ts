@@ -54,11 +54,21 @@ describe('userService', () => {
       findByHash: vi.fn(),
       revoke: vi.fn(),
       revokeAllForUser: vi.fn(),
+      rotate: vi.fn(),
     };
     mockRefreshTokenRepo.create.mockResolvedValue({
       tokenId: 'new-rt-id',
       userId: 'u1',
       tokenHash: 'hashed-fake-refresh-token',
+      expiresAt: new Date(Date.now() + 100000),
+      createdAt: new Date(),
+      revokedAt: null,
+      replacedBy: null,
+    });
+    mockRefreshTokenRepo.rotate.mockResolvedValue({
+      tokenId: 'new-rt-id',
+      userId: 'u1',
+      tokenHash: 'hashed-new-fake-refresh-token',
       expiresAt: new Date(Date.now() + 100000),
       createdAt: new Date(),
       revokedAt: null,
@@ -418,11 +428,10 @@ describe('userService', () => {
       const result = await userService.refresh('old-token');
 
       expect(mockRefreshTokenRepo.findByHash).toHaveBeenCalledWith('hashed-old-token');
-      expect(mockRefreshTokenRepo.create).toHaveBeenCalledWith(expect.objectContaining({
+      expect(mockRefreshTokenRepo.rotate).toHaveBeenCalledWith('rt1', expect.objectContaining({
         userId: 'u1',
         tokenHash: 'hashed-new-fake-refresh-token',
       }));
-      expect(mockRefreshTokenRepo.revoke).toHaveBeenCalledWith('rt1', expect.any(String));
       expect(result.token).toBe('new-fake-jwt-token');
       expect(result.refreshToken).toBe('new-fake-refresh-token');
     });
@@ -501,15 +510,16 @@ describe('userService', () => {
         const now = Date.now();
         await userService.refresh('old-token');
 
-        expect(mockRefreshTokenRepo.create).toHaveBeenCalledWith(
+        expect(mockRefreshTokenRepo.rotate).toHaveBeenCalledWith(
+          'rt1',
           expect.objectContaining({
             userId: 'u1',
             expiresAt: expect.any(Date),
           })
         );
-        const createCall = mockRefreshTokenRepo.create.mock.calls[mockRefreshTokenRepo.create.mock.calls.length - 1][0];
+        const rotateCall = mockRefreshTokenRepo.rotate.mock.calls[mockRefreshTokenRepo.rotate.mock.calls.length - 1][1];
         const expectedTime = now + 14 * 24 * 60 * 60 * 1000;
-        expect(Math.abs(createCall.expiresAt.getTime() - expectedTime)).toBeLessThan(5000);
+        expect(Math.abs(rotateCall.expiresAt.getTime() - expectedTime)).toBeLessThan(5000);
       } finally {
         process.env.JWT_REFRESH_EXPIRES_IN_DAYS = originalEnv;
       }

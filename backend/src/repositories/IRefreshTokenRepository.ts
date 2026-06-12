@@ -13,4 +13,8 @@ export interface IRefreshTokenRepository {
   findByHash(tokenHash: string): Promise<RefreshToken | null>;
   revoke(tokenId: string, replacedByTokenId?: string): Promise<void>;
   revokeAllForUser(userId: string): Promise<void>;
+  rotate(
+    oldTokenId: string,
+    data: { userId: string; tokenHash: string; expiresAt: Date },
+  ): Promise<RefreshToken>;
 }

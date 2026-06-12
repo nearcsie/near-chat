@@ -72,7 +72,11 @@ export const makeAuthController = (service: AuthService) => ({
         user: result.user
       });
     } catch (err) {
-      clearRefreshCookie(res);
+      // Only drop the cookie when the token itself was rejected; a transient
+      // server error must not log the user out.
+      if (err instanceof ValidationError) {
+        clearRefreshCookie(res);
+      }
       next(err);
     }
   },

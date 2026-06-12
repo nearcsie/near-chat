@@ -162,8 +162,8 @@ describe('authController', () => {
       expect(res.status).not.toHaveBeenCalled();
     });
 
-    it('clears cookie and calls next with error when service throws', async () => {
-      const err = new Error('invalid token');
+    it('clears cookie and calls next when the token is rejected', async () => {
+      const err = new ValidationError('invalid token');
       service.refresh.mockRejectedValue(err);
       const req = { headers: { cookie: 'refresh_token=bad-token' } } as Request;
       const res = mockRes();
@@ -175,6 +175,19 @@ describe('authController', () => {
         'refresh_token',
         expect.objectContaining({ httpOnly: true, secure: false, sameSite: 'strict' }),
       );
+      expect(next).toHaveBeenCalledWith(err);
+    });
+
+    it('keeps the cookie when the service throws an unexpected error', async () => {
+      const err = new Error('database unavailable');
+      service.refresh.mockRejectedValue(err);
+      const req = { headers: { cookie: 'refresh_token=valid-token' } } as Request;
+      const res = mockRes();
+      const next = vi.fn();
+
+      await ctrl.refresh(req, res, next);
+
+      expect(res.clearCookie).not.toHaveBeenCalled();
       expect(next).toHaveBeenCalledWith(err);
     });
   });

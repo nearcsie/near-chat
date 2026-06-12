@@ -20,7 +20,7 @@ import {
   type UpdateMeInput,
   type UpdateSettingsInput,
 } from '../validators/userSchemas';
-import { parsePositiveInt } from '../utils/parsePositiveInt';
+import { getRefreshTokenTtlMs } from '../auth/refreshTokenTtl';
 
 import type { IRefreshTokenRepository } from '../repositories/IRefreshTokenRepository';
 
@@ -98,6 +98,16 @@ export const makeUserService = (
     return { alerted: true, recipients };
   };
 
+  const issueRefreshToken = async (userId: string): Promise<string> => {
+    const refreshToken = jwt.generateRefreshToken();
+    await refreshTokenRepo.create({
+      userId,
+      tokenHash: jwt.hashToken(refreshToken),
+      expiresAt: new Date(Date.now() + getRefreshTokenTtlMs()),
+    });
+    return refreshToken;
+  };
+
   return {
     async register(data: RegisterRequest): Promise<AuthResponse & { refreshToken: string }> {
       const existingUser = await repo.findByEmail(data.email);
@@ -119,11 +129,7 @@ export const makeUserService = (
         name: user.name
       });
 
-      const refreshToken = jwt.generateRefreshToken();
-      const tokenHash = jwt.hashToken(refreshToken);
-      const refreshDays = parsePositiveInt(process.env.JWT_REFRESH_EXPIRES_IN_DAYS, 14);
-      const expiresAt = new Date(Date.now() + refreshDays * 24 * 60 * 60 * 1000);
-      await refreshTokenRepo.create({ userId: user.userId, tokenHash, expiresAt });
+      const refreshToken = await issueRefreshToken(user.userId);
 
       return {
         token,
@@ -150,11 +156,7 @@ export const makeUserService = (
         name: user.name
       });
 
-      const refreshToken = jwt.generateRefreshToken();
-      const tokenHash = jwt.hashToken(refreshToken);
-      const refreshDays = parsePositiveInt(process.env.JWT_REFRESH_EXPIRES_IN_DAYS, 14);
-      const expiresAt = new Date(Date.now() + refreshDays * 24 * 60 * 60 * 1000);
-      await refreshTokenRepo.create({ userId: user.userId, tokenHash, expiresAt });
+      const refreshToken = await issueRefreshToken(user.userId);
 
       return {
         token,
@@ -315,17 +317,12 @@ export const makeUserService = (
         name: user.name,
       });
       const newRefreshToken = jwt.generateRefreshToken();
-      const newHash = jwt.hashToken(newRefreshToken);
-      const refreshDays = parsePositiveInt(process.env.JWT_REFRESH_EXPIRES_IN_DAYS, 14);
-      const expiresAt = new Date(Date.now() + refreshDays * 24 * 60 * 60 * 1000);
 
-      const createdToken = await refreshTokenRepo.create({
+      await refreshTokenRepo.rotate(tokenRecord.tokenId, {
         userId: user.userId,
-        tokenHash: newHash,
-        expiresAt,
+        tokenHash: jwt.hashToken(newRefreshToken),
+        expiresAt: new Date(Date.now() + getRefreshTokenTtlMs()),
       });
-
-      await refreshTokenRepo.revoke(tokenRecord.tokenId, createdToken.tokenId);
 
       return {
         token: newAccessToken,
