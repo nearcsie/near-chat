@@ -293,16 +293,6 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
             items={[
               { label: t("chatroom.modifyNickname"), onClick: handleModifyNick },
               {
-                label: t("chatroom.categorize"),
-                subMenuItems: [
-                  { label: t("chatroom.noCategory"), onClick: () => handleCategorizeRoom(activeRoom.id, null) },
-                  ...folders.map((f) => ({
-                    label: f.name,
-                    onClick: () => handleCategorizeRoom(activeRoom.id, f.id),
-                  })),
-                ],
-              },
-              {
                 label: activeRoom.type === "group" ? t("chatroom.leaveGroup") : activeRoom.isArchived ? t("chatroom.unblock") : t("chatroom.blockContact"),
                 onClick: handleLeaveOrBlockAction,
                 variant: activeRoom.isArchived ? "default" : "danger",
