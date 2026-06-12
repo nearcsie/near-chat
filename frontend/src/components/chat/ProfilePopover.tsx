@@ -75,7 +75,7 @@ export default function ProfilePopover({ username, onClose, position = "right", 
             contactId: friend.id,
             name: friend.name,
             email: friend.email,
-            message: t("profileCard.emergencyMessage"),
+            message: t("emergency.defaultMessage"),
           },
         ],
       }).catch(console.error);

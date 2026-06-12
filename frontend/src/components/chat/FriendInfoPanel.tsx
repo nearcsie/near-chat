@@ -51,7 +51,7 @@ export default function FriendInfoPanel({
             contactId: friend.id,
             name: friend.name,
             email: friend.email,
-            message: t("profileCard.emergencyMessage"),
+            message: t("emergency.defaultMessage"),
           },
         ],
       }).catch(console.error);

@@ -210,8 +210,8 @@ export default function ProfileSettings() {
           onChange={(event) => handleLanguageChange(event.target.value as UiLanguage)}
           className="bg-surface-card border border-border-secondary hover:border-border-primary focus:border-primary focus:outline-none rounded-sm px-3 py-2.5 text-sm text-foreground transition-colors max-w-xs cursor-pointer"
         >
-          <option value="zh-TW">繁體中文</option>
-          <option value="en">English</option>
+          <option value="zh-TW">{t("profile.traditionalChinese")}</option>
+          <option value="en">{t("profile.english")}</option>
         </select>
 
         <div className="border-t border-border-primary pt-6 flex items-center justify-end gap-3">

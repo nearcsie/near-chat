@@ -10,29 +10,6 @@ import FeedbackMessage, { SettingsFeedback } from "@/components/settings/Feedbac
 import SectionTitle from "@/components/settings/SectionTitle";
 import { useTranslation } from "@/hooks/useTranslation";
 
-const manualAlertCopy = {
-  "zh-TW": {
-    title: "手動緊急警報",
-    description: "立即向目前設定的緊急聯絡人發送一則測試警報。",
-    send: "立即發送警報",
-    sending: "警報發送中...",
-    sent: "已成功送出緊急警報給 {count} 位聯絡人。",
-    noContacts: "請先新增至少一位緊急聯絡人，再發送警報。",
-    skipped: "緊急警報未送出（{reason}）。",
-    failed: "發送緊急警報失敗。",
-  },
-  en: {
-    title: "Manual emergency alert",
-    description: "Send a test emergency alert immediately to your current emergency contacts.",
-    send: "Send alert now",
-    sending: "Sending alert...",
-    sent: "Emergency alert sent to {count} contact(s).",
-    noContacts: "Add at least one emergency contact before sending an alert.",
-    skipped: "Emergency alert was not sent ({reason}).",
-    failed: "Failed to send emergency alert.",
-  },
-} as const;
-
 export default function EmergencySettingsPanel() {
   const router = useRouter();
   const {
@@ -49,7 +26,7 @@ export default function EmergencySettingsPanel() {
   const [feedback, setFeedback] = useState<SettingsFeedback | null>(null);
   const [isTriggeringAlert, setIsTriggeringAlert] = useState(false);
   const { t, locale } = useTranslation();
-  const manualAlertText = manualAlertCopy[locale];
+
 
   // Sync the form when emergency settings (or the locale) change
   // (adjust state during render instead of a cascading effect).
@@ -128,25 +105,25 @@ export default function EmergencySettingsPanel() {
       if (result.alerted) {
         setFeedback({
           type: "success",
-          text: manualAlertText.sent.replace("{count}", String(result.recipients.length)),
+          text: t("emergency.alertSent", { count: result.recipients.length }),
         });
         return;
       }
 
       if (result.reason === "NO_CONTACTS") {
-        setFeedback({ type: "error", text: manualAlertText.noContacts });
+        setFeedback({ type: "error", text: t("emergency.noContactsForAlert") });
         return;
       }
 
       setFeedback({
         type: "error",
-        text: manualAlertText.skipped.replace("{reason}", result.reason ?? "UNKNOWN"),
+        text: t("emergency.alertNotSent", { reason: result.reason ?? "UNKNOWN" }),
       });
     } catch (error) {
       console.error(error);
       setFeedback({
         type: "error",
-        text: error instanceof Error ? error.message : manualAlertText.failed,
+        text: error instanceof Error ? error.message : t("emergency.alertFailed"),
       });
     } finally {
       setIsTriggeringAlert(false);
@@ -181,14 +158,14 @@ export default function EmergencySettingsPanel() {
           </div>
         </div>
 
-        <SectionTitle title={manualAlertText.title} />
+        <SectionTitle title={t("emergency.manualAlert")} />
         <div className="border border-border-primary rounded-sm bg-surface-card p-4 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div className="max-w-2xl">
-            <p className="text-sm font-semibold text-foreground">{manualAlertText.title}</p>
-            <p className="mt-1 text-xs text-text-muted">{manualAlertText.description}</p>
+            <p className="text-sm font-semibold text-foreground">{t("emergency.manualAlert")}</p>
+            <p className="mt-1 text-xs text-text-muted">{t("emergency.manualAlertDescription")}</p>
           </div>
           <Button type="button" variant="primary" disabled={isTriggeringAlert} onClick={() => void handleTriggerAlert()}>
-            {isTriggeringAlert ? manualAlertText.sending : manualAlertText.send}
+            {isTriggeringAlert ? t("emergency.sendingAlert") : t("emergency.sendAlertNow")}
           </Button>
         </div>
 
