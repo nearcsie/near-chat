@@ -447,7 +447,7 @@ export default function GroupSettings({ roomId, onClose }: GroupSettingsProps) {
 
           <section className="flex flex-col gap-3">
             <SectionTitle title={t("groupSettings.membersTitle", { count: String(members.length) })} />
-            <div className="flex flex-col border border-border-primary divide-y divide-border-secondary rounded-sm overflow-hidden bg-surface-card">
+            <div className="flex flex-col border border-border-primary divide-y divide-border-secondary rounded-sm bg-surface-card">
               {members.map((member) => (
                 <MemberRow
                   key={member.userId}
