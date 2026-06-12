@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.verifyToken = exports.signToken = exports.getJwtSecret = void 0;
+exports.verifyToken = exports.signToken = void 0;
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const getJwtSecret = () => {
     const secret = process.env.JWT_SECRET;
@@ -15,14 +15,14 @@ const getJwtSecret = () => {
     }
     return secret;
 };
-exports.getJwtSecret = getJwtSecret;
 const signToken = (payload) => {
-    const secret = (0, exports.getJwtSecret)();
-    return jsonwebtoken_1.default.sign(payload, secret, { expiresIn: '7d' });
+    const secret = getJwtSecret();
+    const expiresIn = (process.env.JWT_EXPIRES_IN ?? '7d');
+    return jsonwebtoken_1.default.sign(payload, secret, { expiresIn });
 };
 exports.signToken = signToken;
 const verifyToken = (token) => {
-    const secret = (0, exports.getJwtSecret)();
+    const secret = getJwtSecret();
     return jsonwebtoken_1.default.verify(token, secret);
 };
 exports.verifyToken = verifyToken;

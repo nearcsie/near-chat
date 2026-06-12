@@ -51,12 +51,19 @@ export default function EmergencySettingsPanel() {
   const { t, locale } = useTranslation();
   const manualAlertText = manualAlertCopy[locale];
 
-  useEffect(() => {
+  // Sync the form when emergency settings (or the locale) change
+  // (adjust state during render instead of a cascading effect).
+  const [prevSettingsSync, setPrevSettingsSync] = useState<{
+    settings: typeof emergencySettings;
+    locale: string;
+  } | null>(null);
+  if (!prevSettingsSync || prevSettingsSync.settings !== emergencySettings || prevSettingsSync.locale !== locale) {
+    setPrevSettingsSync({ settings: emergencySettings, locale });
     setWarningEnabled(emergencySettings.warningEnabled);
     setWarningDays(emergencySettings.warningDays);
     setEmergencyContacts(emergencySettings.contacts);
     setDefaultEmergencyMessage(emergencySettings.contacts[0]?.message || t("emergency.defaultMessage"));
-  }, [emergencySettings, t]);
+  }
 
   const availableEmergencyFriends = useMemo(
     () => friends.filter((friend) => !emergencyContacts.some((contact) => contact.contactId === friend.id)),

@@ -1,6 +1,6 @@
 /// <reference types="vitest/globals" />
 import { Pool } from 'pg';
-import { UserRepository } from './userRepository';
+import { UserRepository } from '../../../src/repositories/userRepository';
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL_TEST || process.env.DATABASE_URL,

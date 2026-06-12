@@ -84,9 +84,14 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
           )
       : [];
 
-  useEffect(() => {
+  // Reset the highlighted mention option when the draft query or room changes
+  // (adjust state during render instead of a cascading effect).
+  const mentionResetKey = `${roomId}|${mentionDraft ? `q:${mentionDraft.query}` : "none"}`;
+  const [prevMentionResetKey, setPrevMentionResetKey] = useState(mentionResetKey);
+  if (prevMentionResetKey !== mentionResetKey) {
+    setPrevMentionResetKey(mentionResetKey);
     setSelectedMentionIndex(0);
-  }, [mentionDraft?.query, roomId]);
+  }
 
   // Scroll to bottom when room or messages change
   useEffect(() => {

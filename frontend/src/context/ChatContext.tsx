@@ -675,10 +675,28 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   };
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- canonical SSR mounted flag; must flip after hydration
     setIsMounted(true);
   }, []);
 
   useEffect(() => {
+    const handler = () => {
+      localStorage.removeItem("token");
+      localStorage.removeItem("user");
+      setToken(null);
+      setCurrentUserId(undefined);
+      setIsAuthenticated(false);
+      socketRef.current?.disconnect();
+      socketRef.current = null;
+    };
+    window.addEventListener('auth:token-expired', handler);
+    return () => window.removeEventListener('auth:token-expired', handler);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Session bootstrap: localStorage is only readable after mount, so this
+  // hydration must stay in an effect (reading it during render breaks SSR).
+  useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect -- post-mount localStorage session hydration */
     if (!isMounted) return;
 
     const savedToken = localStorage.getItem("token");
@@ -743,6 +761,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       }
     })();
 
+    /* eslint-enable react-hooks/set-state-in-effect */
     return () => {
       cancelled = true;
     };
@@ -754,15 +773,6 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       rooms.forEach((room) => joinRoom(socketRef.current!, room.id));
     }
   }, [rooms]);
-
-  useEffect(() => {
-    if (!token || !activeRoomId) return;
-
-    const activeRoom = rooms.find((room) => room.id === activeRoomId);
-    if (!activeRoom || activeRoom.members?.length) return;
-
-    void loadGroupMembers(activeRoomId).catch(console.error);
-  }, [activeRoomId, rooms, token]);
 
   useEffect(() => {
     if (!token) return;
@@ -1171,6 +1181,17 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     return request;
   };
 
+  // Lazy-load members for the active room (placed after loadGroupMembers so the
+  // effect references it after declaration).
+  useEffect(() => {
+    if (!token || !activeRoomId) return;
+
+    const activeRoom = rooms.find((room) => room.id === activeRoomId);
+    if (!activeRoom || activeRoom.members?.length) return;
+
+    void loadGroupMembers(activeRoomId).catch(console.error);
+  }, [activeRoomId, rooms, token]);
+
   const saveGroupSettings = async (roomId: string, settings: GroupSettingsInput) => {
     if (!token) return;
 
@@ -1403,6 +1424,9 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       return acc;
     }, {});
 
+    // TODO: derive unread counts / previews during render (useMemo) instead of
+    // writing back into rooms state; needs a wider refactor of rooms consumers.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- guarded write-back (returns `current` when unchanged) prevents render loops
     setRooms((current) => {
       let changed = false;
 

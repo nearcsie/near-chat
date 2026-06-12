@@ -15,11 +15,11 @@ export function useTranslation() {
 
   const t = useCallback((key: string, replacements?: Record<string, string | number>): string => {
     const keys = key.split(".");
-    let current: any = translations[uiLanguage] || translations["zh-TW"];
+    let current: unknown = translations[uiLanguage] || translations["zh-TW"];
 
     for (const k of keys) {
       if (current && typeof current === "object" && k in current) {
-        current = current[k];
+        current = (current as Record<string, unknown>)[k];
       } else {
         console.warn(`Translation key not found: ${key} for locale: ${uiLanguage}`);
         return key;

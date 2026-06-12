@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { mapErrorToApiShape } from '../../../src/errors/mapError';
 import { AppError, ValidationError, ForbiddenError, NotFoundError, ConflictError } from '../../../src/errors/AppError';
 
@@ -55,5 +55,18 @@ describe('mapErrorToApiShape', () => {
       message: 'Internal Server Error',
       code: 'INTERNAL_ERROR',
     });
+  });
+
+  it('logs unknown errors outside the test environment', () => {
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.stubEnv('NODE_ENV', 'development');
+    try {
+      const err = new Error('unexpected');
+      expect(mapErrorToApiShape(err).statusCode).toBe(500);
+      expect(consoleSpy).toHaveBeenCalledWith('APP ERROR:', err);
+    } finally {
+      vi.unstubAllEnvs();
+      consoleSpy.mockRestore();
+    }
   });
 });

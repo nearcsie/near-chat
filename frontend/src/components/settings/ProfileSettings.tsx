@@ -27,7 +27,10 @@ export default function ProfileSettings() {
   const [profileFeedback, setProfileFeedback] = useState<SettingsFeedback | null>(null);
   const [preferencesFeedback, setPreferencesFeedback] = useState<SettingsFeedback | null>(null);
 
+  // localStorage is only available after mount, so this hydration must stay in
+  // an effect; reading it during render would break SSR/hydration.
   useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect -- post-mount localStorage hydration */
     const savedUser = localStorage.getItem("user");
     if (savedUser) {
       try {
@@ -49,11 +52,19 @@ export default function ProfileSettings() {
     setPersonalTheme(user.theme || localStorage.getItem("theme") || "light");
     setDesktopNotifications(user.notifyDesktop ?? (localStorage.getItem("notify-desktop") !== "false"));
     setMessageSounds(user.notifySound ?? (localStorage.getItem("notify-sound") !== "false"));
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [user]);
 
-  useEffect(() => {
+  // Sync the language selector when the user profile or UI language changes
+  // (adjust state during render instead of a cascading effect).
+  const [prevLanguageSync, setPrevLanguageSync] = useState<{
+    user: typeof user;
+    uiLanguage: UiLanguage;
+  } | null>(null);
+  if (!prevLanguageSync || prevLanguageSync.user !== user || prevLanguageSync.uiLanguage !== uiLanguage) {
+    setPrevLanguageSync({ user, uiLanguage });
     setPersonalLanguage(user.language ?? uiLanguage);
-  }, [user, uiLanguage]);
+  }
 
   const { t } = useTranslation();
 
@@ -127,7 +138,7 @@ export default function ProfileSettings() {
         notifyDesktop: desktopNotifications,
         notifySound: messageSounds,
       });
-      setPreferencesFeedback({ type: "success", text: "Preferences saved successfully" });
+      setPreferencesFeedback({ type: "success", text: t("profile.preferencesSaved") });
     } catch (error) {
       console.error(error);
       setPreferencesFeedback({
@@ -154,7 +165,7 @@ export default function ProfileSettings() {
             <Input label={t("profile.username")} value={personalUsername} onChange={(event) => setPersonalUsername(event.target.value)} required />
             <Input label={t("profile.email")} type="email" value={personalEmail} onChange={(event) => setPersonalEmail(event.target.value)} required />
           </div>
-          <Input label="Bio" value={personalBio} onChange={(event) => setPersonalBio(event.target.value)} />
+          <Input label={t("profile.bio")} value={personalBio} onChange={(event) => setPersonalBio(event.target.value)} />
         </div>
 
         <SectionTitle title={t("profile.security")} />
@@ -208,31 +219,31 @@ export default function ProfileSettings() {
             {t("profile.cancel")}
           </Button>
           <Button type="submit" variant="primary">
-            Save Preferences
+            {t("profile.savePreferences")}
           </Button>
         </div>
       </form>
 
       <div className="mt-12 max-w-4xl border border-red-500/20 rounded-lg p-6 bg-red-500/5">
-        <h3 className="text-lg font-semibold text-red-500 mb-2">Delete Account</h3>
+        <h3 className="text-lg font-semibold text-red-500 mb-2">{t("profile.deleteAccount")}</h3>
         <p className="text-sm text-foreground/70 mb-4">
-          Once you delete your account, there is no going back. Please be certain.
+          {t("profile.deleteAccountWarning")}
         </p>
         <Button
           type="button"
           variant="secondary"
           className="bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white border-red-500/20 transition-colors"
           onClick={async () => {
-            if (window.confirm("Are you sure you want to delete your account? This action cannot be undone.")) {
+            if (window.confirm(t("profile.deleteAccountConfirm"))) {
               try {
                 await handleDeleteAccount();
               } catch (err) {
-                setProfileFeedback({ type: "error", text: "Failed to delete account." });
+                setProfileFeedback({ type: "error", text: t("profile.deleteAccountFailed") });
               }
             }
           }}
         >
-          Delete Account
+          {t("profile.deleteAccountButton")}
         </Button>
       </div>
     </>

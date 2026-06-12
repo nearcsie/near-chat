@@ -8,6 +8,7 @@ import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { Input } from "@/components/ui/Input";
+import { useTranslation } from "@/hooks/useTranslation";
 
 interface GroupSettingsProps {
   roomId: string;
@@ -16,6 +17,7 @@ interface GroupSettingsProps {
 
 export default function GroupSettings({ roomId, onClose }: GroupSettingsProps) {
   const router = useRouter();
+  const { t } = useTranslation();
   const {
     rooms,
     user,
@@ -51,33 +53,44 @@ export default function GroupSettings({ roomId, onClose }: GroupSettingsProps) {
   const canManageMembers = currentMember?.role === "owner" || currentMember?.role === "admin";
   const canTransferOwner = currentMember?.role === "owner";
 
-  useEffect(() => {
-    if (!activeRoom) return;
+  // Sync the form fields when the room data changes
+  // (adjust state during render instead of cascading effects).
+  const roomSyncKey = activeRoom
+    ? `${activeRoom.id}|${activeRoom.name}|${String(Boolean(activeRoom.requireApproval))}|${String(activeRoom.viewHistory ?? true)}`
+    : null;
+  const [prevRoomSyncKey, setPrevRoomSyncKey] = useState<string | null>(null);
+  if (activeRoom && roomSyncKey !== prevRoomSyncKey) {
+    setPrevRoomSyncKey(roomSyncKey);
     setName(activeRoom.name);
     setRequireApproval(Boolean(activeRoom.requireApproval));
     setViewHistory(activeRoom.viewHistory ?? true);
-  }, [activeRoom?.id, activeRoom?.name, activeRoom?.requireApproval, activeRoom?.viewHistory]);
+  }
 
-  useEffect(() => {
-    if (activeRoom?.members) {
-      setMembers(activeRoom.members);
-    }
-  }, [activeRoom?.members]);
-
-  useEffect(() => {
-    let cancelled = false;
+  // Mirror member data from the room context and clear stale feedback
+  // whenever the room or its member list changes.
+  const contextMembers = activeRoom?.members;
+  const [prevMembersSync, setPrevMembersSync] = useState<{
+    roomId: string;
+    members: Member[] | undefined;
+  } | null>(null);
+  if (!prevMembersSync || prevMembersSync.roomId !== roomId || prevMembersSync.members !== contextMembers) {
+    setPrevMembersSync({ roomId, members: contextMembers });
     setFeedback("");
+    if (contextMembers) {
+      setMembers(contextMembers);
+    }
+  }
 
+  useEffect(() => {
     if (activeRoom?.members?.length) {
-      setMembers(activeRoom.members);
       return () => {
-        cancelled = true;
         if (searchTimeoutRef.current) {
           clearTimeout(searchTimeoutRef.current);
         }
       };
     }
 
+    let cancelled = false;
     void loadGroupMembers(roomId)
       .then((loaded) => {
         if (!cancelled) {
@@ -86,7 +99,7 @@ export default function GroupSettings({ roomId, onClose }: GroupSettingsProps) {
       })
       .catch((error) => {
         if (!cancelled) {
-          setFeedback(error instanceof Error ? error.message : "Failed to load members");
+          setFeedback(error instanceof Error ? error.message : t("groupSettings.loadFailed"));
         }
       });
 
@@ -101,7 +114,7 @@ export default function GroupSettings({ roomId, onClose }: GroupSettingsProps) {
   if (!activeRoom) {
     return (
       <div className="flex-1 flex items-center justify-center bg-background text-foreground font-sans">
-        找不到聊天室
+        {t("groupSettings.notFound")}
       </div>
     );
   }
@@ -140,9 +153,9 @@ export default function GroupSettings({ roomId, onClose }: GroupSettingsProps) {
     setFeedback("");
     try {
       await saveGroupSettings(roomId, { name, requireApproval, viewHistory });
-      setFeedback("Group settings saved.");
+      setFeedback(t("groupSettings.settingsSaved"));
     } catch (error) {
-      setFeedback(error instanceof Error ? error.message : "Failed to save group settings");
+      setFeedback(error instanceof Error ? error.message : t("groupSettings.roleFailed"));
     } finally {
       setIsSaving(false);
     }
@@ -152,27 +165,27 @@ export default function GroupSettings({ roomId, onClose }: GroupSettingsProps) {
     runMemberAction(
       member,
       () => approveGroupMember(roomId, member.userId),
-      `${member.name} 已通過審核`,
-      "Failed to approve member",
+      t("groupSettings.approveMember", { name: member.name }),
+      t("groupSettings.approveFailed"),
     );
 
   const handleRoleChange = async (member: Member, role: "admin" | "member") =>
     runMemberAction(
       member,
       () => updateGroupMember(roomId, member.userId, { role }),
-      `${member.name} 的角色已更新`,
-      "Failed to update member role",
+      t("groupSettings.roleUpdated", { name: member.name }),
+      t("groupSettings.roleFailed"),
     );
 
   const handleNickname = async (member: Member) => {
-    const nickname = window.prompt("輸入群組暱稱，留空則清除暱稱：", member.nickname ?? "");
+    const nickname = window.prompt(t("groupSettings.nicknamePrompt"), member.nickname ?? "");
     if (nickname === null) return;
 
     await runMemberAction(
       member,
       () => updateGroupMember(roomId, member.userId, { nickname: nickname.trim() }),
-      `${member.name} 的暱稱已更新`,
-      "Failed to update nickname",
+      t("groupSettings.nicknameUpdated", { name: member.name }),
+      t("groupSettings.nicknameFailed"),
     );
   };
 
@@ -180,34 +193,34 @@ export default function GroupSettings({ roomId, onClose }: GroupSettingsProps) {
     runMemberAction(
       member,
       () => updateGroupMember(roomId, member.userId, { isMuted: !member.isMuted }),
-      `${member.name} 的禁言狀態已更新`,
-      "Failed to update mute status",
+      t("groupSettings.muteUpdated", { name: member.name }),
+      t("groupSettings.muteFailed"),
     );
 
   const handleKick = async (member: Member) => {
-    if (!window.confirm(`確定要移除 ${member.name} 嗎？`)) return;
+    if (!window.confirm(t("groupSettings.kickConfirm", { name: member.name }))) return;
 
     await runMemberAction(
       member,
       () => kickGroupMember(roomId, member.userId),
-      `${member.name} 已被移除`,
-      "Failed to remove member",
+      t("groupSettings.kickSuccess", { name: member.name }),
+      t("groupSettings.kickFailed"),
     );
   };
 
   const handleTransferOwner = async (member: Member) => {
-    if (!window.confirm(`確定要將群主轉讓給 ${member.name} 嗎？`)) return;
+    if (!window.confirm(t("groupSettings.transferOwnerConfirm", { name: member.name }))) return;
 
     await runMemberAction(
       member,
       () => transferGroupOwner(roomId, member.userId),
-      `群主已轉讓給 ${member.name}`,
-      "Failed to transfer owner",
+      t("groupSettings.transferOwnerSuccess", { name: member.name }),
+      t("groupSettings.transferOwnerFailed"),
     );
   };
 
   const handleDeleteGroupConfirm = async () => {
-    if (!window.confirm("Delete this group permanently? Messages and members will be removed for everyone.")) return;
+    if (!window.confirm(t("groupSettings.deleteGroupConfirm"))) return;
 
     const nextActiveId = await handleDeleteGroupRoom(roomId);
     if (nextActiveId) {
@@ -219,8 +232,8 @@ export default function GroupSettings({ roomId, onClose }: GroupSettingsProps) {
 
   const handleArchiveToggle = async () => {
     const next = !activeRoom.isArchived;
-    const label = next ? "封存" : "解除封存";
-    if (!window.confirm(`確定要${label}此群組嗎？`)) return;
+    const confirmMsg = next ? t("groupSettings.archiveConfirm") : t("groupSettings.unarchiveConfirm");
+    if (!window.confirm(confirmMsg)) return;
     setIsSaving(true);
     setFeedback("");
     try {
@@ -230,9 +243,15 @@ export default function GroupSettings({ roomId, onClose }: GroupSettingsProps) {
         viewHistory,
         isArchived: next,
       });
-      setFeedback(`群組已${label}。`);
+      setFeedback(next ? t("groupSettings.archived") : t("groupSettings.unarchived"));
     } catch (error) {
-      setFeedback(error instanceof Error ? error.message : `${label}失敗`);
+      setFeedback(
+        error instanceof Error
+          ? error.message
+          : next
+            ? t("groupSettings.archiveFailed")
+            : t("groupSettings.unarchiveFailed"),
+      );
     } finally {
       setIsSaving(false);
     }
@@ -244,9 +263,9 @@ export default function GroupSettings({ roomId, onClose }: GroupSettingsProps) {
 
     try {
       await navigator.clipboard.writeText(code);
-      setFeedback("邀請碼已複製到剪貼簿！");
+      setFeedback(t("groupSettings.inviteCodeCopied"));
     } catch {
-      window.prompt("請手動複製以下邀請碼：", code);
+      window.prompt(t("groupSettings.inviteCodeManualCopy"), code);
     }
   };
 
@@ -270,7 +289,7 @@ export default function GroupSettings({ roomId, onClose }: GroupSettingsProps) {
           setSearchResults(results.filter((candidate) => !memberIds.has(candidate.userId)));
         })
         .catch((error) => {
-          setFeedback(error instanceof Error ? error.message : "搜尋失敗");
+          setFeedback(error instanceof Error ? error.message : t("groupSettings.searchFailed"));
         })
         .finally(() => {
           setIsSearching(false);
@@ -281,17 +300,17 @@ export default function GroupSettings({ roomId, onClose }: GroupSettingsProps) {
   const handleSendInviteMessage = async (targetUser: PublicUser) => {
     const code = activeRoom.inviteCode;
     if (!code) {
-      setFeedback("此群組尚未產生邀請碼，無法傳送邀請");
+      setFeedback(t("groupSettings.noInviteCode"));
       return;
     }
 
     try {
       const privateRoomId = await handleOpenPrivateRoom(targetUser.userId);
-      const message = `【群組邀請】\n我邀請你加入群組「${activeRoom.name}」！\n邀請碼：${code}`;
+      const message = t("groupSettings.inviteMessageContent", { name: activeRoom.name, code });
       handleSendMessage(privateRoomId, message, null);
-      setFeedback(`已傳送邀請訊息給 ${targetUser.name}`);
+      setFeedback(t("groupSettings.inviteSent", { name: targetUser.name }));
     } catch (error) {
-      setFeedback(error instanceof Error ? error.message : "傳送邀請失敗");
+      setFeedback(error instanceof Error ? error.message : t("groupSettings.inviteFailed"));
     }
   };
 
@@ -299,15 +318,17 @@ export default function GroupSettings({ roomId, onClose }: GroupSettingsProps) {
     <div className="flex-1 flex flex-col bg-background h-full overflow-hidden">
       <div className="h-14 border-b border-border-primary px-6 flex items-center justify-between select-none shrink-0 bg-surface-card z-10">
         <div>
-          <h1 className="text-sm font-bold text-foreground tracking-wider">群組設定 - {activeRoom.name}</h1>
-          <p className="text-[10px] text-text-muted font-mono mt-0.5">Room API settings and members</p>
+          <h1 className="text-sm font-bold text-foreground tracking-wider">
+            {t("groupSettings.title", { name: activeRoom.name })}
+          </h1>
+          <p className="text-[10px] text-text-muted font-mono mt-0.5">{t("groupSettings.subtitle")}</p>
         </div>
         <div className="flex gap-2">
           <Button type="button" variant="secondary" onClick={onClose} className="text-xs py-1 px-3">
-            關閉
+            {t("groupSettings.close")}
           </Button>
           <Button type="button" variant="primary" onClick={() => void refreshMembers()} className="text-xs py-1 px-3">
-            重新載入成員
+            {t("groupSettings.reloadMembers")}
           </Button>
         </div>
       </div>
@@ -322,44 +343,49 @@ export default function GroupSettings({ roomId, onClose }: GroupSettingsProps) {
 
           {canManageMembers && (
             <section className="flex flex-col gap-4">
-              <SectionTitle title="基本設定" />
+              <SectionTitle title={t("groupSettings.basicSettings")} />
               <Input
-                label="群組名稱"
+                label={t("groupSettings.groupName")}
                 value={name}
                 onChange={(event) => setName(event.target.value)}
                 required
               />
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <Checkbox
-                  label="加入前需要審核"
-                  description="開啟後，新成員會以 pending 身分加入，需由 owner/admin 審核。"
+                  label={t("groupSettings.requireApprovalLabel")}
+                  description={t("groupSettings.requireApprovalDesc")}
                   checked={requireApproval}
                   onChange={(event) => setRequireApproval(event.target.checked)}
                 />
                 <Checkbox
-                  label="允許新成員查看歷史訊息"
-                  description="關閉時，新成員只能看到加入後的訊息。"
+                  label={t("groupSettings.viewHistoryLabel")}
+                  description={t("groupSettings.viewHistoryDesc")}
                   checked={viewHistory}
                   onChange={(event) => setViewHistory(event.target.checked)}
                 />
               </div>
               <div className="flex items-center justify-between border border-border-secondary bg-surface-muted px-3 py-2 gap-3">
                 <div className="min-w-0">
-                  <p className="text-xs font-semibold text-foreground">邀請碼</p>
-                  <p className="text-[10px] text-text-muted mt-1">
-                    將邀請碼分享給想加入的人，對方在加入群組時輸入此碼即可。
-                  </p>
-                  <code className="text-xs font-mono text-primary mt-1 block">{activeRoom.inviteCode ?? "尚未產生"}</code>
+                  <p className="text-xs font-semibold text-foreground">{t("groupSettings.inviteCode")}</p>
+                  <p className="text-[10px] text-text-muted mt-1">{t("groupSettings.inviteCodeDesc")}</p>
+                  <code className="text-xs font-mono text-primary mt-1 block">
+                    {activeRoom.inviteCode ?? t("groupSettings.inviteCodeNotGenerated")}
+                  </code>
                 </div>
                 {activeRoom.inviteCode && (
-                  <Button type="button" variant="secondary" className="text-xs py-1 px-3 shrink-0" onClick={() => void handleCopyInviteCode()}>
-                    複製邀請碼
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="text-xs py-1 px-3 shrink-0"
+                    onClick={() => void handleCopyInviteCode()}
+                  >
+                    {t("groupSettings.copyInviteCode")}
                   </Button>
                 )}
               </div>
               <div className="flex justify-end">
                 <Button type="submit" variant="primary" disabled={isSaving}>
-                  {isSaving ? "儲存中..." : "儲存設定"}
+                  {isSaving ? t("groupSettings.saving") : t("groupSettings.saveSettings")}
                 </Button>
               </div>
             </section>
@@ -367,24 +393,27 @@ export default function GroupSettings({ roomId, onClose }: GroupSettingsProps) {
 
           {canManageMembers && (
             <div className="flex flex-col gap-2 border border-border-secondary bg-surface-muted px-3 py-3">
-              <p className="text-xs font-semibold text-foreground">搜尋並邀請成員</p>
-              <p className="text-[10px] text-text-muted">輸入名稱搜尋用戶，將邀請碼複製後分享給對方。</p>
+              <p className="text-xs font-semibold text-foreground">{t("groupSettings.searchInviteTitle")}</p>
+              <p className="text-[10px] text-text-muted">{t("groupSettings.searchInviteDesc")}</p>
               <div className="flex gap-2">
                 <Input
                   label=""
                   value={searchQuery}
                   onChange={(event) => handleSearchQueryChange(event.target.value)}
-                  placeholder="輸入名稱搜尋用戶…"
+                  placeholder={t("groupSettings.searchPlaceholder")}
                 />
               </div>
-              {isSearching && <p className="text-[10px] text-text-muted">搜尋中…</p>}
+              {isSearching && <p className="text-[10px] text-text-muted">{t("groupSettings.searching")}</p>}
               {!isSearching && searchQuery.trim() && searchResults.length === 0 && (
-                <p className="text-[10px] text-text-muted">找不到符合的用戶（已在群組中的成員不會顯示）</p>
+                <p className="text-[10px] text-text-muted">{t("groupSettings.noSearchResults")}</p>
               )}
               {searchResults.length > 0 && (
                 <div className="flex flex-col divide-y divide-border-secondary border border-border-secondary rounded-sm overflow-hidden">
                   {searchResults.map((candidate) => (
-                    <div key={candidate.userId} className="flex items-center justify-between px-3 py-2 text-xs bg-surface-card">
+                    <div
+                      key={candidate.userId}
+                      className="flex items-center justify-between px-3 py-2 text-xs bg-surface-card"
+                    >
                       <span className="font-medium text-foreground">{candidate.name}</span>
                       <Button
                         type="button"
@@ -392,7 +421,7 @@ export default function GroupSettings({ roomId, onClose }: GroupSettingsProps) {
                         className="text-[10px] py-1 px-2"
                         onClick={() => void handleSendInviteMessage(candidate)}
                       >
-                        傳送邀請訊息
+                        {t("groupSettings.sendInvite")}
                       </Button>
                     </div>
                   ))}
@@ -402,7 +431,7 @@ export default function GroupSettings({ roomId, onClose }: GroupSettingsProps) {
           )}
 
           <section className="flex flex-col gap-3">
-            <SectionTitle title={`成員管理 (${members.length})`} />
+            <SectionTitle title={t("groupSettings.membersTitle", { count: String(members.length) })} />
             <div className="flex flex-col border border-border-primary divide-y divide-border-secondary rounded-sm overflow-hidden bg-surface-card">
               {members.map((member) => (
                 <MemberRow
@@ -421,14 +450,14 @@ export default function GroupSettings({ roomId, onClose }: GroupSettingsProps) {
                 />
               ))}
               {members.length === 0 && (
-                <div className="p-6 text-center text-xs text-text-muted">目前沒有可顯示的成員</div>
+                <div className="p-6 text-center text-xs text-text-muted">{t("groupSettings.noMembers")}</div>
               )}
             </div>
           </section>
 
           {canTransferOwner && (
             <section className="flex flex-col gap-3 border border-red-500/20 p-4 bg-red-500/5 rounded-sm">
-              <SectionTitle title="危險區" danger />
+              <SectionTitle title={t("groupSettings.dangerZone")} danger />
               <div className="flex flex-col items-start gap-4">
                 <div className="flex flex-col items-start gap-2">
                   <Button
@@ -438,20 +467,23 @@ export default function GroupSettings({ roomId, onClose }: GroupSettingsProps) {
                     disabled={isSaving}
                     className="text-amber-600 border-amber-600 hover:bg-amber-500/10"
                   >
-                    {activeRoom.isArchived ? "解除封存群組" : "封存群組"}
+                    {activeRoom.isArchived ? t("groupSettings.unarchive") : t("groupSettings.archive")}
                   </Button>
                   <span className="text-[10px] text-amber-600/70 leading-normal">
-                    {activeRoom.isArchived
-                      ? "解除封存後，成員可以再次傳送訊息。"
-                      : "封存後，群組進入唯讀狀態，成員無法傳送新訊息。"}
+                    {activeRoom.isArchived ? t("groupSettings.unarchiveDesc") : t("groupSettings.archiveDesc")}
                   </span>
                 </div>
                 <div className="flex flex-col items-start gap-2">
-                  <Button type="button" variant="secondary" onClick={handleDeleteGroupConfirm} className="text-red-600 border-red-600 hover:bg-red-500/10">
-                    Delete group
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={handleDeleteGroupConfirm}
+                    className="text-red-600 border-red-600 hover:bg-red-500/10"
+                  >
+                    {t("groupSettings.deleteGroup")}
                   </Button>
                   <span className="text-[10px] text-red-600/70 leading-normal">
-                    This will permanently remove the group, its members, and its message history.
+                    {t("groupSettings.deleteGroupDesc")}
                   </span>
                 </div>
               </div>
@@ -465,7 +497,9 @@ export default function GroupSettings({ roomId, onClose }: GroupSettingsProps) {
 
 function SectionTitle({ title, danger = false }: { title: string; danger?: boolean }) {
   return (
-    <h3 className={`text-xs font-bold uppercase tracking-wider border-b pb-1 ${danger ? "text-red-600 border-red-500/30" : "text-primary border-border-secondary"}`}>
+    <h3
+      className={`text-xs font-bold uppercase tracking-wider border-b pb-1 ${danger ? "text-red-600 border-red-500/30" : "text-primary border-border-secondary"}`}
+    >
       {title}
     </h3>
   );
@@ -496,6 +530,7 @@ function MemberRow({
   onTransferOwner: (member: Member) => Promise<void>;
   isBusy: boolean;
 }) {
+  const { t } = useTranslation();
   const isSelf = member.userId === currentUser.userId || member.name === currentUser.username;
   const isOwner = member.role === "owner";
   const isPending = member.role === "pending";
@@ -538,13 +573,25 @@ function MemberRow({
         )}
 
         {isPending && canManageMembers && (
-          <Button type="button" variant="secondary" className="text-[10px] py-1 px-2" disabled={isBusy} onClick={() => void onApprove(member)}>
-            審核通過
+          <Button
+            type="button"
+            variant="secondary"
+            className="text-[10px] py-1 px-2"
+            disabled={isBusy}
+            onClick={() => void onApprove(member)}
+          >
+            {t("groupSettings.approve")}
           </Button>
         )}
         {!isPending && (isSelf || canManageMembers) && (
-          <Button type="button" variant="ghost" className="text-[10px]" disabled={isBusy} onClick={() => void onNickname(member)}>
-            暱稱
+          <Button
+            type="button"
+            variant="ghost"
+            className="text-[10px]"
+            disabled={isBusy}
+            onClick={() => void onNickname(member)}
+          >
+            {t("groupSettings.nickname")}
           </Button>
         )}
         {canManageMembers && (
@@ -555,12 +602,18 @@ function MemberRow({
             disabled={isBusy || !canEditMember || isSelf}
             onClick={() => void onToggleMute(member)}
           >
-            {member.isMuted ? "解除禁言" : "禁言"}
+            {member.isMuted ? t("groupSettings.unmute") : t("groupSettings.mute")}
           </Button>
         )}
         {canTransferOwner && !isOwner && !isPending && (
-          <Button type="button" variant="ghost" className="text-[10px]" disabled={isBusy} onClick={() => void onTransferOwner(member)}>
-            轉讓群主
+          <Button
+            type="button"
+            variant="ghost"
+            className="text-[10px]"
+            disabled={isBusy}
+            onClick={() => void onTransferOwner(member)}
+          >
+            {t("groupSettings.transferOwner")}
           </Button>
         )}
         {canManageMembers && (
@@ -571,7 +624,7 @@ function MemberRow({
             disabled={isBusy || !canEditMember || isSelf}
             onClick={() => void onKick(member)}
           >
-            移除
+            {t("groupSettings.kick")}
           </Button>
         )}
       </div>
