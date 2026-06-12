@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { UiLanguage, useChat } from "@/context/ChatContext";
+import { UiLanguage, useChat, PreferencesInput } from "@/context/ChatContext";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { Checkbox } from "@/components/ui/Checkbox";
@@ -13,19 +13,14 @@ import { useTranslation } from "@/hooks/useTranslation";
 
 export default function ProfileSettings() {
   const router = useRouter();
-  const { user, rooms, uiLanguage, handleUpdateProfile, handleUpdatePreferences, handleDeleteAccount, setUiLanguage } = useChat();
+  const { user, rooms, uiLanguage, handleUpdateProfile, handleUpdatePreferences, handleDeleteAccount } = useChat();
   const [personalUsername, setPersonalUsername] = useState("");
   const [personalEmail, setPersonalEmail] = useState("");
   const [personalAvatar, setPersonalAvatar] = useState("");
   const [personalBio, setPersonalBio] = useState("");
-  const [desktopNotifications, setDesktopNotifications] = useState(true);
-  const [messageSounds, setMessageSounds] = useState(true);
-  const [personalTheme, setPersonalTheme] = useState("light");
-  const [personalLanguage, setPersonalLanguage] = useState<UiLanguage>("zh-TW");
   const [personalNewPassword, setPersonalNewPassword] = useState("");
   const [personalConfirmPassword, setPersonalConfirmPassword] = useState("");
   const [profileFeedback, setProfileFeedback] = useState<SettingsFeedback | null>(null);
-  const [preferencesFeedback, setPreferencesFeedback] = useState<SettingsFeedback | null>(null);
 
   // localStorage is only available after mount, so this hydration must stay in
   // an effect; reading it during render would break SSR/hydration.
@@ -48,23 +43,8 @@ export default function ProfileSettings() {
       setPersonalAvatar(user.avatar);
       setPersonalBio(user.bio || "");
     }
-
-    setPersonalTheme(user.theme || localStorage.getItem("theme") || "light");
-    setDesktopNotifications(user.notifyDesktop ?? (localStorage.getItem("notify-desktop") !== "false"));
-    setMessageSounds(user.notifySound ?? (localStorage.getItem("notify-sound") !== "false"));
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [user]);
-
-  // Sync the language selector when the user profile or UI language changes
-  // (adjust state during render instead of a cascading effect).
-  const [prevLanguageSync, setPrevLanguageSync] = useState<{
-    user: typeof user;
-    uiLanguage: UiLanguage;
-  } | null>(null);
-  if (!prevLanguageSync || prevLanguageSync.user !== user || prevLanguageSync.uiLanguage !== uiLanguage) {
-    setPrevLanguageSync({ user, uiLanguage });
-    setPersonalLanguage(user.language ?? uiLanguage);
-  }
 
   const { t } = useTranslation();
 
@@ -72,14 +52,22 @@ export default function ProfileSettings() {
     router.push(rooms[0] ? `/chat/${rooms[0].id}` : "/");
   };
 
-  const handlePersonalThemeChange = (newTheme: string) => {
-    setPersonalTheme(newTheme);
-    document.documentElement.classList.toggle("dark", newTheme === "dark");
-  };
+  const currentTheme = user.theme || "light";
+  const currentLanguage = user.language || uiLanguage;
+  const currentNotifyDesktop = user.notifyDesktop ?? true;
+  const currentNotifySound = user.notifySound ?? true;
 
-  const handleLanguageChange = (newLanguage: UiLanguage) => {
-    setPersonalLanguage(newLanguage);
-    setUiLanguage(newLanguage);
+  const updatePreference = async (updates: Partial<PreferencesInput>) => {
+    try {
+      await handleUpdatePreferences({
+        theme: updates.theme ?? currentTheme,
+        language: updates.language ?? currentLanguage,
+        notifyDesktop: updates.notifyDesktop ?? currentNotifyDesktop,
+        notifySound: updates.notifySound ?? currentNotifySound,
+      });
+    } catch (error) {
+      console.error("Failed to update preferences:", error);
+    }
   };
 
   const handlePersonalAvatarChange = () => {
@@ -127,27 +115,6 @@ export default function ProfileSettings() {
     }
   };
 
-  const handlePreferencesSubmit = async (event: React.FormEvent) => {
-    event.preventDefault();
-    setPreferencesFeedback(null);
-
-    try {
-      await handleUpdatePreferences({
-        theme: personalTheme,
-        language: personalLanguage,
-        notifyDesktop: desktopNotifications,
-        notifySound: messageSounds,
-      });
-      setPreferencesFeedback({ type: "success", text: t("profile.preferencesSaved") });
-    } catch (error) {
-      console.error(error);
-      setPreferencesFeedback({
-        type: "error",
-        text: error instanceof Error ? error.message : "Failed to save preferences.",
-      });
-    }
-  };
-
   return (
     <>
       <form onSubmit={handleProfileSubmit} className="flex flex-col gap-6 max-w-4xl">
@@ -184,45 +151,55 @@ export default function ProfileSettings() {
         </div>
       </form>
 
-      <form onSubmit={handlePreferencesSubmit} className="flex flex-col gap-6 max-w-4xl mt-12">
-        <FeedbackMessage feedback={preferencesFeedback} />
+      <div className="flex flex-col gap-6 max-w-4xl mt-12">
         <SectionTitle title={t("profile.notifications")} />
         <div className="flex flex-col gap-3">
-          <Checkbox label={t("profile.desktopNotifications")} checked={desktopNotifications} onChange={(event) => setDesktopNotifications(event.target.checked)} />
-          <Checkbox label={t("profile.messageSounds")} checked={messageSounds} onChange={(event) => setMessageSounds(event.target.checked)} />
+          <Checkbox 
+            label={t("profile.desktopNotifications")} 
+            checked={currentNotifyDesktop} 
+            onChange={(event) => void updatePreference({ notifyDesktop: event.target.checked })} 
+          />
+          <Checkbox 
+            label={t("profile.messageSounds")} 
+            checked={currentNotifySound} 
+            onChange={(event) => void updatePreference({ notifySound: event.target.checked })} 
+          />
         </div>
 
         <SectionTitle title={t("profile.appearance")} />
         <div className="flex gap-6">
           <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
-            <input type="radio" name="theme" checked={personalTheme === "light"} onChange={() => handlePersonalThemeChange("light")} className="accent-primary" />
+            <input 
+              type="radio" 
+              name="theme" 
+              checked={currentTheme === "light"} 
+              onChange={() => void updatePreference({ theme: "light" })} 
+              className="accent-primary" 
+            />
             {t("profile.light")}
           </label>
           <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
-            <input type="radio" name="theme" checked={personalTheme === "dark"} onChange={() => handlePersonalThemeChange("dark")} className="accent-primary" />
+            <input 
+              type="radio" 
+              name="theme" 
+              checked={currentTheme === "dark"} 
+              onChange={() => void updatePreference({ theme: "dark" })} 
+              className="accent-primary" 
+            />
             {t("profile.dark")}
           </label>
         </div>
 
         <SectionTitle title={t("profile.language")} />
         <select
-          value={personalLanguage}
-          onChange={(event) => handleLanguageChange(event.target.value as UiLanguage)}
+          value={currentLanguage}
+          onChange={(event) => void updatePreference({ language: event.target.value as UiLanguage })}
           className="bg-surface-card border border-border-secondary hover:border-border-primary focus:border-primary focus:outline-none rounded-sm px-3 py-2.5 text-sm text-foreground transition-colors max-w-xs cursor-pointer"
         >
-          <option value="zh-TW">{t("profile.traditionalChinese")}</option>
-          <option value="en">{t("profile.english")}</option>
+          <option value="zh-TW">繁體中文</option>
+          <option value="en">English</option>
         </select>
-
-        <div className="border-t border-border-primary pt-6 flex items-center justify-end gap-3">
-          <Button type="button" variant="secondary" onClick={handleBack}>
-            {t("profile.cancel")}
-          </Button>
-          <Button type="submit" variant="primary">
-            {t("profile.savePreferences")}
-          </Button>
-        </div>
-      </form>
+      </div>
 
       <div className="mt-12 max-w-4xl border border-red-500/20 rounded-lg p-6 bg-red-500/5">
         <h3 className="text-lg font-semibold text-red-500 mb-2">{t("profile.deleteAccount")}</h3>
