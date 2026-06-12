@@ -58,6 +58,9 @@ import {
   transferRoomOwner,
   upsertEmergencyContact,
   uploadAttachment,
+  getActiveAccessToken,
+  setActiveAccessToken,
+  refreshTokens,
 } from "@/lib/api";
 import {
   createChatSocket,
@@ -593,6 +596,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const clearSession = () => {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
+    setActiveAccessToken(null);
     setToken(null);
     setCurrentUserId(undefined);
     setIsAuthenticated(false);
@@ -680,17 +684,26 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    const handler = () => {
+    const handleExpired = () => {
       localStorage.removeItem("token");
       localStorage.removeItem("user");
+      setActiveAccessToken(null);
       setToken(null);
       setCurrentUserId(undefined);
       setIsAuthenticated(false);
       socketRef.current?.disconnect();
       socketRef.current = null;
     };
-    window.addEventListener('auth:token-expired', handler);
-    return () => window.removeEventListener('auth:token-expired', handler);
+    const handleRefreshed = (e: Event) => {
+      const customEvent = e as CustomEvent<{ token: string; user: any }>;
+      setToken(customEvent.detail.token);
+    };
+    window.addEventListener('auth:token-expired', handleExpired);
+    window.addEventListener('auth:token-refreshed', handleRefreshed);
+    return () => {
+      window.removeEventListener('auth:token-expired', handleExpired);
+      window.removeEventListener('auth:token-refreshed', handleRefreshed);
+    };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Session bootstrap: localStorage is only readable after mount, so this
@@ -699,7 +712,6 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     /* eslint-disable react-hooks/set-state-in-effect -- post-mount localStorage session hydration */
     if (!isMounted) return;
 
-    const savedToken = localStorage.getItem("token");
     const savedUser = localStorage.getItem("user");
     const savedTheme = localStorage.getItem("theme");
 
@@ -712,11 +724,6 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     const savedLanguage = localStorage.getItem("language");
     if (savedLanguage === "zh-TW" || savedLanguage === "en") {
       setUiLanguageState(savedLanguage);
-    }
-
-    if (!savedToken) {
-      window.location.replace("/login");
-      return;
     }
 
     if (savedUser) {
@@ -732,9 +739,16 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     let cancelled = false;
     void (async () => {
       try {
+        let currentToken = getActiveAccessToken();
+        if (!currentToken) {
+          const refreshResult = await refreshTokens();
+          if (cancelled) return;
+          currentToken = refreshResult.token;
+        }
+
         const [profile, settings] = await Promise.all([
-          getMe(savedToken),
-          getMySettings(savedToken),
+          getMe(currentToken),
+          getMySettings(currentToken),
         ]);
         if (cancelled) return;
         const stored = toStoredUser(profile, settings);
@@ -746,11 +760,11 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         setUser(stored);
         setCurrentUserId(profile.userId);
         setUiLanguageState(stored.language ?? "en");
-        setToken(savedToken);
+        setToken(currentToken);
         setIsAuthenticated(true);
         await Promise.all([
-          refreshRoomsAndFolders(savedToken, profile.userId),
-          refreshSocialData(savedToken, settings, profile.userId),
+          refreshRoomsAndFolders(currentToken, profile.userId),
+          refreshSocialData(currentToken, settings, profile.userId),
         ]);
       } catch (error) {
         console.error(error);

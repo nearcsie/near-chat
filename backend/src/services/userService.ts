@@ -20,9 +20,14 @@ import {
   type UpdateMeInput,
   type UpdateSettingsInput,
 } from '../validators/userSchemas';
+import { parsePositiveInt } from '../utils/parsePositiveInt';
+
+import type { IRefreshTokenRepository } from '../repositories/IRefreshTokenRepository';
 
 interface JwtHelper {
   signToken(payload: JwtPayload): string;
+  generateRefreshToken(): string;
+  hashToken(token: string): string;
 }
 
 interface EmergencyAlertResult {
@@ -65,6 +70,7 @@ const toUserSettings = (
 export const makeUserService = (
   repo: IUserRepository,
   emergencyContactRepo: IEmergencyContactRepository,
+  refreshTokenRepo: IRefreshTokenRepository,
   jwt: JwtHelper,
   notifyEmergencyContact?: (contactId: string, payload: { userId: string; message: string }) => void | Promise<void>,
 ) => {
@@ -93,7 +99,7 @@ export const makeUserService = (
   };
 
   return {
-    async register(data: RegisterRequest): Promise<AuthResponse> {
+    async register(data: RegisterRequest): Promise<AuthResponse & { refreshToken: string }> {
       const existingUser = await repo.findByEmail(data.email);
       if (existingUser) {
         throw new ConflictError('Email already in use');
@@ -113,13 +119,20 @@ export const makeUserService = (
         name: user.name
       });
 
+      const refreshToken = jwt.generateRefreshToken();
+      const tokenHash = jwt.hashToken(refreshToken);
+      const refreshDays = parsePositiveInt(process.env.JWT_REFRESH_EXPIRES_IN_DAYS, 14);
+      const expiresAt = new Date(Date.now() + refreshDays * 24 * 60 * 60 * 1000);
+      await refreshTokenRepo.create({ userId: user.userId, tokenHash, expiresAt });
+
       return {
         token,
+        refreshToken,
         user: toPublicUser(user)
       };
     },
 
-    async login(data: LoginRequest): Promise<AuthResponse> {
+    async login(data: LoginRequest): Promise<AuthResponse & { refreshToken: string }> {
       const user = await repo.findByEmail(data.email);
       if (!user || user.deletedAt) {
         throw new ValidationError('Invalid email or password');
@@ -137,8 +150,15 @@ export const makeUserService = (
         name: user.name
       });
 
+      const refreshToken = jwt.generateRefreshToken();
+      const tokenHash = jwt.hashToken(refreshToken);
+      const refreshDays = parsePositiveInt(process.env.JWT_REFRESH_EXPIRES_IN_DAYS, 14);
+      const expiresAt = new Date(Date.now() + refreshDays * 24 * 60 * 60 * 1000);
+      await refreshTokenRepo.create({ userId: user.userId, tokenHash, expiresAt });
+
       return {
         token,
+        refreshToken,
         user: toPublicUser(user)
       };
     },
@@ -267,6 +287,59 @@ export const makeUserService = (
       }
       const users = await repo.search(parsed.data.q);
       return users.map(toPublicUser);
+    },
+
+    async refresh(refreshToken: string): Promise<AuthResponse & { refreshToken: string }> {
+      const tokenHash = jwt.hashToken(refreshToken);
+      const tokenRecord = await refreshTokenRepo.findByHash(tokenHash);
+      if (!tokenRecord) {
+        throw new ValidationError('Invalid refresh token');
+      }
+
+      if (tokenRecord.revokedAt) {
+        await refreshTokenRepo.revokeAllForUser(tokenRecord.userId);
+        throw new ValidationError('Refresh token has been reused and revoked');
+      }
+
+      if (new Date() > new Date(tokenRecord.expiresAt)) {
+        throw new ValidationError('Refresh token expired');
+      }
+
+      const user = await repo.findById(tokenRecord.userId);
+      if (!user || user.deletedAt) {
+        throw new ValidationError('User not found or deleted');
+      }
+
+      const newAccessToken = jwt.signToken({
+        userId: user.userId,
+        name: user.name,
+      });
+      const newRefreshToken = jwt.generateRefreshToken();
+      const newHash = jwt.hashToken(newRefreshToken);
+      const refreshDays = parsePositiveInt(process.env.JWT_REFRESH_EXPIRES_IN_DAYS, 14);
+      const expiresAt = new Date(Date.now() + refreshDays * 24 * 60 * 60 * 1000);
+
+      const createdToken = await refreshTokenRepo.create({
+        userId: user.userId,
+        tokenHash: newHash,
+        expiresAt,
+      });
+
+      await refreshTokenRepo.revoke(tokenRecord.tokenId, createdToken.tokenId);
+
+      return {
+        token: newAccessToken,
+        refreshToken: newRefreshToken,
+        user: toPublicUser(user),
+      };
+    },
+
+    async revokeToken(refreshToken: string): Promise<void> {
+      const tokenHash = jwt.hashToken(refreshToken);
+      const tokenRecord = await refreshTokenRepo.findByHash(tokenHash);
+      if (tokenRecord) {
+        await refreshTokenRepo.revoke(tokenRecord.tokenId);
+      }
     },
   };
 };

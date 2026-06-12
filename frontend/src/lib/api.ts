@@ -76,10 +76,40 @@ type RequestOptions = {
   token?: string;
 };
 
+let activeAccessToken: string | null = null;
+export const getActiveAccessToken = (): string | null => activeAccessToken;
+export const setActiveAccessToken = (token: string | null): void => {
+  activeAccessToken = token;
+};
+
 const buildUrl = (path: string): string => `${API_BASE_URL}${API_PREFIX}${path}`;
 
-const authHeaders = (token?: string): HeadersInit =>
-  token ? { Authorization: `Bearer ${token}` } : {};
+const authHeaders = (token?: string): HeadersInit => {
+  const actualToken = token ?? activeAccessToken;
+  return actualToken ? { Authorization: `Bearer ${actualToken}` } : {};
+};
+
+export const refreshTokens = (): Promise<AuthResponse> =>
+  requestJson<AuthResponse>('/auth/refresh', {
+    method: 'POST',
+  });
+
+let isRefreshing = false;
+let refreshSubscribers: { resolve: (token: string) => void; reject: (err: any) => void }[] = [];
+
+const onTokenRefreshed = (token: string) => {
+  refreshSubscribers.forEach((sub) => sub.resolve(token));
+  refreshSubscribers = [];
+};
+
+const onRefreshFailed = (err: any) => {
+  refreshSubscribers.forEach((sub) => sub.reject(err));
+  refreshSubscribers = [];
+};
+
+const addRefreshSubscriber = (resolve: (token: string) => void, reject: (err: any) => void) => {
+  refreshSubscribers.push({ resolve, reject });
+};
 
 const requestJson = async <T>(
   path: string,
@@ -98,10 +128,44 @@ const requestJson = async <T>(
   });
 
   if (!response.ok) {
-    const payload = (await response.json().catch(() => null)) as { message?: string } | null;
     if (response.status === 401 && !path.startsWith('/auth/') && typeof window !== 'undefined') {
-      window.dispatchEvent(new Event('auth:token-expired'));
+      if (!isRefreshing) {
+        isRefreshing = true;
+        refreshTokens()
+          .then((refreshResult) => {
+            isRefreshing = false;
+            setActiveAccessToken(refreshResult.token);
+            window.dispatchEvent(
+              new CustomEvent('auth:token-refreshed', { detail: refreshResult }),
+            );
+            onTokenRefreshed(refreshResult.token);
+          })
+          .catch((refreshErr) => {
+            isRefreshing = false;
+            onRefreshFailed(refreshErr);
+            window.dispatchEvent(new Event('auth:token-expired'));
+          });
+      }
+
+      return new Promise<T>((resolve, reject) => {
+        addRefreshSubscriber(
+          (newToken) => {
+            const newHeaders = {
+              ...init.headers,
+              Authorization: `Bearer ${newToken}`,
+            };
+            requestJson<T>(path, { ...init, headers: newHeaders }, { ...options, token: newToken })
+              .then(resolve)
+              .catch(reject);
+          },
+          (err) => {
+            reject(err);
+          },
+        );
+      });
     }
+
+    const payload = (await response.json().catch(() => null)) as { message?: string } | null;
     throw new Error(payload?.message ?? `Request failed with status ${response.status}`);
   }
 
@@ -121,16 +185,24 @@ export const register = (data: RegisterRequest): Promise<AuthResponse> =>
   requestJson<AuthResponse>('/auth/register', {
     method: 'POST',
     ...withJsonBody(data),
+  }).then((res) => {
+    setActiveAccessToken(res.token);
+    return res;
   });
 
 export const login = (data: LoginRequest): Promise<AuthResponse> =>
   requestJson<AuthResponse>('/auth/login', {
     method: 'POST',
     ...withJsonBody(data),
+  }).then((res) => {
+    setActiveAccessToken(res.token);
+    return res;
   });
 
 export const logout = (token: string): Promise<void> =>
-  requestJson<void>('/auth/logout', { method: 'POST' }, { token });
+  requestJson<void>('/auth/logout', { method: 'POST' }, { token }).then(() => {
+    setActiveAccessToken(null);
+  });
 
 export const getMe = (token: string): Promise<MyProfile> =>
   requestJson<MyProfile>('/users/me', {}, { token });

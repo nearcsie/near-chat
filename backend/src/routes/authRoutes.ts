@@ -8,6 +8,7 @@ export const makeAuthRoutes = (ctrl: ReturnType<typeof makeAuthController>): Rou
   router.post('/register', ctrl.register.bind(ctrl));
   router.post('/login', ctrl.login.bind(ctrl));
   router.post('/logout', authMiddleware, ctrl.logout.bind(ctrl));
+  router.post('/refresh', ctrl.refresh.bind(ctrl));
 
   return router;
 };
