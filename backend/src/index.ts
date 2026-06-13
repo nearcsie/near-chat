@@ -2,147 +2,137 @@ import express from "express";
 import http from "http";
 import cors from "cors";
 import { Server } from "socket.io";
-import bcrypt from "bcryptjs";
-import jwt from "jsonwebtoken";
 import pool from "./db";
+import { signToken, generateRefreshToken, hashToken } from "./auth/jwt";
+import { RefreshTokenRepository } from "./repositories/refreshTokenRepository";
+import { errorHandler } from "./middlewares/errorHandler";
+import { makeAuthRateLimiter, makeGlobalRateLimiter, securityHeaders } from "./middlewares/securityMiddleware";
+import { UserRepository } from "./repositories/userRepository";
+import { EmergencyContactRepository } from "./repositories/emergencyContactRepository";
+import { RoomRepository } from "./repositories/roomRepository";
+import { RoomMemberRepository } from "./repositories/roomMemberRepository";
+import { MessageRepository } from "./repositories/messageRepository";
+import { FolderRepository } from "./repositories/folderRepository";
+import { AttachmentRepository } from "./repositories/attachmentRepository";
+import { makeAttachmentService } from "./services/attachmentService";
+import { makeAttachmentController } from "./controllers/attachmentController";
+import { makeAttachmentRoutes } from "./routes/attachmentRoutes";
+import { makeFriendRepository } from "./repositories/friendRepository";
+import { makeUserService } from "./services/userService";
+import { makeRoomService } from "./services/roomService";
+import { makeMessageService } from "./services/messageService";
+import { makeFolderService } from "./services/folderService";
+import { makeFriendService } from "./services/friendService";
+import { makeAuthController } from "./controllers/authController";
+import { makeUserController } from "./controllers/userController";
+import { makeRoomController } from "./controllers/roomController";
+import { makeMessageController } from "./controllers/messageController";
+import { makeFolderController } from "./controllers/folderController";
+import { makeFriendController } from "./controllers/friendController";
+import { startInactivityJob } from "./cron/inactivityJob";
+import { makeAuthRoutes } from "./routes/authRoutes";
+import { makeUserRoutes } from "./routes/userRoutes";
+import { makeRoomRoutes } from "./routes/roomRoutes";
+import { makeMessageRoutes } from "./routes/messageRoutes";
+import { makeFolderRoutes } from "./routes/folderRoutes";
+import { makeFriendRoutes, makeBlockRoutes, makeFriendRequestRoutes } from "./routes/friendRoutes";
+import { attachSocketAuth } from "./realtime/authSocket";
+import { attachSockets } from "./realtime/socketServer";
+import type { ClientToServerEvents, ServerToClientEvents } from "../../shared/types";
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, {
-  cors: {
-    origin: "*", // allow all for dev
-  },
+
+const DEFAULT_CORS_ORIGINS = ['http://localhost:3000', 'http://localhost:3005', 'http://localhost:5173'];
+const allowedOrigins = (process.env.CORS_ORIGINS ?? DEFAULT_CORS_ORIGINS.join(','))
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+const io = new Server<ClientToServerEvents, ServerToClientEvents>(server, {
+  cors: { origin: allowedOrigins, credentials: true },
 });
 
 const PORT = process.env.PORT || 4000;
-const JWT_SECRET = process.env.JWT_SECRET || "dev_secret_key";
 
-app.use(cors());
+app.use(securityHeaders);
+app.use(cors({ origin: allowedOrigins, credentials: true }));
 app.use(express.json());
+app.use("/api", makeGlobalRateLimiter());
 
-// --- REST API ---
+const userRepo = new UserRepository(pool);
+const emergencyContactRepo = new EmergencyContactRepository(pool);
+const roomRepo = new RoomRepository(pool);
+const roomMemberRepo = new RoomMemberRepository(pool);
+const messageRepo = new MessageRepository(pool);
+const folderRepo = new FolderRepository(pool);
+const attachmentRepo = new AttachmentRepository(pool);
+const friendRepo = makeFriendRepository(pool);
+const refreshTokenRepo = new RefreshTokenRepository(pool);
 
-app.post("/auth/register", async (req, res) => {
-  const { username, password } = req.body;
-  try {
-    const existing = await pool.query("SELECT * FROM users WHERE username = $1", [username]);
-    if (existing.rows.length > 0) {
-      return res.status(400).json({ error: "Username already exists" });
-    }
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const result = await pool.query(
-      "INSERT INTO users (username, password) VALUES ($1, $2) RETURNING id, username",
-      [username, hashedPassword]
-    );
-    const user = result.rows[0];
-
-    const token = jwt.sign({ userId: user.id, username: user.username }, JWT_SECRET);
-    res.json({ token, user });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: "Register failed" });
-  }
-});
-
-app.post("/auth/login", async (req, res) => {
-  const { username, password } = req.body;
-  try {
-    const result = await pool.query("SELECT * FROM users WHERE username = $1", [username]);
-    const user = result.rows[0];
-    if (!user) {
-      return res.status(400).json({ error: "Invalid credentials" });
-    }
-    const isValid = await bcrypt.compare(password, user.password);
-    if (!isValid) {
-      return res.status(400).json({ error: "Invalid credentials" });
-    }
-    const token = jwt.sign({ userId: user.id, username: user.username }, JWT_SECRET);
-    res.json({ token, user: { id: user.id, username: user.username } });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: "Login failed" });
-  }
-});
-
-app.get("/rooms", async (req, res) => {
-  try {
-    const result = await pool.query("SELECT * FROM rooms");
-    res.json(result.rows);
-  } catch (error) {
-    res.status(500).json({ error: "Failed to fetch rooms" });
-  }
-});
-
-app.post("/rooms", async (req, res) => {
-  const { name } = req.body;
-  try {
-    const result = await pool.query("INSERT INTO rooms (name) VALUES ($1) RETURNING *", [name]);
-    res.json(result.rows[0]);
-  } catch (error) {
-    res.status(400).json({ error: "Room creation failed" });
-  }
-});
-
-app.get("/rooms/:id/messages", async (req, res) => {
-  const roomId = req.params.id;
-  try {
-    const result = await pool.query(
-      `SELECT m.*, u.username 
-       FROM messages m 
-       JOIN users u ON m.userId = u.id 
-       WHERE m.roomId = $1 
-       ORDER BY m.createdAt ASC`,
-      [roomId]
-    );
-    res.json(result.rows);
-  } catch (error) {
-    res.status(500).json({ error: "Failed to fetch messages" });
-  }
-});
-
-// --- Socket.IO WebSockets ---
-
-io.use((socket, next) => {
-  const token = socket.handshake.auth.token;
-  if (!token) return next(new Error("Authentication error"));
-  jwt.verify(token, JWT_SECRET, (err: any, decoded: any) => {
-    if (err) return next(new Error("Authentication error"));
-    (socket as any).user = decoded;
-    next();
-  });
-});
-
-io.on("connection", (socket) => {
-  const s = socket as any;
-  console.log(`User connected: ${s.user.username}`);
-
-  socket.on("join_room", (roomId) => {
-    socket.join(`room_${roomId}`);
-    console.log(`${s.user.username} joined room_${roomId}`);
-  });
-
-  socket.on("send_message", async (data) => {
-    const { roomId, content } = data;
+const userService = makeUserService(
+  userRepo,
+  emergencyContactRepo,
+  refreshTokenRepo,
+  { signToken, generateRefreshToken, hashToken },
+  async (contactId, payload) => {
+  // Send a real chat message
+  const room = await roomRepo.findPrivateRoomByMembers(payload.userId, contactId);
+  if (room) {
     try {
-      const result = await pool.query(
-        "INSERT INTO messages (content, roomId, userId) VALUES ($1, $2, $3) RETURNING *",
-        [content, roomId, s.user.userId]
-      );
-      const message = result.rows[0];
-      // Add username for frontend
-      message.username = s.user.username;
-
-      io.to(`room_${roomId}`).emit("new_message", message);
+      const message = await messageService.sendMessage(payload.userId, room.roomId, payload.message);
+      io.to(`room_${room.roomId}`).emit('new_message', message);
     } catch (err) {
-      console.error("Message save error", err);
+      console.error('Failed to auto-send emergency message:', err);
+      // Fallback to basic socket alert if messaging fails
+      io.to(`user_${contactId}`).emit('emergency_alert', payload);
     }
-  });
+  } else {
+    // Fallback to basic socket alert if they have no private room
+    io.to(`user_${contactId}`).emit('emergency_alert', payload);
+  }
+});
+const roomService = makeRoomService(roomRepo, roomMemberRepo, (roomId, eventName, payload) =>
+  io.to(`room_${roomId}`).emit(eventName as any, payload),
+  friendRepo,
+);
+const messageService = makeMessageService(messageRepo, roomRepo, roomMemberRepo);
+const folderService = makeFolderService(folderRepo, roomMemberRepo);
+const attachmentService = makeAttachmentService(attachmentRepo);
 
-  socket.on("disconnect", () => {
-    console.log(`User disconnected: ${s.user.username}`);
-  });
+const friendService = makeFriendService(friendRepo, (userId, eventName, payload) => {
+  io.to(`user_${userId}`).emit(eventName as any, payload);
+}, {
+  markPrivateReadOnly: roomService.markPrivateReadOnly,
+  createPrivate: (userA: string, userB: string) => roomService.createPrivate(userA, userB),
+  reopenPrivateRoom: roomService.reopenPrivateRoom,
+});
+const friendController = makeFriendController(friendService);
+
+app.use("/api/v1/auth", makeAuthRateLimiter(), makeAuthRoutes(makeAuthController(userService)));
+app.use("/api/v1/users", makeUserRoutes(makeUserController(userService)));
+app.use("/api/v1/rooms", makeRoomRoutes(makeRoomController(roomService)));
+app.use("/api/v1/rooms", makeMessageRoutes(makeMessageController(messageService)));
+app.use("/api/v1/folders", makeFolderRoutes(makeFolderController(folderService)));
+app.use("/api/v1/attachments", makeAttachmentRoutes(makeAttachmentController(attachmentService)));
+app.use("/api/v1/friends", makeFriendRoutes(friendController));
+app.use("/api/v1/friend-requests", makeFriendRequestRoutes(friendController));
+app.use("/api/v1/blocks", makeBlockRoutes(friendController));
+app.use(errorHandler);
+
+attachSocketAuth(io);
+attachSockets(io, {
+  messageService,
+  messageRepository: messageRepo,
+  roomMemberRepository: roomMemberRepo,
+  friendRepository: friendRepo
 });
 
-server.listen(PORT as number, "0.0.0.0", () => {
-  console.log(`Backend server successfully listening on port ${PORT} (0.0.0.0)`);
-});
+if (require.main === module) {
+  startInactivityJob(userRepo, userService);
+  server.listen(PORT as number, "0.0.0.0", () =>
+    console.log(`Backend server successfully listening on port ${PORT} (0.0.0.0)`),
+  );
+}
+
+export { app, server, io };

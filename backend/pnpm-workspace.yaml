@@ -1,0 +1,9 @@
+packages:
+  - '.'
+
+allowBuilds:
+  esbuild: true
+
+overrides:
+  qs: ">=6.15.2"
+  ws: ">=8.20.1"

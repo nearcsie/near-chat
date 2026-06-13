@@ -9,24 +9,46 @@
     "start": "node dist/index.js",
     "migrate:up": "node-pg-migrate up",
     "migrate:down": "node-pg-migrate down",
-    "migrate:create": "node-pg-migrate create"
+    "migrate:create": "node-pg-migrate create",
+    "test": "pnpm run test:unit && pnpm run test:integration && pnpm run test:e2e",
+    "db:seed": "tsx src/db/seed.ts",
+    "test:unit": "vitest run --passWithNoTests tests/unit",
+    "test:coverage": "vitest run --coverage",
+    "test:integration": "vitest run --config vitest.integration.config.ts tests/integration",
+    "test:e2e": "vitest run --config vitest.e2e.config.ts tests/e2e",
+    "test:e2e:local": "pnpm run test:db:up && pnpm run migrate:test && vitest run --config vitest.e2e.config.ts tests/e2e",
+    "test:db:up": "docker compose -f ../docker-compose.test.yml up -d --wait",
+    "test:db:down": "docker compose -f ../docker-compose.test.yml down",
+    "migrate:test": "DATABASE_URL=postgresql://postgres:postgres@localhost:5436/ntnu_test node-pg-migrate up"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.6",
     "express": "^5.2.1",
+    "express-rate-limit": "^8.5.2",
+    "helmet": "^8.2.0",
     "jsonwebtoken": "^9.0.3",
+    "multer": "^2.1.1",
     "node-pg-migrate": "^8.0.4",
     "pg": "^8.20.0",
-    "socket.io": "^4.8.3"
+    "socket.io": "^4.8.3",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/jsonwebtoken": "^9.0.10",
+    "@types/multer": "^2.1.0",
     "@types/node": "^25.7.0",
     "@types/pg": "^8.20.0",
+    "@types/supertest": "^7.2.0",
+    "@vitest/coverage-v8": "^3.0.0",
+    "socket.io-client": "^4.8.3",
+    "supertest": "^7.2.2",
     "ts-node-dev": "^2.0.0",
-    "typescript": "^6.0.3"
+    "tsx": "^4.22.4",
+    "typescript": "^6.0.3",
+    "vitest": "^3.0.0"
   }
 }

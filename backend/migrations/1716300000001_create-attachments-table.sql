@@ -1,0 +1,13 @@
+--- Up migration
+CREATE TABLE attachments (
+    attachment_id UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    message_id    UUID         REFERENCES messages(message_id) ON DELETE CASCADE,
+    file_path     VARCHAR(255) NOT NULL,
+    file_type     VARCHAR(50)  NOT NULL,
+    original_name VARCHAR(255) NOT NULL,
+    uploaded_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    uploaded_by   UUID         REFERENCES users(user_id) ON DELETE SET NULL
+);
+
+--- Down migration
+DROP TABLE attachments;

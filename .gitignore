@@ -3,6 +3,7 @@ node_modules
 .pnp
 .pnp.js
 .pnpm-store/
+package-lock.json
 
 # testing
 coverage
@@ -13,6 +14,7 @@ out/
 
 # production
 build/
+dist/
 
 # misc
 .DS_Store
@@ -27,6 +29,7 @@ yarn-error.log*
 .env
 .env.local
 .env.development.local
+.env.test
 .env.test.local
 .env.production.local
 
@@ -36,4 +39,17 @@ yarn-error.log*
 *.swp
 *.swo
 *~
+
+# AI Agent Worktrees
 .antigravitycli
+.claude/
+.claire/
+.omc/
+.agents/
+.gemini/
+
+# MCP server (local tool, not for repo)
+mcp/
+
+# user uploaded files
+uploads/
