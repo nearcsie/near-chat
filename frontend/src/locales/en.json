@@ -41,6 +41,9 @@
   "friendsPage": {
     "title": "Friend list"
   },
+  "mainRedirect": {
+    "emptyChats": "No chat rooms yet"
+  },
   "profilePage": {
     "title": "Profile settings"
   },
