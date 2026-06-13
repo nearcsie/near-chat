@@ -1,9 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { Response } from 'express';
 import {
-  REFRESH_COOKIE_NAME,
-  setRefreshCookie,
-  clearRefreshCookie,
+  AUTH_COOKIE_NAME,
+  setAuthCookie,
+  clearAuthCookie,
   readCookie,
 } from '../../../src/auth/cookies';
 
@@ -11,12 +11,12 @@ const makeRes = () =>
   ({ cookie: vi.fn(), clearCookie: vi.fn() }) as unknown as Response;
 
 describe('cookies', () => {
-  describe('setRefreshCookie', () => {
-    it('sets the refresh cookie with httpOnly and strict sameSite', () => {
+  describe('setAuthCookie', () => {
+    it('sets the auth cookie with httpOnly and strict sameSite', () => {
       const res = makeRes();
-      setRefreshCookie(res, 'token-123');
+      setAuthCookie(res, 'token-123');
       expect(res.cookie).toHaveBeenCalledWith(
-        REFRESH_COOKIE_NAME,
+        AUTH_COOKIE_NAME,
         'token-123',
         expect.objectContaining({
           httpOnly: true,
@@ -26,34 +26,14 @@ describe('cookies', () => {
         })
       );
     });
-
-    it('defaults the cookie maxAge to the refresh token TTL', () => {
-      const originalMaxAge = process.env.REFRESH_COOKIE_MAX_AGE_MS;
-      const originalDays = process.env.JWT_REFRESH_EXPIRES_IN_DAYS;
-      delete process.env.REFRESH_COOKIE_MAX_AGE_MS;
-      process.env.JWT_REFRESH_EXPIRES_IN_DAYS = '14';
-      try {
-        const res = makeRes();
-        setRefreshCookie(res, 'token-123');
-        const options = (res.cookie as ReturnType<typeof vi.fn>).mock.calls[0][2];
-        expect(options.maxAge).toBe(14 * 24 * 60 * 60 * 1000);
-      } finally {
-        if (originalMaxAge !== undefined) process.env.REFRESH_COOKIE_MAX_AGE_MS = originalMaxAge;
-        if (originalDays !== undefined) {
-          process.env.JWT_REFRESH_EXPIRES_IN_DAYS = originalDays;
-        } else {
-          delete process.env.JWT_REFRESH_EXPIRES_IN_DAYS;
-        }
-      }
-    });
   });
 
-  describe('clearRefreshCookie', () => {
-    it('clears the refresh cookie with matching options', () => {
+  describe('clearAuthCookie', () => {
+    it('clears the auth cookie with matching options', () => {
       const res = makeRes();
-      clearRefreshCookie(res);
+      clearAuthCookie(res);
       expect(res.clearCookie).toHaveBeenCalledWith(
-        REFRESH_COOKIE_NAME,
+        AUTH_COOKIE_NAME,
         expect.objectContaining({ httpOnly: true, sameSite: 'strict', path: '/' })
       );
     });

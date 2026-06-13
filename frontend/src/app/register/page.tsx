@@ -35,6 +35,7 @@ export default function RegisterPage() {
     setError("");
     try {
       const result = await register({ name: username, email, password });
+      localStorage.setItem("token", result.token);
       localStorage.setItem(
         "user",
         JSON.stringify({

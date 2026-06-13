@@ -20,14 +20,9 @@ import {
   type UpdateMeInput,
   type UpdateSettingsInput,
 } from '../validators/userSchemas';
-import { getRefreshTokenTtlMs } from '../auth/refreshTokenTtl';
-
-import type { IRefreshTokenRepository } from '../repositories/IRefreshTokenRepository';
 
 interface JwtHelper {
   signToken(payload: JwtPayload): string;
-  generateRefreshToken(): string;
-  hashToken(token: string): string;
 }
 
 interface EmergencyAlertResult {
@@ -70,7 +65,6 @@ const toUserSettings = (
 export const makeUserService = (
   repo: IUserRepository,
   emergencyContactRepo: IEmergencyContactRepository,
-  refreshTokenRepo: IRefreshTokenRepository,
   jwt: JwtHelper,
   notifyEmergencyContact?: (contactId: string, payload: { userId: string; message: string }) => void | Promise<void>,
 ) => {
@@ -98,18 +92,8 @@ export const makeUserService = (
     return { alerted: true, recipients };
   };
 
-  const issueRefreshToken = async (userId: string): Promise<string> => {
-    const refreshToken = jwt.generateRefreshToken();
-    await refreshTokenRepo.create({
-      userId,
-      tokenHash: jwt.hashToken(refreshToken),
-      expiresAt: new Date(Date.now() + getRefreshTokenTtlMs()),
-    });
-    return refreshToken;
-  };
-
   return {
-    async register(data: RegisterRequest): Promise<AuthResponse & { refreshToken: string }> {
+    async register(data: RegisterRequest): Promise<AuthResponse> {
       const existingUser = await repo.findByEmail(data.email);
       if (existingUser) {
         throw new ConflictError('Email already in use');
@@ -129,16 +113,13 @@ export const makeUserService = (
         name: user.name
       });
 
-      const refreshToken = await issueRefreshToken(user.userId);
-
       return {
         token,
-        refreshToken,
         user: toPublicUser(user)
       };
     },
 
-    async login(data: LoginRequest): Promise<AuthResponse & { refreshToken: string }> {
+    async login(data: LoginRequest): Promise<AuthResponse> {
       const user = await repo.findByEmail(data.email);
       if (!user || user.deletedAt) {
         throw new ValidationError('Invalid email or password');
@@ -156,11 +137,8 @@ export const makeUserService = (
         name: user.name
       });
 
-      const refreshToken = await issueRefreshToken(user.userId);
-
       return {
         token,
-        refreshToken,
         user: toPublicUser(user)
       };
     },
@@ -289,57 +267,6 @@ export const makeUserService = (
       }
       const users = await repo.search(parsed.data.q);
       return users.map(toPublicUser);
-    },
-
-    async refresh(refreshToken: string): Promise<AuthResponse & { refreshToken: string }> {
-      const tokenHash = jwt.hashToken(refreshToken);
-      const tokenRecord = await refreshTokenRepo.findByHash(tokenHash);
-      if (!tokenRecord) {
-        throw new ValidationError('Invalid refresh token');
-      }
-
-      if (tokenRecord.revokedAt) {
-        if (tokenRecord.replacedBy) {
-          await refreshTokenRepo.revokeAllForUser(tokenRecord.userId);
-          throw new ValidationError('Refresh token has been reused and revoked');
-        }
-        throw new ValidationError('Refresh token has been revoked');
-      }
-
-      if (new Date() > new Date(tokenRecord.expiresAt)) {
-        throw new ValidationError('Refresh token expired');
-      }
-
-      const user = await repo.findById(tokenRecord.userId);
-      if (!user || user.deletedAt) {
-        throw new ValidationError('User not found or deleted');
-      }
-
-      const newAccessToken = jwt.signToken({
-        userId: user.userId,
-        name: user.name,
-      });
-      const newRefreshToken = jwt.generateRefreshToken();
-
-      await refreshTokenRepo.rotate(tokenRecord.tokenId, {
-        userId: user.userId,
-        tokenHash: jwt.hashToken(newRefreshToken),
-        expiresAt: new Date(Date.now() + getRefreshTokenTtlMs()),
-      });
-
-      return {
-        token: newAccessToken,
-        refreshToken: newRefreshToken,
-        user: toPublicUser(user),
-      };
-    },
-
-    async revokeToken(refreshToken: string): Promise<void> {
-      const tokenHash = jwt.hashToken(refreshToken);
-      const tokenRecord = await refreshTokenRepo.findByHash(tokenHash);
-      if (tokenRecord) {
-        await refreshTokenRepo.revoke(tokenRecord.tokenId);
-      }
     },
   };
 };

@@ -1,0 +1,6 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        "pnpm": true,
+        "cp": true
+    }
+}

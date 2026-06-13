@@ -58,9 +58,6 @@ import {
   transferRoomOwner,
   upsertEmergencyContact,
   uploadAttachment,
-  getActiveAccessToken,
-  setActiveAccessToken,
-  refreshTokens,
 } from "@/lib/api";
 import {
   createChatSocket,
@@ -563,7 +560,6 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const socialDataRefreshTimerRef = useRef<NodeJS.Timeout | null>(null);
   const socialDataRefreshPromiseRef = useRef<Promise<void> | null>(null);
   const socialDataRefreshResolversRef = useRef<Array<() => void>>([]);
-  const tokenRef = useRef<string | null>(null);
 
   const [isMounted, setIsMounted] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -595,8 +591,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   }, [pathname]);
 
   const clearSession = () => {
+    localStorage.removeItem("token");
     localStorage.removeItem("user");
-    setActiveAccessToken(null);
     setToken(null);
     setCurrentUserId(undefined);
     setIsAuthenticated(false);
@@ -631,14 +627,16 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       clearTimeout(socialDataRefreshTimerRef.current);
     }
 
-    // All concurrent callers share one debounced promise; the timeout below
-    // resolves it once the batched fetch settles.
     if (!socialDataRefreshPromiseRef.current) {
       let resolveFn: () => void;
       socialDataRefreshPromiseRef.current = new Promise<void>((resolve) => {
         resolveFn = resolve;
       });
       socialDataRefreshResolversRef.current = [resolveFn!];
+    } else {
+      let resolveFn: () => void;
+      new Promise<void>((resolve) => { resolveFn = resolve; });
+      socialDataRefreshResolversRef.current.push(resolveFn!);
     }
     const currentPromise = socialDataRefreshPromiseRef.current;
 
@@ -682,33 +680,18 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    const handleExpired = () => {
+    const handler = () => {
+      localStorage.removeItem("token");
       localStorage.removeItem("user");
-      setActiveAccessToken(null);
       setToken(null);
       setCurrentUserId(undefined);
       setIsAuthenticated(false);
       socketRef.current?.disconnect();
       socketRef.current = null;
     };
-    const handleRefreshed = (e: Event) => {
-      const customEvent = e as CustomEvent<{ token: string; user: any }>;
-      setToken(customEvent.detail.token);
-    };
-    window.addEventListener('auth:token-expired', handleExpired);
-    window.addEventListener('auth:token-refreshed', handleRefreshed);
-    return () => {
-      window.removeEventListener('auth:token-expired', handleExpired);
-      window.removeEventListener('auth:token-refreshed', handleRefreshed);
-    };
+    window.addEventListener('auth:token-expired', handler);
+    return () => window.removeEventListener('auth:token-expired', handler);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    tokenRef.current = token;
-    if (token && socketRef.current) {
-      socketRef.current.auth = { token };
-    }
-  }, [token]);
 
   // Session bootstrap: localStorage is only readable after mount, so this
   // hydration must stay in an effect (reading it during render breaks SSR).
@@ -716,6 +699,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     /* eslint-disable react-hooks/set-state-in-effect -- post-mount localStorage session hydration */
     if (!isMounted) return;
 
+    const savedToken = localStorage.getItem("token");
     const savedUser = localStorage.getItem("user");
     const savedTheme = localStorage.getItem("theme");
 
@@ -728,6 +712,11 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     const savedLanguage = localStorage.getItem("language");
     if (savedLanguage === "zh-TW" || savedLanguage === "en") {
       setUiLanguageState(savedLanguage);
+    }
+
+    if (!savedToken) {
+      window.location.replace("/login");
+      return;
     }
 
     if (savedUser) {
@@ -743,16 +732,9 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     let cancelled = false;
     void (async () => {
       try {
-        let currentToken = getActiveAccessToken();
-        if (!currentToken) {
-          const refreshResult = await refreshTokens();
-          if (cancelled) return;
-          currentToken = refreshResult.token;
-        }
-
         const [profile, settings] = await Promise.all([
-          getMe(currentToken),
-          getMySettings(currentToken),
+          getMe(savedToken),
+          getMySettings(savedToken),
         ]);
         if (cancelled) return;
         const stored = toStoredUser(profile, settings);
@@ -764,11 +746,11 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         setUser(stored);
         setCurrentUserId(profile.userId);
         setUiLanguageState(stored.language ?? "en");
-        setToken(currentToken);
+        setToken(savedToken);
         setIsAuthenticated(true);
         await Promise.all([
-          refreshRoomsAndFolders(currentToken, profile.userId),
-          refreshSocialData(currentToken, settings, profile.userId),
+          refreshRoomsAndFolders(savedToken, profile.userId),
+          refreshSocialData(savedToken, settings, profile.userId),
         ]);
       } catch (error) {
         console.error(error);
@@ -793,10 +775,9 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   }, [rooms]);
 
   useEffect(() => {
-    const currentToken = tokenRef.current;
-    if (!currentToken || !currentUserId) return;
+    if (!token) return;
 
-    const socket = createChatSocket(currentToken);
+    const socket = createChatSocket(token);
     socketRef.current = socket;
 
     const joinKnownRooms = () => {
@@ -887,10 +868,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       console.error("Socket error", error);
     });
     const cleanupFriendRequest = onFriendRequest(socket, () => {
-      const activeTok = tokenRef.current;
-      if (activeTok) {
-        void refreshSocialData(activeTok, undefined, currentUserId);
-      }
+      void refreshSocialData(token, undefined, currentUserId);
     });
     const cleanupEmergencyAlert = onEmergencyAlert(socket, (payload) => {
       window.alert(`[EMERGENCY ALERT]\nFrom User: ${payload.userId}\nMessage: ${payload.message}`);
@@ -913,7 +891,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         socketRef.current = null;
       }
     };
-  }, [currentUserId]);
+  }, [token, currentUserId]);
 
   const toggleFolder = (folderId: string) => {
     setFolders((current) =>
