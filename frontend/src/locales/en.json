@@ -33,7 +33,13 @@
     "inviteCodePlaceholder": "Enter invite code...",
     "joinFailed": "Failed to join. Please verify the invite code.",
     "join": "Join",
-    "searchChatsPlaceholder": "Search chats..."
+    "searchChatsPlaceholder": "Search chats...",
+    "actions": "New Action",
+    "createGroup": "Create Group",
+    "createGroupDesc": "Create a new group chat room",
+    "joinGroupDesc": "Join an existing group with invite code",
+    "createFolderDesc": "Create a folder to categorize chat rooms",
+    "back": "Back"
   },
   "emergencyPage": {
     "title": "Emergency settings"

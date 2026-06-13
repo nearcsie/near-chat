@@ -12,6 +12,7 @@ import { useTranslation } from "@/hooks/useTranslation";
 import { Modal } from "@/components/ui/Modal";
 import { Input } from "@/components/ui/Input";
 import ProfilePopover from "./ProfilePopover";
+import { Icon } from "@iconify/react";
 
 interface ChatroomProps {
   roomId: string;
@@ -296,9 +297,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
               onClick={onOpenGroupSettings}
               className="py-1 px-3 text-xs flex items-center gap-1.5"
             >
-              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
-              </svg>
+              <Icon icon="boxicons:slider-vertical" className="h-3.5 w-3.5" />
               {t("chatroom.groupSettings")}
             </Button>
           )}
@@ -309,9 +308,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
                 className="p-1.5 border border-border-secondary hover:border-border-primary rounded-sm text-text-muted hover:text-foreground transition-colors cursor-pointer"
                 title={t("chatroom.chatOptions")}
               >
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
-                </svg>
+                <Icon icon="bx:dots-horizontal-rounded" className="h-4 w-4" />
               </button>
             }
             items={[
@@ -333,10 +330,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
             }`}
             title={showRightPanel ? t("chatroom.hideInfoPanel") : t("chatroom.showInfoPanel")}
           >
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v14a1 1 0 01-1 1H5a1 1 0 01-1-1V5z" />
-              <path strokeLinecap="round" strokeLinejoin="round" d="M16 4v16" />
-            </svg>
+            <Icon icon="boxicons:sidebar-right" className="h-4 w-4" />
           </button>
         </div>
       </div>
@@ -405,9 +399,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
             onClick={() => setReplyTarget(null)}
             className="text-text-muted hover:text-foreground cursor-pointer p-0.5 border border-transparent hover:border-border-primary rounded-sm ml-4"
           >
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
+            <Icon icon="boxicons:x" className="h-3.5 w-3.5" />
           </button>
         </div>
       )}
@@ -438,6 +430,14 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
               className="hidden"
               onChange={handleFileSelected}
             />
+            <button
+              type="button"
+              onClick={handleAttach}
+              title={t("chatroom.uploadAttachment")}
+              className="p-2.5 border border-border-secondary hover:border-border-primary rounded-sm text-text-muted hover:text-foreground transition-colors cursor-pointer shrink-0 mb-0.5"
+            >
+              <Icon icon="boxicons:paperclip" className="h-4 w-4" />
+            </button>
 
             {pendingAttachment && (
               <div className="bg-surface-muted border border-border-primary px-6 py-2 flex items-center justify-between text-xs select-none rounded-sm">
@@ -473,17 +473,6 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
             )}
 
             <form onSubmit={handleSend} className="flex gap-4 items-end">
-              <button
-                type="button"
-                onClick={handleAttach}
-                title={t("chatroom.uploadAttachment")}
-                className="p-2.5 border border-border-secondary hover:border-border-primary rounded-sm text-text-muted hover:text-foreground transition-colors cursor-pointer shrink-0 mb-0.5"
-              >
-                <svg className="h-4.5 w-4.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
-                </svg>
-              </button>
-
               <div className="relative flex-1">
                 {mentionCandidates.length > 0 && (
                   <div className="absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-sm border border-border-primary bg-surface-card shadow-lg">
