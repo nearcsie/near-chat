@@ -2,6 +2,18 @@ import { ValidationError } from '../errors/AppError';
 import { AttachmentRepository } from '../repositories/attachmentRepository';
 import type { Attachment } from '@shared/types';
 
+const containsEastAsianChars = (value: string) => /[\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff\uac00-\ud7af]/.test(value);
+
+const normalizeOriginalFilename = (filename: string) => {
+  const decoded = Buffer.from(filename, 'latin1').toString('utf8');
+
+  if (containsEastAsianChars(decoded) && !containsEastAsianChars(filename)) {
+    return decoded;
+  }
+
+  return filename;
+};
+
 const mapAttachment = (row: any): Attachment => ({
   attachmentId: row.attachment_id,
   messageId: row.message_id ?? undefined,
@@ -21,11 +33,12 @@ export function makeAttachmentService(attachmentRepo: AttachmentRepository) {
       if (!file) {
         throw new ValidationError('file is required');
       }
+      const originalName = normalizeOriginalFilename(file.originalname);
       const attachment = await attachmentRepo.create({
         uploadedBy,
         filePath: file.path,
         fileType: file.mimetype,
-        originalName: file.originalname,
+        originalName,
       });
       return mapAttachment(attachment);
     },

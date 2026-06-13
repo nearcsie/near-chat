@@ -38,6 +38,7 @@ import { makeFolderRoutes } from "./routes/folderRoutes";
 import { makeFriendRoutes, makeBlockRoutes, makeFriendRequestRoutes } from "./routes/friendRoutes";
 import { attachSocketAuth } from "./realtime/authSocket";
 import { attachSockets } from "./realtime/socketServer";
+import { ensureUploadDirectories } from "./lib/uploads";
 import type { ClientToServerEvents, ServerToClientEvents } from "../../shared/types";
 
 const app = express();
@@ -59,6 +60,7 @@ app.use(securityHeaders);
 app.use(cors({ origin: allowedOrigins, credentials: true }));
 app.use(express.json());
 app.use("/api", makeGlobalRateLimiter());
+ensureUploadDirectories();
 
 const userRepo = new UserRepository(pool);
 const emergencyContactRepo = new EmergencyContactRepository(pool);

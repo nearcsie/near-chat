@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { useChat, getAvatarForUser, Message, ChatRoom } from "@/context/ChatContext";
+import { useChat, getAvatarForUser, Message } from "@/context/ChatContext";
 import { Button } from "@/components/ui/Button";
 import { Dropdown } from "@/components/ui/Dropdown";
 import { Avatar } from "@/components/ui/Avatar";
@@ -24,6 +24,12 @@ interface MentionDraft {
   query: string;
 }
 
+const formatFileSize = (bytes: number) => {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+};
+
 const getMentionDraft = (value: string, cursorPosition: number): MentionDraft | null => {
   const beforeCursor = value.slice(0, cursorPosition);
   const match = beforeCursor.match(/(?:^|\s)@([^\s@]*)$/);
@@ -44,7 +50,6 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
   const router = useRouter();
   const {
     rooms,
-    folders,
     messages,
     user,
     activeRoomNicknames,
@@ -52,7 +57,6 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
     handleTyping,
     handleUploadAttachment,
     handleRecallMessage,
-    handleCategorizeRoom,
     handleModifyNickname,
     handleLeaveOrBlock,
     getReadAvatarsForMessage,
@@ -68,6 +72,8 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
   const [showHeaderPopover, setShowHeaderPopover] = useState(false);
   const [isModifyNickOpen, setIsModifyNickOpen] = useState(false);
   const [nickInputValue, setNickInputValue] = useState("");
+  const [pendingAttachment, setPendingAttachment] = useState<File | null>(null);
+  const [isUploadingAttachment, setIsUploadingAttachment] = useState(false);
   const messageEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -88,8 +94,6 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
           )
       : [];
 
-  // Reset the highlighted mention option when the draft query or room changes
-  // (adjust state during render instead of a cascading effect).
   const mentionResetKey = `${roomId}|${mentionDraft ? `q:${mentionDraft.query}` : "none"}`;
   const [prevMentionResetKey, setPrevMentionResetKey] = useState(mentionResetKey);
   if (prevMentionResetKey !== mentionResetKey) {
@@ -97,10 +101,20 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
     setSelectedMentionIndex(0);
   }
 
-  // Scroll to bottom when room or messages change
   useEffect(() => {
     messageEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [roomId, messages]);
+
+  useEffect(() => {
+    // Reset the staged attachment when switching rooms so a file selected in one
+    // chat is never sent from a different chat by accident.
+    const resetId = window.setTimeout(() => {
+      setPendingAttachment(null);
+      setIsUploadingAttachment(false);
+    }, 0);
+
+    return () => window.clearTimeout(resetId);
+  }, [roomId]);
 
   if (!activeRoom) {
     return (
@@ -124,17 +138,31 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
     fileInputRef.current?.click();
   };
 
-  const handleFileSelected = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelected = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file) return;
+    setPendingAttachment(file);
+  };
 
+  const handleConfirmAttachmentUpload = async () => {
+    if (!pendingAttachment) return;
+
+    setIsUploadingAttachment(true);
     try {
-      await handleUploadAttachment(activeRoom.id, file);
+      await handleUploadAttachment(activeRoom.id, pendingAttachment);
+      setPendingAttachment(null);
     } catch (error) {
       console.error(error);
       alert(error instanceof Error ? error.message : "Failed to upload attachment");
+    } finally {
+      setIsUploadingAttachment(false);
     }
+  };
+
+  const handleRemovePendingAttachment = () => {
+    if (isUploadingAttachment) return;
+    setPendingAttachment(null);
   };
 
   const handleModifyNick = () => {
@@ -218,7 +246,6 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
 
   return (
     <div className="flex-1 flex flex-col bg-background h-full overflow-hidden">
-      {/* Chat Panel Header */}
       <div className="h-14 border-b border-border-primary px-6 flex items-center justify-between select-none shrink-0 bg-surface-card z-10">
         <div
           className={`flex items-center gap-3 relative avatar-click-target ${
@@ -262,9 +289,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
           )}
         </div>
 
-        {/* Header Action Elements */}
         <div className="flex items-center gap-3">
-          {/* Group Settings Button */}
           {activeRoom.type === "group" && onOpenGroupSettings && (
             <Button
               variant="secondary"
@@ -278,7 +303,6 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
             </Button>
           )}
 
-          {/* Chat Options Dropdown */}
           <Dropdown
             trigger={
               <button
@@ -300,7 +324,6 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
             ]}
           />
 
-          {/* Panel Toggle Button */}
           <button
             onClick={() => setShowRightPanel(!showRightPanel)}
             className={`p-1.5 border rounded-sm transition-colors cursor-pointer ${
@@ -318,7 +341,6 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
         </div>
       </div>
 
-      {/* Chat Messages Area */}
       <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-4">
         {messages
           .filter((m) => m.roomId === activeRoom.id)
@@ -373,7 +395,6 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
         <div ref={messageEndRef} />
       </div>
 
-      {/* Reply Quote Banner */}
       {replyTarget && (
         <div className="bg-surface-muted border-t border-border-primary px-6 py-2 flex items-center justify-between text-xs select-none">
           <div className="flex-1 min-w-0 border-l-2 border-primary pl-2">
@@ -396,7 +417,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
         if (names.length === 0) return null;
         const label = names.length === 1
           ? `${names[0]} is typing...`
-          : `${names.slice(0, 2).join(', ')} are typing...`;
+          : `${names.slice(0, 2).join(", ")} are typing...`;
         return (
           <div className="px-6 py-1 text-xs text-text-muted italic select-none">
             {label}
@@ -404,89 +425,124 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
         );
       })()}
 
-      {/* Input Box Area */}
       <div className="border-t border-border-primary bg-surface-card px-6 py-4 shrink-0">
         {activeRoom.isArchived ? (
           <div className="w-full text-center py-2.5 bg-surface-muted text-xs text-text-muted uppercase tracking-wider select-none border border-dashed border-border-secondary rounded-sm">
             {t("chatroom.readOnlyOrBlocked")}
           </div>
         ) : (
-          <form onSubmit={handleSend} className="flex gap-4 items-end">
+          <div className="flex flex-col gap-3">
             <input
               ref={fileInputRef}
               type="file"
               className="hidden"
               onChange={handleFileSelected}
             />
-            <button
-              type="button"
-              onClick={handleAttach}
-              title={t("chatroom.uploadAttachment")}
-              className="p-2.5 border border-border-secondary hover:border-border-primary rounded-sm text-text-muted hover:text-foreground transition-colors cursor-pointer shrink-0 mb-0.5"
-            >
-              <svg className="h-4.5 w-4.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
-              </svg>
-            </button>
 
-            <div className="relative flex-1">
-              {mentionCandidates.length > 0 && (
-                <div className="absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-sm border border-border-primary bg-surface-card shadow-lg">
-                  {mentionCandidates.map((member) => (
-                    <button
-                      key={member.userId}
-                      type="button"
-                      onMouseDown={(event) => event.preventDefault()}
-                      onClick={() => handleMentionSelect(member.name)}
-                      className={`flex w-full items-center justify-between gap-3 border-b border-border-secondary/40 px-3 py-2 text-left text-xs text-foreground transition-colors last:border-b-0 ${
-                        mentionCandidates[selectedMentionIndex]?.userId === member.userId
-                          ? "bg-primary/10 text-primary"
-                          : "hover:bg-surface-muted"
-                      }`}
-                    >
-                      <span className="truncate font-semibold">{member.name}</span>
-                      <span className="shrink-0 text-[10px] uppercase tracking-wider text-text-muted">
-                        @{member.name}
-                      </span>
-                    </button>
-                  ))}
+            {pendingAttachment && (
+              <div className="bg-surface-muted border border-border-primary px-6 py-2 flex items-center justify-between text-xs select-none rounded-sm">
+                <div className="flex-1 min-w-0 border-l-2 border-primary pl-2">
+                  <span className="font-bold text-foreground block">{t("chatroom.attachmentPreview")}</span>
+                  <p className="text-foreground truncate mt-0.5">{pendingAttachment.name}</p>
+                  <p className="text-text-muted truncate mt-0.5 font-mono">
+                    {pendingAttachment.type || "application/octet-stream"} · {formatFileSize(pendingAttachment.size)}
+                  </p>
                 </div>
-              )}
+                <div className="flex items-center gap-2 shrink-0 ml-4">
+                  <Button
+                    type="button"
+                    onClick={() => void handleConfirmAttachmentUpload()}
+                    disabled={isUploadingAttachment}
+                    className="py-1.5 px-3"
+                  >
+                    {isUploadingAttachment ? "Uploading..." : t("chatroom.send")}
+                  </Button>
+                  <button
+                    type="button"
+                    onClick={handleRemovePendingAttachment}
+                    disabled={isUploadingAttachment}
+                    className="text-text-muted hover:text-foreground cursor-pointer p-0.5 border border-transparent hover:border-border-primary rounded-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                    title={t("chatroom.cancel")}
+                  >
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            )}
 
-              <input
-                ref={inputRef}
-                type="text"
-                placeholder={t("chatroom.inputPlaceholder")}
-                value={inputText}
-                onChange={(e) => {
-                  const nextText = e.target.value;
-                  const nextCursorPosition = e.target.selectionStart ?? nextText.length;
+            <form onSubmit={handleSend} className="flex gap-4 items-end">
+              <button
+                type="button"
+                onClick={handleAttach}
+                title={t("chatroom.uploadAttachment")}
+                className="p-2.5 border border-border-secondary hover:border-border-primary rounded-sm text-text-muted hover:text-foreground transition-colors cursor-pointer shrink-0 mb-0.5"
+              >
+                <svg className="h-4.5 w-4.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                </svg>
+              </button>
 
-                  setInputText(nextText);
-                  setMentionDraft(getMentionDraft(nextText, nextCursorPosition));
-                  handleTyping(activeRoom.id, nextText.length > 0);
-                }}
-                onClick={(e) => {
-                  const nextCursorPosition = e.currentTarget.selectionStart ?? inputText.length;
-                  setMentionDraft(getMentionDraft(inputText, nextCursorPosition));
-                }}
-                onKeyUp={(e) => {
-                  const nextCursorPosition = e.currentTarget.selectionStart ?? inputText.length;
-                  setMentionDraft(getMentionDraft(inputText, nextCursorPosition));
-                }}
-                onBlur={() => {
-                  handleTyping(activeRoom.id, false);
-                  setMentionDraft(null);
-                }}
-                onKeyDown={handleMentionKeyDown}
-                className="w-full bg-surface-card border border-border-secondary hover:border-border-primary focus:border-primary focus:outline-none rounded-sm px-3.5 py-2.5 text-sm text-foreground transition-colors"
-              />
-            </div>
+              <div className="relative flex-1">
+                {mentionCandidates.length > 0 && (
+                  <div className="absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-sm border border-border-primary bg-surface-card shadow-lg">
+                    {mentionCandidates.map((member) => (
+                      <button
+                        key={member.userId}
+                        type="button"
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => handleMentionSelect(member.name)}
+                        className={`flex w-full items-center justify-between gap-3 border-b border-border-secondary/40 px-3 py-2 text-left text-xs text-foreground transition-colors last:border-b-0 ${
+                          mentionCandidates[selectedMentionIndex]?.userId === member.userId
+                            ? "bg-primary/10 text-primary"
+                            : "hover:bg-surface-muted"
+                        }`}
+                      >
+                        <span className="truncate font-semibold">{member.name}</span>
+                        <span className="shrink-0 text-[10px] uppercase tracking-wider text-text-muted">
+                          @{member.name}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
 
-            <Button type="submit" variant="primary" className="py-2.5 px-5 shrink-0 select-none">
-              {t("chatroom.send")}
-            </Button>
-          </form>
+                <input
+                  ref={inputRef}
+                  type="text"
+                  placeholder={t("chatroom.inputPlaceholder")}
+                  value={inputText}
+                  onChange={(e) => {
+                    const nextText = e.target.value;
+                    const nextCursorPosition = e.target.selectionStart ?? nextText.length;
+
+                    setInputText(nextText);
+                    setMentionDraft(getMentionDraft(nextText, nextCursorPosition));
+                    handleTyping(activeRoom.id, nextText.length > 0);
+                  }}
+                  onClick={(e) => {
+                    const nextCursorPosition = e.currentTarget.selectionStart ?? inputText.length;
+                    setMentionDraft(getMentionDraft(inputText, nextCursorPosition));
+                  }}
+                  onKeyUp={(e) => {
+                    const nextCursorPosition = e.currentTarget.selectionStart ?? inputText.length;
+                    setMentionDraft(getMentionDraft(inputText, nextCursorPosition));
+                  }}
+                  onBlur={() => {
+                    handleTyping(activeRoom.id, false);
+                    setMentionDraft(null);
+                  }}
+                  onKeyDown={handleMentionKeyDown}
+                  className="w-full bg-surface-card border border-border-secondary hover:border-border-primary focus:border-primary focus:outline-none rounded-sm px-3.5 py-2.5 text-sm text-foreground transition-colors"
+                />
+              </div>
+
+              <Button type="submit" variant="primary" className="py-2.5 px-5 shrink-0 select-none">
+                {t("chatroom.send")}
+              </Button>
+            </form>
+          </div>
         )}
       </div>
 

@@ -33,6 +33,7 @@ services:
       - CI=true
     volumes:
       - ./backend:/app
+      - ${UPLOADS_MOUNT_SOURCE:-app_uploads}:/app/uploads
       - /app/node_modules
       - ./tsconfig.base.json:/tsconfig.base.json:ro
       - ./shared:/shared:ro
@@ -62,3 +63,4 @@ services:
 
 volumes:
   pgdata:
+  app_uploads:
