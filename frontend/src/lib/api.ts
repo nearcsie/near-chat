@@ -105,19 +105,19 @@ const runExclusiveRefresh = <T,>(task: () => Promise<T>): Promise<T> => {
 };
 
 let isRefreshing = false;
-let refreshSubscribers: { resolve: (token: string) => void; reject: (err: any) => void }[] = [];
+let refreshSubscribers: { resolve: (token: string) => void; reject: (err: unknown) => void }[] = [];
 
 const onTokenRefreshed = (token: string) => {
   refreshSubscribers.forEach((sub) => sub.resolve(token));
   refreshSubscribers = [];
 };
 
-const onRefreshFailed = (err: any) => {
+const onRefreshFailed = (err: unknown) => {
   refreshSubscribers.forEach((sub) => sub.reject(err));
   refreshSubscribers = [];
 };
 
-const addRefreshSubscriber = (resolve: (token: string) => void, reject: (err: any) => void) => {
+const addRefreshSubscriber = (resolve: (token: string) => void, reject: (err: unknown) => void) => {
   refreshSubscribers.push({ resolve, reject });
 };
 

@@ -71,6 +71,7 @@ import {
   onNewMessage,
   onReadUpdate,
   onSocketError,
+  onUserStatus,
   onUserTyping,
   recallMessage,
   sendMessage,
@@ -93,6 +94,7 @@ export interface ChatRoom {
   type: "msg" | "group";
   name: string;
   isOnline?: boolean;
+  otherMemberId?: string;
   folderId?: string | null;
   inviteCode?: string;
   requireApproval?: boolean;
@@ -436,6 +438,8 @@ const mapRooms = (
       requireApproval: room.requireApproval,
       viewHistory: room.viewHistory,
       isArchived: room.isArchived,
+      isOnline: room.isOnline ?? currentRoom?.isOnline,
+      otherMemberId: room.otherMemberId ?? currentRoom?.otherMemberId,
       members: currentRoom?.members ?? (room.type === "group" ? [] : undefined),
       unreadCount: room.unreadCount ?? currentRoom?.unreadCount ?? 0,
       lastMessagePreview: latestMessage
@@ -467,7 +471,7 @@ const mapFriend = (item: FriendResponse, emergencyContactIds: Set<string>): Frie
   id: item.friend.userId,
   name: item.friend.name,
   email: "",
-  status: "offline",
+  status: item.status || "offline",
   isEmergencyContact: emergencyContactIds.has(item.friend.userId),
 });
 
@@ -692,7 +696,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       socketRef.current = null;
     };
     const handleRefreshed = (e: Event) => {
-      const customEvent = e as CustomEvent<{ token: string; user: any }>;
+      const customEvent = e as CustomEvent<{ token: string; user: unknown }>;
       setToken(customEvent.detail.token);
     };
     window.addEventListener('auth:token-expired', handleExpired);
@@ -793,10 +797,9 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   }, [rooms]);
 
   useEffect(() => {
-    const currentToken = tokenRef.current;
-    if (!currentToken || !currentUserId) return;
+    if (!token || !currentUserId) return;
 
-    const socket = createChatSocket(currentToken);
+    const socket = createChatSocket(token);
     socketRef.current = socket;
 
     const joinKnownRooms = () => {
@@ -895,6 +898,13 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     const cleanupEmergencyAlert = onEmergencyAlert(socket, (payload) => {
       window.alert(`[EMERGENCY ALERT]\nFrom User: ${payload.userId}\nMessage: ${payload.message}`);
     });
+    const cleanupUserStatus = onUserStatus(socket, ({ userId, status }) => {
+      setFriends((prev) =>
+        prev.map((friend) =>
+          friend.id === userId ? { ...friend, status } : friend,
+        ),
+      );
+    });
 
     socket.on("connect", joinKnownRooms);
     socket.connect();
@@ -907,13 +917,14 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       cleanupError();
       cleanupFriendRequest();
       cleanupEmergencyAlert();
+      cleanupUserStatus();
       socket.off("connect", joinKnownRooms);
       socket.disconnect();
       if (socketRef.current === socket) {
         socketRef.current = null;
       }
     };
-  }, [currentUserId]);
+  }, [currentUserId, token]);
 
   const toggleFolder = (folderId: string) => {
     setFolders((current) =>
@@ -1529,17 +1540,24 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
   const derivedRooms = useMemo(() => {
     return rooms.map((room) => {
-      if (room.type === "msg" && room.members && currentUserId) {
-        const otherMember = room.members.find((m) => m.userId !== currentUserId);
-        if (otherMember) {
-          const friend = friends.find((f) => f.id === otherMember.userId);
-          return {
-            ...room,
-            name: friend ? friend.name : (otherMember.name || room.name),
-          };
+      let nextName = room.name;
+      let nextIsOnline = room.isOnline;
+
+      if (room.type === "msg") {
+        const otherMemberId = room.otherMemberId || room.members?.find((m) => m.userId !== currentUserId)?.userId;
+        if (otherMemberId) {
+          const friend = friends.find((f) => f.id === otherMemberId);
+          if (friend) {
+            nextName = friend.name;
+            nextIsOnline = friend.status === "online";
+          }
         }
       }
-      return room;
+      return {
+        ...room,
+        name: nextName,
+        isOnline: nextIsOnline,
+      };
     });
   }, [rooms, friends, currentUserId]);
 

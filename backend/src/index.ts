@@ -121,7 +121,12 @@ app.use("/api/v1/blocks", makeBlockRoutes(friendController));
 app.use(errorHandler);
 
 attachSocketAuth(io);
-attachSockets(io, { messageService, messageRepository: messageRepo, roomMemberRepository: roomMemberRepo });
+attachSockets(io, {
+  messageService,
+  messageRepository: messageRepo,
+  roomMemberRepository: roomMemberRepo,
+  friendRepository: friendRepo
+});
 
 if (require.main === module) {
   startInactivityJob(userRepo, userService);
