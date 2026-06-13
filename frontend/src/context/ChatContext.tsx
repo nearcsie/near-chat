@@ -696,7 +696,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       socketRef.current = null;
     };
     const handleRefreshed = (e: Event) => {
-      const customEvent = e as CustomEvent<{ token: string; user: any }>;
+      const customEvent = e as CustomEvent<{ token: string; user: unknown }>;
       setToken(customEvent.detail.token);
     };
     window.addEventListener('auth:token-expired', handleExpired);
