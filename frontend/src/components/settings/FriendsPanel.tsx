@@ -124,7 +124,7 @@ export default function FriendsPanel() {
   return (
     <div className="flex flex-col gap-0 border border-border-primary rounded-sm bg-surface-card overflow-hidden">
       {/* Tab Bar */}
-      <div className="flex border-b border-border-primary bg-surface-muted overflow-x-auto">
+      <div className="flex border-b border-border-primary bg-surface-muted overflow-x-auto overflow-y-hidden no-scrollbar">
         {tabs.map((tab) => (
           <button
             key={tab.key}
