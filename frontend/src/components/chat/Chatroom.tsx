@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useLayoutEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useChat, getAvatarForUser, Message } from "@/context/ChatContext";
 import { Button } from "@/components/ui/Button";
@@ -102,8 +102,17 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
     setSelectedMentionIndex(0);
   }
 
-  useEffect(() => {
-    messageEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  // Scroll to bottom when room or messages change
+  const lastScrolledRoomIdRef = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    if (lastScrolledRoomIdRef.current !== roomId) {
+      messageEndRef.current?.scrollIntoView({ behavior: "auto" });
+      if (messages.length > 0) {
+        lastScrolledRoomIdRef.current = roomId;
+      }
+    } else {
+      messageEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
   }, [roomId, messages]);
 
   useEffect(() => {
