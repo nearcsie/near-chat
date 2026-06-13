@@ -12,14 +12,12 @@
 
 ### 認證方式 (Authentication)
 
-除 `POST /auth/register` 與 `POST /auth/login` 外，所有端點均需驗證，提供以下任一方式：
+除 `POST /auth/register`、`POST /auth/login` 與 `POST /auth/refresh` 外，所有端點均需驗證：
 
-| 方式 | 說明 |
-| :--- | :--- |
-| **HttpOnly Cookie** | 登入後自動設置 `auth_token` Cookie，瀏覽器會自動帶上（推薦） |
-| **Bearer Token** | Request Header: `Authorization: Bearer <token>` |
+1. **Bearer Token**: 客戶端需在 Request Header 中包含 `Authorization: Bearer <token>`（`<token>` 為登入、註冊或刷新成功後回傳的 JWT 存取權杖）。
+2. **HttpOnly Cookie (更新權杖)**: 登入或註冊成功後，伺服器會自動在瀏覽器中設置名為 `refresh_token` 的 HttpOnly Cookie。當 Bearer Token 過期後，可透過發送 `POST /auth/refresh` 並自動帶上此 Cookie 來取得新的 Bearer Token。
 
-JWT 預設有效期為 `15m`，可透過環境變數 `JWT_EXPIRES_IN` 調整。Token 過期後需重新登入取得新 Token。
+JWT 存取權杖預設有效期為 `15m`，可透過環境變數 `JWT_EXPIRES_IN` 調整。更新權杖（Refresh Token）預設有效期為 `7` 天，可透過環境變數 `JWT_REFRESH_EXPIRES_IN_DAYS` 調整。
 
 ### 錯誤回應格式 (Error Response)
 
@@ -225,7 +223,7 @@ JWT 預設有效期為 `15m`，可透過環境變數 `JWT_EXPIRES_IN` 調整。T
   "password": "string (min 8 chars, required)"
 }
 ```
-**Response `201`:** `AuthResponse` + 設置 `auth_token` HttpOnly Cookie
+**Response `201`:** `AuthResponse` + 設置 `refresh_token` HttpOnly Cookie
 
 ---
 
@@ -239,13 +237,20 @@ JWT 預設有效期為 `15m`，可透過環境變數 `JWT_EXPIRES_IN` 調整。T
   "password": "string (required)"
 }
 ```
-**Response `200`:** `AuthResponse` + 設置 `auth_token` HttpOnly Cookie
+**Response `200`:** `AuthResponse` + 設置 `refresh_token` HttpOnly Cookie
+
+---
+
+#### `POST /auth/refresh`
+> 無需驗證，但瀏覽器需自動帶上有效的 `refresh_token` HttpOnly Cookie。
+
+**Response `200`:** `AuthResponse` + 設置新的 `refresh_token` HttpOnly Cookie
 
 ---
 
 #### `POST /auth/logout`
 
-**Response `204`** (清除 `auth_token` Cookie)
+**Response `204`** (清除 `refresh_token` Cookie，並在資料庫中註銷此更新權杖)
 
 ---
 
