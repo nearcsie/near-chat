@@ -321,7 +321,7 @@ JWT 存取權杖預設有效期為 `15m`，可透過環境變數 `JWT_EXPIRES_IN
 
 ---
 
-#### `GET /users?q=<query>`
+#### `GET /users?q=<query>&mode=<mode>`
 
 搜尋使用者。
 
@@ -329,9 +329,16 @@ JWT 存取權杖預設有效期為 `15m`，可透過環境變數 `JWT_EXPIRES_IN
 
 | 參數 | 必填 | 說明 |
 | :--- | :---: | :--- |
-| `q` | ✅ | 搜尋字串 (min 1 char)，依名稱或 ID 過濾 |
+| `q` | ✅ | 搜尋字串 (min 1 char) |
+| `mode` | ❌ | 搜尋模式。可選值為：`name` (依名稱模糊搜尋)、`userId` (依 User ID 精確比對)、`email` (依 Email 精確比對)。未傳入時採混合模式（依名稱、email 模糊或 ID 精確搜尋） |
 
-**Response `200`:** `PublicUser[]`
+**Response `200`:** `SearchUserResult[]`
+
+`SearchUserResult` 結構說明：
+* `userId`: `string`
+* `name`: `string`
+* `email`: `string`
+* `avatarUrl`: `string | null`
 
 ---
 

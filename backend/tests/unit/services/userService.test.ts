@@ -330,6 +330,7 @@ describe('userService', () => {
         {
           userId: 'u1',
           name: 'Test User',
+          email: 'test@example.com',
           avatarUrl: 'https://example.com/avatar.png',
         },
       ]);
