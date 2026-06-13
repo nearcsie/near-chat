@@ -245,5 +245,8 @@
     "roleFailed": "更新成員角色失敗",
     "changeRole": "變更角色",
     "manageMember": "管理"
+  },
+  "mainRedirect": {
+    "emptyChats": "尚未建立聊天室"
   }
 }

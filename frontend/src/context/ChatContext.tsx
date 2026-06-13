@@ -241,6 +241,7 @@ interface ChatContextType {
   uiLanguage: UiLanguage;
   isAuthenticated: boolean;
   isMounted: boolean;
+  roomsInitialized: boolean;
   selectedFriendForSidebar: Friend | null;
   setSelectedFriendForSidebar: React.Dispatch<React.SetStateAction<Friend | null>>;
   showRightPanel: boolean;
@@ -571,6 +572,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
   const [isMounted, setIsMounted] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [roomsInitialized, setRoomsInitialized] = useState(false);
   const [token, setToken] = useState<string | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | undefined>(undefined);
   const [user, setUser] = useState<User>({ username: "", email: "", avatar: "" });
@@ -604,6 +606,10 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     setToken(null);
     setCurrentUserId(undefined);
     setIsAuthenticated(false);
+    setRoomsInitialized(false);
+    setRooms([]);
+    setFolders([]);
+    setMessages([]);
     socketRef.current?.disconnect();
     socketRef.current = null;
   };
@@ -625,6 +631,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     setFolders((current) => mapFolders(apiFolders, current));
     setRooms(nextRooms);
     void loadMessagesForRooms(authToken, nextRooms, userId);
+    setRoomsInitialized(true);
   };
 
   const refreshSocialData = async (authToken: string, settings?: UserSettings, userId = currentUserId) => {
@@ -665,11 +672,11 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         setFriends(apiFriends.map((friend) => mapFriend(friend, emergencyContactIds)));
         setFriendRequests(apiRequests.map((req) => mapFriendRequest(req, effectiveUserId)));
         setBlockedUsers(apiBlockedUsers.map(u => ({ id: u.userId, name: u.name, email: u.email })));
-        setEmergencySettings(prev => ({
+        setEmergencySettings({
           warningEnabled: settings?.warningEnabled ?? user.warningEnabled ?? false,
           warningDays: settings?.warningDays ?? user.warningDays ?? 0,
           contacts,
-        }));
+        });
       } catch (error) {
         console.error("Error refreshing social data:", error);
       } finally {
@@ -687,13 +694,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const handleExpired = () => {
-      localStorage.removeItem("user");
-      setActiveAccessToken(null);
-      setToken(null);
-      setCurrentUserId(undefined);
-      setIsAuthenticated(false);
-      socketRef.current?.disconnect();
-      socketRef.current = null;
+      clearSession();
     };
     const handleRefreshed = (e: Event) => {
       const customEvent = e as CustomEvent<{ token: string; user: unknown }>;
@@ -747,6 +748,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     let cancelled = false;
     void (async () => {
       try {
+        setRoomsInitialized(false);
         let currentToken = getActiveAccessToken();
         if (!currentToken) {
           const refreshResult = await refreshTokens();
@@ -1577,6 +1579,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         uiLanguage,
         isAuthenticated,
         isMounted,
+        roomsInitialized,
         selectedFriendForSidebar,
         setSelectedFriendForSidebar,
         showRightPanel,
