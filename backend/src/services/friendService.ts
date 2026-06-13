@@ -1,5 +1,6 @@
 import { AppError, ValidationError } from '../errors/AppError';
 import type { makeFriendRepository } from '../repositories/friendRepository';
+import { isUserOnline } from '../realtime/presence';
 
 export function makeFriendService(
   repo: ReturnType<typeof makeFriendRepository>,
@@ -79,7 +80,16 @@ export function makeFriendService(
     },
 
     async getFriends(userId: string) {
-      return repo.getFriends(userId);
+      const friends = await repo.getFriends(userId);
+      return friends.map((f) => {
+        if (f && f.friend) {
+          return {
+            ...f,
+            status: isUserOnline(f.friend.userId) ? 'online' : 'offline',
+          };
+        }
+        return f;
+      });
     },
 
     async removeFriend(userId: string, friendId: string) {

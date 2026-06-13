@@ -1,5 +1,6 @@
 import type { Room, RoomSummary } from '@shared/types';
 import { randomBytes } from 'crypto';
+import { isUserOnline } from '../realtime/presence';
 import type { IRoomRepository } from '../repositories/IRoomRepository';
 import type { IRoomMemberRepository } from '../repositories/IRoomMemberRepository';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../errors/AppError';
@@ -55,7 +56,16 @@ export const makeRoomService = (
     },
 
     async list(userId: string): Promise<RoomSummary[]> {
-      return repo.findByMember(userId);
+      const rooms = await repo.findByMember(userId);
+      return rooms.map((room) => {
+        if (room.type === 'private' && room.otherMemberId) {
+          return {
+            ...room,
+            isOnline: isUserOnline(room.otherMemberId),
+          };
+        }
+        return room;
+      });
     },
 
     async createPrivate(creatorId: string, targetUserId: string): Promise<{ room: Room; created: boolean }> {
