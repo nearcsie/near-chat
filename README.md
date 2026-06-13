@@ -233,11 +233,11 @@ Build and run the containers using Docker Compose:
 ```bash
 docker compose up -d
 ```
+The backend container automatically runs all pending database migrations on startup before the dev server launches.
 
-### 3. Initialize Database Schema & Seed Data
-Execute the database migration runner and seed scripts:
+### 3. Seed Mock Data
+Populate the database with pre-configured test users:
 ```bash
-docker compose exec backend pnpm run migrate:up
 docker compose exec backend pnpm run db:seed
 ```
 *Note: The seed script resets your database and generates 6 pre-configured users (e.g. `alice@test.com`, password: `password123`) for testing.*
@@ -476,11 +476,11 @@ cp .env.example .env
 ```bash
 docker compose up -d
 ```
+後端容器啟動時會自動執行所有待執行的資料庫遷移，無需手動操作。
 
-### 3. 執行資料庫遷移與 mock 測試資料匯入
-當資料庫容器順利運作後，執行資料表建立與 Mock 資料寫入：
+### 3. 匯入 mock 測試資料
+執行 Seeding 腳本以建立測試用使用者：
 ```bash
-docker compose exec backend pnpm run migrate:up
 docker compose exec backend pnpm run db:seed
 ```
 *備註: Seeding 腳本會重置資料庫，並自動建立 6 位預設的使用者（如：`alice@test.com`，預設密碼為 `password123`）供開發測試。*
