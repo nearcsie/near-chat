@@ -22,6 +22,16 @@ docker compose build
 docker compose up -d
 ```
 
+Uploaded files are stored in whatever source is mounted to `/app/uploads` for the backend container. By default this is the Docker named volume `app_uploads`, so attachments live under `/app/uploads/attachments/` and avatar uploads use `/app/uploads/avatars/`.
+
+If you want uploads to go to a custom folder or disk path on the host instead of the default named volume, set `UPLOADS_MOUNT_SOURCE` in `.env` before running Docker Compose. For example:
+
+```env
+UPLOADS_MOUNT_SOURCE=C:/chat-uploads
+```
+
+When `UPLOADS_MOUNT_SOURCE` is unset, Docker Compose falls back to `app_uploads`.
+
 ### 3. Check the Status
 
 ```bash

@@ -156,6 +156,7 @@
     "replyTo": "Reply to {name}",
     "readOnlyOrBlocked": "This chatroom is blocked or read-only; messages cannot be sent.",
     "uploadAttachment": "Upload Attachment",
+    "attachmentPreview": "Attachment preview",
     "inputPlaceholder": "Type a message...",
     "send": "Send",
     "membersList": "Members ({count})",

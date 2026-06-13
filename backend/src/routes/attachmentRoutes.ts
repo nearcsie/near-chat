@@ -1,17 +1,22 @@
 import { Router } from 'express';
 import multer from 'multer';
 import { authMiddleware } from '../middlewares/authMiddleware';
+import { ATTACHMENTS_UPLOAD_DIR, ensureUploadDirectories } from '../lib/uploads';
 
-const upload = multer({ 
-  dest: 'uploads/',
+ensureUploadDirectories();
+
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => {
+      cb(null, ATTACHMENTS_UPLOAD_DIR);
+    },
+  }),
   limits: {
     fileSize: 10 * 1024 * 1024, // 10MB limit
   },
   fileFilter: (req, file, cb) => {
-    console.log("FILE UPLOADED:", file);
     const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'application/pdf', 'application/zip', 'text/plain', 'application/octet-stream'];
     if (!allowedTypes.includes(file.mimetype)) {
-      console.log("REJECTED BY MIMETYPE", file.mimetype);
       return cb(new Error('Invalid file type: ' + file.mimetype));
     }
     
