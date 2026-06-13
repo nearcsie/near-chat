@@ -10,6 +10,11 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
     volumes:
       - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   backend:
     build:
@@ -22,7 +27,9 @@ services:
       - PORT=${PORT}
       - DATABASE_URL=${DATABASE_URL}
       - JWT_SECRET=${JWT_SECRET}
+      - JWT_EXPIRES_IN=${JWT_EXPIRES_IN}
       - RATE_LIMIT_DISABLED=${RATE_LIMIT_DISABLED}
+      - CORS_ORIGINS=${CORS_ORIGINS}
       - CI=true
     volumes:
       - ./backend:/app
@@ -30,7 +37,9 @@ services:
       - ./tsconfig.base.json:/tsconfig.base.json:ro
       - ./shared:/shared:ro
     depends_on:
-      - db
+      db:
+        condition: service_healthy
+    command: sh -c "pnpm run migrate:up && pnpm dev"
 
   frontend:
     build:
@@ -41,6 +50,7 @@ services:
     environment:
       - NODE_ENV=${NODE_ENV}
       - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+      - ALLOWED_DEV_ORIGINS=${ALLOWED_DEV_ORIGINS}
       - CI=true
     volumes:
       - ./frontend:/app

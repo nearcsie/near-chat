@@ -10,7 +10,7 @@ export const securityHeaders = helmet();
 export const makeGlobalRateLimiter = (overrides: Partial<Options> = {}) =>
   rateLimit({
     windowMs: parsePositiveInt(process.env.RATE_LIMIT_WINDOW_MS, 15 * 60 * 1000),
-    limit: parsePositiveInt(process.env.RATE_LIMIT_MAX, 100),
+    limit: parsePositiveInt(process.env.RATE_LIMIT_MAX, 1000),
     standardHeaders: 'draft-8',
     legacyHeaders: false,
     skip: () => rateLimitDisabled(),
