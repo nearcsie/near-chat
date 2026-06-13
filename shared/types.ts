@@ -85,6 +85,8 @@ export interface Room {
 export interface RoomSummary extends Room {
   latestMessage?: Pick<Message, 'messageId' | 'senderId' | 'content' | 'sentAt'>;
   unreadCount: number;
+  isOnline?: boolean;
+  otherMemberId?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -183,6 +185,7 @@ export interface ServerToClientEvents {
   friend_request:   (payload: FriendRequest) => void;
   emergency_alert:  (payload: { userId: string; message: string }) => void;
   error:            (payload: ApiError) => void;
+  user_status:      (payload: { userId: string; status: 'online' | 'offline' }) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -203,6 +206,7 @@ export interface FriendRequestResponse {
 export interface FriendResponse {
   friend: PublicUser;
   friendshipCreatedAt: Date;
+  status?: 'online' | 'offline';
 }
 
 /** Payload for the `friend_request` Socket.IO server event. */

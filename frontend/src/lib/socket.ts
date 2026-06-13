@@ -99,3 +99,11 @@ export const onFriendRequest = (
   socket.on('friend_request', handler);
   return () => socket.off('friend_request', handler);
 };
+
+export const onUserStatus = (
+  socket: ChatSocket,
+  handler: ServerToClientEvents['user_status'],
+): (() => void) => {
+  socket.on('user_status', handler);
+  return () => socket.off('user_status', handler);
+};

@@ -47,7 +47,6 @@ export default function Sidebar() {
   const [newRoomFolder, setNewRoomFolder] = useState("");
   const [newFolderName, setNewFolderName] = useState("");
 
-  const activeUserDisplayName = (activeRoomId && activeRoomNicknames[activeRoomId]) || user.username;
   const { t } = useTranslation();
 
   const handleCreateRoomSubmit = async (e: React.FormEvent) => {
@@ -95,7 +94,7 @@ export default function Sidebar() {
       setIsJoinRoomOpen(false);
       router.push(`/chat/${newId}`);
     } catch (error) {
-      setJoinError(error instanceof Error ? error.message : "加入失敗，請確認邀請碼是否正確");
+      setJoinError(error instanceof Error ? error.message : t("sidebar.joinFailed"));
     }
   };
 
@@ -178,7 +177,7 @@ export default function Sidebar() {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder={uiLanguage === "zh-TW" ? "搜尋聊天室..." : "Search chats..."}
+              placeholder={t("sidebar.searchChatsPlaceholder")}
               className="w-full bg-surface-muted border border-border-secondary hover:border-border-primary focus:border-primary focus:outline-none rounded-sm pl-7 pr-2 py-1.5 text-xs text-foreground transition-colors placeholder:text-text-muted/65"
             />
           </div>
@@ -190,7 +189,7 @@ export default function Sidebar() {
             <IconButton label={t("sidebar.newChat")} onClick={() => setIsCreateRoomOpen(true)}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
             </IconButton>
-            <IconButton label="加入群組" onClick={() => { setJoinInviteCode(""); setJoinError(""); setIsJoinRoomOpen(true); }}>
+            <IconButton label={t("sidebar.joinGroup")} onClick={() => { setJoinInviteCode(""); setJoinError(""); setIsJoinRoomOpen(true); }}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M11 16l-4-4m0 0l4-4m-4 4h14" />
             </IconButton>
           </div>
@@ -231,7 +230,7 @@ export default function Sidebar() {
         <div className="p-4 flex items-center gap-3">
           <Avatar name={user.username} src={user.avatar} size="sm" isOnline />
           <div className="flex-1 min-w-0">
-            <p className="text-xs font-bold text-foreground truncate leading-tight">{activeUserDisplayName}</p>
+            <p className="text-xs font-bold text-foreground truncate leading-tight">{user.username}</p>
             <p className="text-[10px] text-text-muted truncate font-mono mt-0.5">{user.email}</p>
           </div>
         </div>
@@ -344,24 +343,24 @@ export default function Sidebar() {
         </form>
       </Modal>
 
-      <Modal isOpen={isJoinRoomOpen} onClose={() => setIsJoinRoomOpen(false)} title="加入群組">
+      <Modal isOpen={isJoinRoomOpen} onClose={() => setIsJoinRoomOpen(false)} title={t("sidebar.joinGroup")}>
         <form onSubmit={handleJoinRoomSubmit} className="flex flex-col gap-5">
           <Input
-            label="邀請碼"
+            label={t("sidebar.inviteCode")}
             value={joinInviteCode}
             onChange={(e) => setJoinInviteCode(e.target.value)}
             required
-            placeholder="請輸入邀請碼…"
+            placeholder={t("sidebar.inviteCodePlaceholder")}
           />
           {joinError && (
             <p className="text-xs text-red-600">{joinError}</p>
           )}
           <div className="border-t border-border-primary pt-5 flex items-center justify-end gap-3">
             <Button type="button" variant="secondary" onClick={() => setIsJoinRoomOpen(false)}>
-              取消
+              {t("sidebar.cancel")}
             </Button>
             <Button type="submit" variant="primary">
-              加入
+              {t("sidebar.join")}
             </Button>
           </div>
         </form>

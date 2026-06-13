@@ -26,9 +26,8 @@ export function Modal({ isOpen, onClose, title, children, className }: ModalProp
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      {/* Overlay: 50% opacity of the opposite theme (dark overlay in light, light overlay in dark) */}
       <div
-        className="fixed inset-0 bg-[#000000]/50 dark:bg-[#ffffff]/50 transition-opacity"
+        className="fixed inset-0 bg-black/60 transition-opacity"
         onClick={onClose}
       />
 

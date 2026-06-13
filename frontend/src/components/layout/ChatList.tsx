@@ -5,7 +5,6 @@ import { useParams, usePathname, useRouter } from "next/navigation";
 import { ChatRoom, getAvatarForUser, useChat } from "@/context/ChatContext";
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
-import { Dropdown } from "@/components/ui/Dropdown";
 import { useTranslation } from "@/hooks/useTranslation";
 
 interface ChatListProps {
@@ -175,16 +174,12 @@ export default function ChatList({ searchQuery }: ChatListProps) {
                 <RoomItem
                   key={room.id}
                   room={room}
-                  folders={folders}
                   isActive={room.id === activeRoomId && isChatPage}
                   onClick={() => router.push(`/chat/${room.id}`)}
-                  onCategorizeRoom={handleCategorizeRoom}
                   onDragStart={(event) => handleRoomDragStart(event, room.id)}
                   onDragEnd={resetDragState}
                   avatarSrc={getAvatarForUser(room.name, user.avatar, user.username)}
                   noMessagesText={t("sidebar.noMessages")}
-                  categorizeLabel={t("chatroom.categorize")}
-                  rootChatsLabel={t("sidebar.rootChats")}
                 />
               ))}
             </div>
@@ -242,16 +237,12 @@ export default function ChatList({ searchQuery }: ChatListProps) {
                       <RoomItem
                         key={room.id}
                         room={room}
-                        folders={folders}
                         isActive={room.id === activeRoomId && isChatPage}
                         onClick={() => router.push(`/chat/${room.id}`)}
-                        onCategorizeRoom={handleCategorizeRoom}
                         onDragStart={(event) => handleRoomDragStart(event, room.id)}
                         onDragEnd={resetDragState}
                         avatarSrc={getAvatarForUser(room.name, user.avatar, user.username)}
                         noMessagesText={t("sidebar.noMessages")}
-                        categorizeLabel={t("chatroom.categorize")}
-                        rootChatsLabel={t("sidebar.rootChats")}
                       />
                     ))}
                   </div>
@@ -275,28 +266,20 @@ function SectionLabel({ label }: { label: string }) {
 
 function RoomItem({
   room,
-  folders,
   isActive,
   onClick,
-  onCategorizeRoom,
   onDragStart,
   onDragEnd,
   avatarSrc,
   noMessagesText,
-  categorizeLabel,
-  rootChatsLabel,
 }: {
   room: ChatRoom;
-  folders: Array<{ id: string; name: string }>;
   isActive: boolean;
   onClick: () => void;
-  onCategorizeRoom: (roomId: string, folderId: string | null) => Promise<void>;
   onDragStart: (event: React.DragEvent<HTMLButtonElement>) => void;
   onDragEnd: () => void;
   avatarSrc?: string;
   noMessagesText: string;
-  categorizeLabel: string;
-  rootChatsLabel: string;
 }) {
   return (
     <div
@@ -311,7 +294,7 @@ function RoomItem({
         draggable
         onDragStart={onDragStart}
         onDragEnd={onDragEnd}
-        className="flex min-w-0 flex-1 items-center gap-2.5 text-left select-none cursor-grab active:cursor-grabbing"
+        className="flex min-w-0 flex-1 items-center gap-2.5 text-left select-none cursor-pointer"
       >
         <Avatar name={room.name} src={avatarSrc} size="sm" isOnline={room.isOnline} />
         <span className="min-w-0 flex-1">
@@ -327,33 +310,6 @@ function RoomItem({
           </span>
         </span>
       </button>
-      <Dropdown
-        align="right"
-        trigger={
-          <button
-            type="button"
-            aria-label={categorizeLabel}
-            title={categorizeLabel}
-            className="rounded-sm border border-transparent p-1 text-text-muted opacity-0 transition-all hover:border-border-primary hover:text-foreground group-hover:opacity-100"
-          >
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
-            </svg>
-          </button>
-        }
-        items={[
-          {
-            label: categorizeLabel,
-            subMenuItems: [
-              { label: rootChatsLabel, onClick: () => void onCategorizeRoom(room.id, null) },
-              ...folders.map((folder) => ({
-                label: folder.name,
-                onClick: () => void onCategorizeRoom(room.id, folder.id),
-              })),
-            ],
-          },
-        ]}
-      />
       <Badge variant="default" className="scale-75 font-mono">
         {room.type === "group" ? "G" : "DM"}
       </Badge>

@@ -9,6 +9,8 @@ import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
 import { ChatBubble } from "@/components/ui/ChatBubble";
 import { useTranslation } from "@/hooks/useTranslation";
+import { Modal } from "@/components/ui/Modal";
+import { Input } from "@/components/ui/Input";
 import ProfilePopover from "./ProfilePopover";
 
 interface ChatroomProps {
@@ -64,6 +66,8 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
   const [selectedMentionIndex, setSelectedMentionIndex] = useState(0);
   const [replyTarget, setReplyTarget] = useState<Message | null>(null);
   const [showHeaderPopover, setShowHeaderPopover] = useState(false);
+  const [isModifyNickOpen, setIsModifyNickOpen] = useState(false);
+  const [nickInputValue, setNickInputValue] = useState("");
   const messageEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -134,11 +138,23 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
   };
 
   const handleModifyNick = () => {
-    const currentNick = activeRoomNicknames[activeRoom.id] || "我";
-    const nick = prompt(t("chatroom.modifyNicknamePrompt"), currentNick);
-    if (nick !== null) {
-      handleModifyNickname(activeRoom.id, nick || "我");
+    if (!activeRoom) return;
+    const currentNick = activeRoomNicknames[activeRoom.id] || user.username;
+    setNickInputValue(currentNick);
+    setIsModifyNickOpen(true);
+  };
+
+  const handleModifyNickSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeRoom) return;
+    const trimmed = nickInputValue.trim();
+    try {
+      await handleModifyNickname(activeRoom.id, trimmed || user.username);
+    } catch (error) {
+      console.error(error);
+      alert(error instanceof Error ? error.message : "Failed to update nickname");
     }
+    setIsModifyNickOpen(false);
   };
 
   const handleLeaveOrBlockAction = async () => {
@@ -248,22 +264,6 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
 
         {/* Header Action Elements */}
         <div className="flex items-center gap-3">
-          {/* Panel Toggle Button */}
-          <button
-            onClick={() => setShowRightPanel(!showRightPanel)}
-            className={`p-1.5 border rounded-sm transition-colors cursor-pointer ${
-              showRightPanel
-                ? "bg-primary/10 border-primary/30 text-primary"
-                : "border-border-secondary hover:border-border-primary text-text-muted hover:text-foreground"
-            }`}
-            title={showRightPanel ? t("chatroom.hideInfoPanel") : t("chatroom.showInfoPanel")}
-          >
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v14a1 1 0 01-1 1H5a1 1 0 01-1-1V5z" />
-              <path strokeLinecap="round" strokeLinejoin="round" d="M16 4v16" />
-            </svg>
-          </button>
-
           {/* Group Settings Button */}
           {activeRoom.type === "group" && onOpenGroupSettings && (
             <Button
@@ -293,22 +293,28 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
             items={[
               { label: t("chatroom.modifyNickname"), onClick: handleModifyNick },
               {
-                label: t("chatroom.categorize"),
-                subMenuItems: [
-                  { label: t("chatroom.noCategory"), onClick: () => handleCategorizeRoom(activeRoom.id, null) },
-                  ...folders.map((f) => ({
-                    label: f.name,
-                    onClick: () => handleCategorizeRoom(activeRoom.id, f.id),
-                  })),
-                ],
-              },
-              {
                 label: activeRoom.type === "group" ? t("chatroom.leaveGroup") : activeRoom.isArchived ? t("chatroom.unblock") : t("chatroom.blockContact"),
                 onClick: handleLeaveOrBlockAction,
                 variant: activeRoom.isArchived ? "default" : "danger",
               },
             ]}
           />
+
+          {/* Panel Toggle Button */}
+          <button
+            onClick={() => setShowRightPanel(!showRightPanel)}
+            className={`p-1.5 border rounded-sm transition-colors cursor-pointer ${
+              showRightPanel
+                ? "bg-primary/10 border-primary/30 text-primary"
+                : "border-border-secondary hover:border-border-primary text-text-muted hover:text-foreground"
+            }`}
+            title={showRightPanel ? t("chatroom.hideInfoPanel") : t("chatroom.showInfoPanel")}
+          >
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v14a1 1 0 01-1 1H5a1 1 0 01-1-1V5z" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M16 4v16" />
+            </svg>
+          </button>
         </div>
       </div>
 
@@ -483,6 +489,34 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
           </form>
         )}
       </div>
+
+      <Modal
+        isOpen={isModifyNickOpen}
+        onClose={() => setIsModifyNickOpen(false)}
+        title={t("chatroom.modifyNickname")}
+      >
+        <form onSubmit={handleModifyNickSubmit} className="flex flex-col gap-5">
+          <Input
+            label={t("chatroom.nickname")}
+            value={nickInputValue}
+            onChange={(e) => setNickInputValue(e.target.value)}
+            required
+            placeholder={t("chatroom.nicknamePlaceholder")}
+          />
+          <div className="flex justify-end gap-3">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setIsModifyNickOpen(false)}
+            >
+              {t("chatroom.cancel")}
+            </Button>
+            <Button type="submit">
+              {t("chatroom.save")}
+            </Button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 }
