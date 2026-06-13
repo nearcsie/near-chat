@@ -199,6 +199,16 @@ describe('userController', () => {
     expect(res.json).toHaveBeenCalledWith([{ userId: 'user-2', name: 'Bob', email: 'bob@example.com', avatarUrl: undefined }]);
   });
 
+  it('rejects invalid mode value', async () => {
+    const res = mockRes();
+    const next = vi.fn();
+
+    await ctrl.search(authedReq({ query: { q: 'bob', mode: 'invalid' } }), res, next);
+
+    expect(next).toHaveBeenCalledWith(expect.any(ValidationError));
+    expect(service.search).not.toHaveBeenCalled();
+  });
+
   it('soft deletes the current user', async () => {
     const res = mockRes();
     const next = vi.fn();

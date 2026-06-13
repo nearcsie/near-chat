@@ -339,6 +339,30 @@ describe('userService', () => {
     it('rejects empty search queries', async () => {
       await expect(userService.search('')).rejects.toThrow(ValidationError);
     });
+
+    it('passes mode=email to repo for exact email lookup', async () => {
+      mockRepo.search.mockResolvedValue([baseUser()]);
+
+      await userService.search('test@example.com', 'email');
+
+      expect(mockRepo.search).toHaveBeenCalledWith('test@example.com', 'email');
+    });
+
+    it('passes mode=userId to repo for exact userId lookup', async () => {
+      mockRepo.search.mockResolvedValue([baseUser()]);
+
+      await userService.search('u1', 'userId');
+
+      expect(mockRepo.search).toHaveBeenCalledWith('u1', 'userId');
+    });
+
+    it('passes mode=name to repo for fuzzy name search', async () => {
+      mockRepo.search.mockResolvedValue([baseUser()]);
+
+      await userService.search('Test', 'name');
+
+      expect(mockRepo.search).toHaveBeenCalledWith('Test', 'name');
+    });
   });
 
   describe('schema sanity checks', () => {
