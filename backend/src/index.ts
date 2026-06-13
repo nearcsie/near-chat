@@ -3,7 +3,8 @@ import http from "http";
 import cors from "cors";
 import { Server } from "socket.io";
 import pool from "./db";
-import { signToken } from "./auth/jwt";
+import { signToken, generateRefreshToken, hashToken } from "./auth/jwt";
+import { RefreshTokenRepository } from "./repositories/refreshTokenRepository";
 import { errorHandler } from "./middlewares/errorHandler";
 import { makeAuthRateLimiter, makeGlobalRateLimiter, securityHeaders } from "./middlewares/securityMiddleware";
 import { UserRepository } from "./repositories/userRepository";
@@ -67,8 +68,14 @@ const messageRepo = new MessageRepository(pool);
 const folderRepo = new FolderRepository(pool);
 const attachmentRepo = new AttachmentRepository(pool);
 const friendRepo = makeFriendRepository(pool);
+const refreshTokenRepo = new RefreshTokenRepository(pool);
 
-const userService = makeUserService(userRepo, emergencyContactRepo, { signToken }, async (contactId, payload) => {
+const userService = makeUserService(
+  userRepo,
+  emergencyContactRepo,
+  refreshTokenRepo,
+  { signToken, generateRefreshToken, hashToken },
+  async (contactId, payload) => {
   // Send a real chat message
   const room = await roomRepo.findPrivateRoomByMembers(payload.userId, contactId);
   if (room) {

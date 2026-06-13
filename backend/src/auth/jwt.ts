@@ -1,4 +1,5 @@
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import type { JwtPayload } from '@shared/types';
 
 const getJwtSecret = (): string => {
@@ -14,11 +15,19 @@ const getJwtSecret = (): string => {
 
 export const signToken = (payload: JwtPayload): string => {
   const secret = getJwtSecret();
-  const expiresIn = (process.env.JWT_EXPIRES_IN ?? '7d') as jwt.SignOptions['expiresIn'];
+  const expiresIn = (process.env.JWT_EXPIRES_IN ?? '15m') as jwt.SignOptions['expiresIn'];
   return jwt.sign(payload, secret, { expiresIn });
 };
 
 export const verifyToken = (token: string): JwtPayload => {
   const secret = getJwtSecret();
   return jwt.verify(token, secret) as JwtPayload;
+};
+
+export const generateRefreshToken = (): string => {
+  return crypto.randomBytes(40).toString('hex');
+};
+
+export const hashToken = (token: string): string => {
+  return crypto.createHash('sha256').update(token).digest('hex');
 };
