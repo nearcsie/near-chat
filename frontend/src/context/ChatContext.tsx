@@ -793,10 +793,9 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   }, [rooms]);
 
   useEffect(() => {
-    const currentToken = tokenRef.current;
-    if (!currentToken || !currentUserId) return;
+    if (!token || !currentUserId) return;
 
-    const socket = createChatSocket(currentToken);
+    const socket = createChatSocket(token);
     socketRef.current = socket;
 
     const joinKnownRooms = () => {
@@ -913,7 +912,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         socketRef.current = null;
       }
     };
-  }, [currentUserId]);
+  }, [currentUserId, token]);
 
   const toggleFolder = (folderId: string) => {
     setFolders((current) =>
