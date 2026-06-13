@@ -102,7 +102,20 @@
     "blockedUsers": "Blocked users",
     "blocked": "blocked",
     "unblock": "Unblock",
-    "noBlocked": "No blocked users."
+    "noBlocked": "No blocked users.",
+    "tabFriends": "Friends",
+    "tabIncoming": "Pending",
+    "tabOutgoing": "Sent",
+    "tabBlocked": "Blocked",
+    "tabAdd": "Add Friend",
+    "searchMode": "Search by",
+    "byUserId": "User ID",
+    "byName": "Name",
+    "byEmail": "Email",
+    "searchBtn": "Search",
+    "searching": "Searching...",
+    "noResults": "No matching users found.",
+    "requested": "Requested"
   },
   "profile": {
     "profile": "Profile",

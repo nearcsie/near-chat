@@ -37,11 +37,30 @@ export class UserRepository implements IUserRepository {
     return mapRowToUser(res.rows[0]);
   }
 
-  async search(query: string): Promise<User[]> {
-    const res = await this.db.query(
-      `SELECT * FROM users WHERE (name ILIKE $1 OR user_id::text = $2 OR email ILIKE $1) AND deleted_at IS NULL LIMIT 20`,
-      [`%${query}%`, query]
-    );
+  async search(query: string, mode?: 'name' | 'userId' | 'email'): Promise<User[]> {
+    let res;
+    if (mode === 'userId') {
+      res = await this.db.query(
+        `SELECT * FROM users WHERE user_id::text = $1 AND deleted_at IS NULL LIMIT 20`,
+        [query]
+      );
+    } else if (mode === 'email') {
+      res = await this.db.query(
+        `SELECT * FROM users WHERE email = $1 AND deleted_at IS NULL LIMIT 20`,
+        [query]
+      );
+    } else if (mode === 'name') {
+      res = await this.db.query(
+        `SELECT * FROM users WHERE name ILIKE $1 AND deleted_at IS NULL LIMIT 20`,
+        [`%${query}%`]
+      );
+    } else {
+      // Legacy: combined search across name, user_id, and email
+      res = await this.db.query(
+        `SELECT * FROM users WHERE (name ILIKE $1 OR user_id::text = $2 OR email ILIKE $1) AND deleted_at IS NULL LIMIT 20`,
+        [`%${query}%`, query]
+      );
+    }
     return res.rows.map(mapRowToUser);
   }
 

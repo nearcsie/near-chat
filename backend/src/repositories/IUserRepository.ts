@@ -3,7 +3,7 @@ import type { User } from '@shared/types';
 export interface IUserRepository {
   findById(userId: string): Promise<User | null>;
   findByEmail(email: string): Promise<User | null>;
-  search(query: string): Promise<User[]>;
+  search(query: string, mode?: 'name' | 'userId' | 'email'): Promise<User[]>;
   create(data: { name: string; email: string; passwordHash: string }): Promise<User>;
   update(
     userId: string,

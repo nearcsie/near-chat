@@ -99,7 +99,20 @@
     "blockedUsers": "封鎖名單",
     "blocked": "已封鎖",
     "unblock": "解除封鎖",
-    "noBlocked": "沒有封鎖使用者。"
+    "noBlocked": "沒有封鎖使用者。",
+    "tabFriends": "好友",
+    "tabIncoming": "待邀請",
+    "tabOutgoing": "送出邀請",
+    "tabBlocked": "封鎖名單",
+    "tabAdd": "新增好友",
+    "searchMode": "查詢方式",
+    "byUserId": "User ID",
+    "byName": "名稱",
+    "byEmail": "Email",
+    "searchBtn": "查詢",
+    "searching": "查詢中...",
+    "noResults": "找不到符合的使用者。",
+    "requested": "已送出"
   },
   "profile": {
     "profile": "個人資料",
