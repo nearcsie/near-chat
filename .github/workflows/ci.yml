@@ -87,3 +87,14 @@ jobs:
       - run: DATABASE_URL=$DATABASE_URL_TEST pnpm --prefix backend run migrate:up
       - run: pnpm --prefix backend run test:e2e
 
+  security-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scan dependencies for vulnerabilities
+        uses: OWASP/cve-lite-cli@v1
+        with:
+          all: "true"
+          verbose: "true"
+          fail-on: high
+
