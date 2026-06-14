@@ -22,6 +22,7 @@ function mapRowToRoomSummary(row: any): RoomSummary {
     ...mapRowToRoom(row),
     unreadCount: Number(row.unread_count ?? 0),
     otherMemberId: row.other_member_id ?? undefined,
+    lastReadId: row.last_read_id ?? undefined,
   };
 
   if (row.latest_message_id) {
@@ -72,6 +73,7 @@ export class RoomRepository implements IRoomRepository {
     const res = await this.db.query(
       `SELECT
          cr.*,
+         rm.last_read_id AS last_read_id,
          latest.message_id AS latest_message_id,
          latest.sender_id AS latest_sender_id,
          latest.content AS latest_content,

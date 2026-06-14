@@ -109,6 +109,7 @@ export interface ChatRoom {
   lastMessagePreview?: string;
   lastMessageAt?: string;
   avatarUrl?: string;
+  lastReadId?: string | null;
 }
 
 export interface Message {
@@ -461,6 +462,7 @@ const mapRooms = (
       otherMemberId: room.otherMemberId ?? currentRoom?.otherMemberId,
       members: currentRoom?.members ?? (room.type === "group" ? [] : undefined),
       unreadCount: room.unreadCount ?? currentRoom?.unreadCount ?? 0,
+      lastReadId: room.lastReadId ?? currentRoom?.lastReadId ?? null,
       lastMessagePreview: latestMessage
         ? summarizeMessagePreview(latestMessage)
         : currentRoom?.lastMessagePreview,
@@ -1594,6 +1596,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         const latestMessage = roomMessages.at(-1);
         const roomLastReadId =
           groupReadStates[room.id]?.[currentUserId] ??
+          room.lastReadId ??
           room.members?.find((member) => member.userId === currentUserId)?.lastReadId ??
           null;
         const nextUnreadCount =
