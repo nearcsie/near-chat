@@ -94,15 +94,32 @@ jobs:
       security-events: write
     steps:
       - uses: actions/checkout@v4
-      - name: Scan dependencies for vulnerabilities
+      - name: Scan backend dependencies for vulnerabilities
         uses: OWASP/cve-lite-cli@v1
         with:
+          path: "./backend"
           all: "true"
           verbose: "true"
           fail-on: high
           sarif: "true"
-      - name: Upload to GitHub Code Scanning
+      - name: Upload backend scan to GitHub Code Scanning
         uses: github/codeql-action/upload-sarif@v3
+        if: always()
         with:
           sarif_file: cve-lite.sarif
+          category: backend
+      - name: Scan frontend dependencies for vulnerabilities
+        uses: OWASP/cve-lite-cli@v1
+        with:
+          path: "./frontend"
+          all: "true"
+          verbose: "true"
+          fail-on: high
+          sarif: "true"
+      - name: Upload frontend scan to GitHub Code Scanning
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: cve-lite.sarif
+          category: frontend
 
