@@ -89,6 +89,9 @@ jobs:
 
   security-scan:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
     steps:
       - uses: actions/checkout@v4
       - name: Scan dependencies for vulnerabilities
@@ -97,4 +100,9 @@ jobs:
           all: "true"
           verbose: "true"
           fail-on: high
+          sarif: "true"
+      - name: Upload to GitHub Code Scanning
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: cve-lite.sarif
 
