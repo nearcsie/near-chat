@@ -457,7 +457,7 @@ const mapRooms = (
       isArchived: room.isArchived,
       isOnline: room.isOnline ?? currentRoom?.isOnline,
       otherMemberId: room.otherMemberId ?? currentRoom?.otherMemberId,
-      members: currentRoom?.members ?? (room.type === "group" ? [] : undefined),
+      members: currentRoom?.members ?? undefined,
       unreadCount: room.unreadCount ?? currentRoom?.unreadCount ?? 0,
       lastMessagePreview: latestMessage
         ? summarizeMessagePreview(latestMessage)
@@ -620,6 +620,17 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     const match = pathname.match(/^\/chat\/([^/]+)$/);
     return match?.[1] ?? null;
   }, [pathname]);
+
+  const messagesByRoom = useMemo(() => {
+    const acc: Record<string, Message[]> = {};
+    for (const message of messages) {
+      (acc[message.roomId] ??= []).push(message);
+    }
+    for (const roomId in acc) {
+      acc[roomId] = sortMessages(acc[roomId]);
+    }
+    return acc;
+  }, [messages]);
 
   const clearSession = () => {
     localStorage.removeItem("user");
@@ -1336,7 +1347,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     if (!token || !activeRoomId) return;
 
     const activeRoom = rooms.find((room) => room.id === activeRoomId);
-    if (!activeRoom || activeRoom.members?.length) return;
+    if (!activeRoom || activeRoom.members !== undefined) return;
 
     void loadGroupMembers(activeRoomId).catch(console.error);
   }, [activeRoomId, rooms, token]);
@@ -1571,11 +1582,6 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!currentUserId) return;
 
-    const messagesByRoom = messages.reduce<Record<string, Message[]>>((acc, message) => {
-      (acc[message.roomId] ??= []).push(message);
-      return acc;
-    }, {});
-
     // TODO: derive unread counts / previews during render (useMemo) instead of
     // writing back into rooms state; needs a wider refactor of rooms consumers.
     // eslint-disable-next-line react-hooks/set-state-in-effect -- guarded write-back (returns `current` when unchanged) prevents render loops
@@ -1583,7 +1589,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       let changed = false;
 
       const nextRooms = current.map((room) => {
-        const roomMessages = sortMessages(messagesByRoom[room.id] ?? []);
+        const roomMessages = messagesByRoom[room.id] ?? [];
         const latestMessage = roomMessages.at(-1);
         const roomLastReadId =
           groupReadStates[room.id]?.[currentUserId] ??
@@ -1621,7 +1627,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     const activeRoom = roomsRef.current.find((room) => room.id === activeRoomId);
     if (!activeRoom) return;
 
-    const roomMessages = sortMessages(messages.filter((message) => message.roomId === activeRoomId));
+    const roomMessages = messagesByRoom[activeRoomId] ?? [];
     const latestIncoming = [...roomMessages].reverse().find((message) => message.senderId !== currentUserId);
     if (!latestIncoming) return;
 
