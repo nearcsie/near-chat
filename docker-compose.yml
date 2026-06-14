@@ -18,8 +18,8 @@ services:
 
   backend:
     build:
-      context: .
-      dockerfile: ./backend/Dockerfile
+      context: ./backend
+      dockerfile: Dockerfile
     ports:
       - "4005:4000"
     environment:
@@ -31,14 +31,20 @@ services:
       - RATE_LIMIT_DISABLED=${RATE_LIMIT_DISABLED}
       - CORS_ORIGINS=${CORS_ORIGINS}
       - CI=true
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+      - ./tsconfig.base.json:/tsconfig.base.json:ro
+      - ./shared:/shared:ro
     depends_on:
       db:
         condition: service_healthy
+    command: sh -c "pnpm run migrate:up && pnpm dev"
 
   frontend:
     build:
-      context: .
-      dockerfile: ./frontend/Dockerfile
+      context: ./frontend
+      dockerfile: Dockerfile
     ports:
       - "3005:3000"
     environment:
@@ -46,6 +52,11 @@ services:
       - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
       - ALLOWED_DEV_ORIGINS=${ALLOWED_DEV_ORIGINS}
       - CI=true
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - ./tsconfig.base.json:/tsconfig.base.json:ro
+      - ./shared:/shared:ro
     depends_on:
       - backend
 
