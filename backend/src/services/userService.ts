@@ -13,6 +13,7 @@ import type {
   UserSettings,
 } from '../../../shared/types';
 import { ConflictError, NotFoundError, ValidationError } from '../errors/AppError';
+import { removeManagedAvatar, saveAvatarUpload } from '../lib/avatarUpload';
 import {
   updateMeSchema,
   updateSettingsSchema,
@@ -204,6 +205,26 @@ export const makeUserService = (
 
       const updated = await repo.update(userId, updateData);
       return toMyProfile(updated);
+    },
+
+    async uploadAvatar(userId: string, file: Express.Multer.File): Promise<MyProfile> {
+      const currentUser = await repo.findById(userId);
+      if (!currentUser) {
+        throw new NotFoundError('user', userId);
+      }
+
+      const avatarUrl = await saveAvatarUpload(userId, file);
+
+      try {
+        const updated = await repo.update(userId, { avatarUrl });
+        if (currentUser.avatarUrl && currentUser.avatarUrl !== avatarUrl) {
+          await removeManagedAvatar(currentUser.avatarUrl);
+        }
+        return toMyProfile(updated);
+      } catch (error) {
+        await removeManagedAvatar(avatarUrl);
+        throw error;
+      }
     },
 
     async getMySettings(userId: string): Promise<UserSettings> {

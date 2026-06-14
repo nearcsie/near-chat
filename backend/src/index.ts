@@ -38,7 +38,7 @@ import { makeFolderRoutes } from "./routes/folderRoutes";
 import { makeFriendRoutes, makeBlockRoutes, makeFriendRequestRoutes } from "./routes/friendRoutes";
 import { attachSocketAuth } from "./realtime/authSocket";
 import { attachSockets } from "./realtime/socketServer";
-import { ensureUploadDirectories } from "./lib/uploads";
+import { AVATARS_UPLOAD_DIR, ensureUploadDirectories } from "./lib/uploads";
 import type { ClientToServerEvents, ServerToClientEvents } from "../../shared/types";
 
 const app = express();
@@ -61,6 +61,15 @@ app.use(cors({ origin: allowedOrigins, credentials: true }));
 app.use(express.json());
 app.use("/api", makeGlobalRateLimiter());
 ensureUploadDirectories();
+app.use("/uploads/avatars", express.static(AVATARS_UPLOAD_DIR, {
+  fallthrough: true,
+  index: false,
+  immutable: true,
+  maxAge: '7d',
+  setHeaders: (res) => {
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  },
+}));
 
 const userRepo = new UserRepository(pool);
 const emergencyContactRepo = new EmergencyContactRepository(pool);

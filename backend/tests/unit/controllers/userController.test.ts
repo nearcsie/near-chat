@@ -43,6 +43,7 @@ describe('userController', () => {
     getMe: vi.fn(),
     getUserProfile: vi.fn(),
     updateMe: vi.fn(),
+    uploadAvatar: vi.fn(),
     getMySettings: vi.fn(),
     updateMySettings: vi.fn(),
     deleteMe: vi.fn(),
@@ -98,6 +99,36 @@ describe('userController', () => {
     const next = vi.fn();
 
     await ctrl.updateMe(authedReq({ body: {} }), res, next);
+
+    expect(next).toHaveBeenCalledWith(expect.any(ValidationError));
+  });
+
+  it('uploads avatar for the current user', async () => {
+    const updated = { ...myProfile, avatarUrl: '/uploads/avatars/user-1.png' };
+    service.uploadAvatar.mockResolvedValue(updated);
+    const res = mockRes();
+    const next = vi.fn();
+    const file = {
+      fieldname: 'file',
+      originalname: 'avatar.png',
+      encoding: '7bit',
+      mimetype: 'image/png',
+      size: 16,
+      buffer: Buffer.from([0x89, 0x50, 0x4e, 0x47]),
+    } as Express.Multer.File;
+
+    await ctrl.uploadAvatar(authedReq({ file }), res, next);
+
+    expect(service.uploadAvatar).toHaveBeenCalledWith('user-1', file);
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith(updated);
+  });
+
+  it('rejects avatar uploads without a file', async () => {
+    const res = mockRes();
+    const next = vi.fn();
+
+    await ctrl.uploadAvatar(authedReq(), res, next);
 
     expect(next).toHaveBeenCalledWith(expect.any(ValidationError));
   });

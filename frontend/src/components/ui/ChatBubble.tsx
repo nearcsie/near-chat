@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { resolveAssetUrl } from "@/lib/assets";
 import { cn } from "@/lib/utils";
 import { Avatar } from "./Avatar";
 import ProfilePopover from "../chat/ProfilePopover";
@@ -356,7 +357,7 @@ export function ChatBubble({
                 title="已讀"
               >
                 {avatarUrl ? (
-                  <img src={avatarUrl} alt="read status" className="h-full w-full object-cover" />
+                  <img src={resolveAssetUrl(avatarUrl)} alt="read status" className="h-full w-full object-cover" />
                 ) : (
                   <span className="text-[8px] flex items-center justify-center h-full w-full font-bold">R</span>
                 )}

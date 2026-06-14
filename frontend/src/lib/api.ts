@@ -245,6 +245,20 @@ export const updateMe = (token: string, data: UpdateMeRequest): Promise<MyProfil
     { token },
   );
 
+export const uploadAvatar = (token: string, file: File): Promise<MyProfile> => {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  return requestJson<MyProfile>(
+    '/users/me/avatar',
+    {
+      method: 'POST',
+      body: formData,
+    },
+    { token },
+  );
+};
+
 export const deleteMe = (token: string): Promise<void> =>
   requestJson<void>('/users/me', { method: 'DELETE' }, { token });
 
