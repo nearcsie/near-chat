@@ -83,6 +83,11 @@ export const setActiveAccessToken = (token: string | null): void => {
 };
 
 const buildUrl = (path: string): string => `${API_BASE_URL}${API_PREFIX}${path}`;
+const resolveRequestUrl = (path: string): string => {
+  if (path.startsWith('http')) return path;
+  if (path.startsWith('/api/')) return `${API_BASE_URL}${path}`;
+  return buildUrl(path);
+};
 
 const authHeaders = (token?: string): HeadersInit => {
   const actualToken = token ?? activeAccessToken;
@@ -121,17 +126,17 @@ const addRefreshSubscriber = (resolve: (token: string) => void, reject: (err: un
   refreshSubscribers.push({ resolve, reject });
 };
 
-const requestJson = async <T>(
+const request = async (
   path: string,
   init: RequestInit = {},
   options: RequestOptions = {},
-): Promise<T> => {
+): Promise<Response> => {
   const headers = {
     ...authHeaders(options.token),
     ...init.headers,
   };
 
-  const response = await fetch(buildUrl(path), {
+  const response = await fetch(resolveRequestUrl(path), {
     ...init,
     credentials: 'include',
     headers,
@@ -157,14 +162,14 @@ const requestJson = async <T>(
           });
       }
 
-      return new Promise<T>((resolve, reject) => {
+      return new Promise<Response>((resolve, reject) => {
         addRefreshSubscriber(
           (newToken) => {
             const newHeaders = {
               ...init.headers,
               Authorization: `Bearer ${newToken}`,
             };
-            requestJson<T>(path, { ...init, headers: newHeaders }, { ...options, token: newToken })
+            request(path, { ...init, headers: newHeaders }, { ...options, token: newToken })
               .then(resolve)
               .catch(reject);
           },
@@ -178,6 +183,16 @@ const requestJson = async <T>(
     const payload = (await response.json().catch(() => null)) as { message?: string } | null;
     throw new Error(payload?.message ?? `Request failed with status ${response.status}`);
   }
+
+  return response;
+};
+
+const requestJson = async <T>(
+  path: string,
+  init: RequestInit = {},
+  options: RequestOptions = {},
+): Promise<T> => {
+  const response = await request(path, init, options);
 
   if (response.status === 204) {
     return undefined as T;
@@ -229,6 +244,20 @@ export const updateMe = (token: string, data: UpdateMeRequest): Promise<MyProfil
     },
     { token },
   );
+
+export const uploadAvatar = (token: string, file: File): Promise<MyProfile> => {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  return requestJson<MyProfile>(
+    '/users/me/avatar',
+    {
+      method: 'POST',
+      body: formData,
+    },
+    { token },
+  );
+};
 
 export const deleteMe = (token: string): Promise<void> =>
   requestJson<void>('/users/me', { method: 'DELETE' }, { token });
@@ -469,7 +498,22 @@ export const uploadAttachment = async (
 };
 
 export const attachmentDownloadUrl = (fileUrl: string): string =>
-  fileUrl.startsWith('http') ? fileUrl : `${API_BASE_URL}${fileUrl}`;
+  resolveRequestUrl(fileUrl);
+
+export const downloadAttachment = async (fileUrl: string, filename: string): Promise<void> => {
+  const response = await request(fileUrl);
+  const blob = await response.blob();
+  const downloadUrl = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+
+  link.href = downloadUrl;
+  link.download = filename;
+  link.style.display = 'none';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 0);
+};
 
 export const triggerEmergencyAlert = (token: string, message?: string): Promise<EmergencyAlertResult> =>
   requestJson<EmergencyAlertResult>(

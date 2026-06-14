@@ -58,6 +58,7 @@ import {
   transferRoomOwner,
   upsertEmergencyContact,
   uploadAttachment,
+  uploadAvatar as uploadAvatarApi,
   getActiveAccessToken,
   setActiveAccessToken,
   refreshTokens,
@@ -87,6 +88,7 @@ export interface Member {
   nickname?: string;
   isMuted?: boolean;
   lastReadId?: string | null;
+  avatarUrl?: string;
 }
 
 export interface ChatRoom {
@@ -206,6 +208,7 @@ export interface ProfileInput {
   username: string;
   email: string;
   avatar: string;
+  avatarFile?: File | null;
   password?: string;
   bio?: string;
 }
@@ -241,6 +244,7 @@ interface ChatContextType {
   uiLanguage: UiLanguage;
   isAuthenticated: boolean;
   isMounted: boolean;
+  roomsInitialized: boolean;
   selectedFriendForSidebar: Friend | null;
   setSelectedFriendForSidebar: React.Dispatch<React.SetStateAction<Friend | null>>;
   showRightPanel: boolean;
@@ -258,7 +262,7 @@ interface ChatContextType {
   handleTyping: (roomId: string, isTyping: boolean) => void;
   handleUploadAttachment: (roomId: string, file: File) => Promise<void>;
   handleRecallMessage: (msgId: string) => void;
-  handleUpdateProfile: (profile: ProfileInput) => Promise<void>;
+  handleUpdateProfile: (profile: ProfileInput) => Promise<User>;
   handleUpdatePreferences: (preferences: PreferencesInput) => Promise<void>;
   handleCreateRoom: (name: string, type: "msg" | "group", folderId: string) => Promise<string>;
   handleOpenPrivateRoom: (targetUserId: string) => Promise<string>;
@@ -279,7 +283,7 @@ interface ChatContextType {
   kickGroupMember: (roomId: string, userId: string) => Promise<Member[] | undefined>;
   transferGroupOwner: (roomId: string, userId: string) => Promise<Member[] | undefined>;
   handleDeleteGroupRoom: (roomId: string) => Promise<string | null>;
-  getReadAvatarsForMessage: (room: ChatRoom, msg: Message) => string[];
+  getReadAvatarsForMessage: (room: ChatRoom, msg: Message) => { name: string; avatarUrl: string }[];
 
   searchUsersForInvite: (query: string) => Promise<PublicUser[]>;
   handleJoinByInviteCode: (inviteCode: string) => Promise<string>;
@@ -507,6 +511,7 @@ const mapRoomMember = (member: ApiRoomMember, profile?: UserProfile): Member => 
   nickname: member.nickname,
   isMuted: member.isMuted,
   lastReadId: member.lastReadId ?? null,
+  avatarUrl: profile?.avatarUrl,
 });
 
 const fetchRoomMembers = async (authToken: string, roomId: string): Promise<Member[]> => {
@@ -571,6 +576,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
   const [isMounted, setIsMounted] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [roomsInitialized, setRoomsInitialized] = useState(false);
   const [token, setToken] = useState<string | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | undefined>(undefined);
   const [user, setUser] = useState<User>({ username: "", email: "", avatar: "" });
@@ -604,6 +610,10 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     setToken(null);
     setCurrentUserId(undefined);
     setIsAuthenticated(false);
+    setRoomsInitialized(false);
+    setRooms([]);
+    setFolders([]);
+    setMessages([]);
     socketRef.current?.disconnect();
     socketRef.current = null;
   };
@@ -625,6 +635,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     setFolders((current) => mapFolders(apiFolders, current));
     setRooms(nextRooms);
     void loadMessagesForRooms(authToken, nextRooms, userId);
+    setRoomsInitialized(true);
   };
 
   const refreshSocialData = async (authToken: string, settings?: UserSettings, userId = currentUserId) => {
@@ -665,11 +676,11 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         setFriends(apiFriends.map((friend) => mapFriend(friend, emergencyContactIds)));
         setFriendRequests(apiRequests.map((req) => mapFriendRequest(req, effectiveUserId)));
         setBlockedUsers(apiBlockedUsers.map(u => ({ id: u.userId, name: u.name, email: u.email })));
-        setEmergencySettings(prev => ({
+        setEmergencySettings({
           warningEnabled: settings?.warningEnabled ?? user.warningEnabled ?? false,
           warningDays: settings?.warningDays ?? user.warningDays ?? 0,
           contacts,
-        }));
+        });
       } catch (error) {
         console.error("Error refreshing social data:", error);
       } finally {
@@ -687,13 +698,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const handleExpired = () => {
-      localStorage.removeItem("user");
-      setActiveAccessToken(null);
-      setToken(null);
-      setCurrentUserId(undefined);
-      setIsAuthenticated(false);
-      socketRef.current?.disconnect();
-      socketRef.current = null;
+      clearSession();
     };
     const handleRefreshed = (e: Event) => {
       const customEvent = e as CustomEvent<{ token: string; user: unknown }>;
@@ -747,6 +752,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     let cancelled = false;
     void (async () => {
       try {
+        setRoomsInitialized(false);
         let currentToken = getActiveAccessToken();
         if (!currentToken) {
           const refreshResult = await refreshTokens();
@@ -983,25 +989,58 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     };
 
     if (token) {
-      const updatedProfile = await updateMe(token, {
-        name: profile.username,
-        email: profile.email,
-        avatarUrl: profile.avatar,
-        bio: profile.bio,
-        ...(profile.password ? { password: profile.password } : {}),
-      });
-      nextUser = { ...nextUser, ...toStoredUser(updatedProfile, {
-        language: user.language ?? uiLanguage,
-        theme: user.theme ?? "light",
-        notifyDesktop: user.notifyDesktop ?? true,
-        notifySound: user.notifySound ?? true,
-        warningEnabled: user.warningEnabled ?? false,
-        warningDays: user.warningDays ?? 14,
-      }) };
+      const mergeStoredProfile = (updatedProfile: MyProfile) => {
+        nextUser = {
+          ...nextUser,
+          ...toStoredUser(updatedProfile, {
+            language: user.language ?? uiLanguage,
+            theme: user.theme ?? "light",
+            notifyDesktop: user.notifyDesktop ?? true,
+            notifySound: user.notifySound ?? true,
+            warningEnabled: user.warningEnabled ?? false,
+            warningDays: user.warningDays ?? 14,
+          }),
+        };
+      };
+
+      const updatePayload: {
+        name?: string;
+        email?: string;
+        avatarUrl?: string;
+        bio?: string;
+        password?: string;
+      } = {};
+
+      if (profile.username !== user.username) {
+        updatePayload.name = profile.username;
+      }
+      if (profile.email !== user.email) {
+        updatePayload.email = profile.email;
+      }
+      if ((profile.bio ?? "") !== (user.bio ?? "")) {
+        updatePayload.bio = profile.bio ?? "";
+      }
+      if (!profile.avatarFile && profile.avatar !== user.avatar) {
+        updatePayload.avatarUrl = profile.avatar;
+      }
+      if (profile.password) {
+        updatePayload.password = profile.password;
+      }
+
+      if (Object.keys(updatePayload).length > 0) {
+        const updatedProfile = await updateMe(token, updatePayload);
+        mergeStoredProfile(updatedProfile);
+      }
+
+      if (profile.avatarFile) {
+        const uploadedProfile = await uploadAvatarApi(token, profile.avatarFile);
+        mergeStoredProfile(uploadedProfile);
+      }
     }
 
     localStorage.setItem("user", JSON.stringify(nextUser));
     setUser(nextUser);
+    return nextUser;
   };
 
   const handleUpdatePreferences = async (preferences: PreferencesInput) => {
@@ -1299,7 +1338,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     return remaining[0]?.id ?? null;
   };
 
-  const getReadAvatarsForMessage = (room: ChatRoom, msg: Message): string[] => {
+  const getReadAvatarsForMessage = (room: ChatRoom, msg: Message): { name: string; avatarUrl: string }[] => {
     if (room.type !== "group") return [];
 
     const roomReads = groupReadStates[room.id];
@@ -1307,7 +1346,10 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
     return Object.entries(roomReads)
       .filter(([readerId, lastReadId]) => readerId !== currentUserId && lastReadId === msg.id)
-      .map(() => "");
+      .map(([readerId]) => {
+        const member = room.members?.find((m) => m.userId === readerId);
+        return { name: member?.nickname ?? member?.name ?? readerId, avatarUrl: member?.avatarUrl ?? "" };
+      });
   };
 
   const searchUsersForInvite = async (query: string): Promise<PublicUser[]> => {
@@ -1577,6 +1619,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         uiLanguage,
         isAuthenticated,
         isMounted,
+        roomsInitialized,
         selectedFriendForSidebar,
         setSelectedFriendForSidebar,
         showRightPanel,

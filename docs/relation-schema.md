@@ -34,6 +34,7 @@
 | require_approval | BOOLEAN | 加入是否須審核 | DEFAULT FALSE |
 | view_history | BOOLEAN | 新成員可見歷史訊息 | DEFAULT TRUE |
 | is_archived | BOOLEAN | 是否已封存（封存後唯讀） | NOT NULL, DEFAULT FALSE |
+| is_readonly | BOOLEAN | 是否唯讀（特定狀態下限制寫入） | NOT NULL, DEFAULT FALSE |
 | created_at | TIMESTAMP | 建立時間 | NOT NULL, DEFAULT CURRENT_TIMESTAMP |
 
 ### messages (訊息)
@@ -115,6 +116,25 @@
 | :--- | :--- | :--- | :--- |
 | message_id | UUID | 訊息 ID | PK, FK(messages), CASCADE DELETE |
 | user_id | UUID | 被提及者 ID | PK, FK(users), CASCADE DELETE |
+
+### refresh_tokens (更新權杖)
+| 欄位名 | 型別 | 說明 | 限制 |
+| :--- | :--- | :--- | :--- |
+| token_id | UUID | 權杖唯一識別碼 | PK, Default: gen_random_uuid() |
+| user_id | UUID | 使用者 ID | FK(users), CASCADE DELETE, NOT NULL |
+| token_hash | VARCHAR(255) | 權杖雜湊值 | UNIQUE, NOT NULL |
+| expires_at | TIMESTAMPTZ | 到期時間 | NOT NULL |
+| created_at | TIMESTAMPTZ | 建立時間 | NOT NULL, DEFAULT CURRENT_TIMESTAMP |
+| revoked_at | TIMESTAMPTZ | 註銷時間 | NULLABLE |
+| replaced_by | UUID | 替代本權杖的新權杖 ID | FK(refresh_tokens), SET NULL |
+
+### emergency_alert_logs (緊急警報日誌)
+| 欄位名 | 型別 | 說明 | 限制 |
+| :--- | :--- | :--- | :--- |
+| user_id | UUID | 使用者 ID | PK, FK(users), CASCADE DELETE |
+| last_activity_at | TIMESTAMPTZ | 最後活躍時間 | PK, NOT NULL |
+| alerted_at | TIMESTAMPTZ | 警報觸發時間 | NOT NULL, DEFAULT CURRENT_TIMESTAMP |
+
 
 ## 3. 業務規則
 

@@ -21,9 +21,9 @@ Project design documentation. Contains the ER diagram for the full intended data
 ## For AI Agents
 
 ### Working In This Directory
-- The ER diagram in `er_diagram.md` represents the **full intended design**, which is more complex than the current database schema. The active schema implements only `users`, `rooms`, and `messages` tables — a simplified subset.
-- When extending the database schema, consult `er_diagram.md` for the intended entity relationships before writing migrations.
-- Environment variable documentation was previously in `env.md` (deleted) — refer to `.env.example` in the project root and `DEVELOPMENT.md` for setup instructions.
+- The active database schema implements all tables described in the ER diagram and relational schema, including `users`, `chat_rooms`, `room_members`, `messages`, `attachments`, `friendships`, `blocks`, `folders`, `folder_rooms`, `emergency_contacts`, `message_mentions`, as well as system tables like `refresh_tokens` and `emergency_alert_logs`.
+- When extending the database schema, consult `er_diagram.md` and `relation-schema.md` for the entity relationships before writing migrations.
+- Environment variable documentation is documented in `.env.example` in the project root and `DEVELOPMENT.md` for setup instructions.
 
 ### Common Patterns
 - Documentation is written in a mix of English (diagrams, code) and Traditional Chinese (explanatory prose).

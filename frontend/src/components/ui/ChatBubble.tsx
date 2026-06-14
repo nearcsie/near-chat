@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from "react";
+import { resolveAssetUrl } from "@/lib/assets";
 import { cn } from "@/lib/utils";
 import { Avatar } from "./Avatar";
 import ProfilePopover from "../chat/ProfilePopover";
+import { downloadAttachment } from "@/lib/api";
 
 export interface Attachment {
   filename: string;
@@ -23,7 +25,7 @@ export interface ChatBubbleProps {
   attachments?: Attachment[];
   senderAvatar?: string;
   isRead?: boolean;
-  readByAvatars?: string[];
+  readByAvatars?: { name: string; avatarUrl: string }[];
   roomType?: "msg" | "group";
   onReply?: () => void;
   onRecall?: () => void;
@@ -73,6 +75,8 @@ export function ChatBubble({
   const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null>(null);
   const [showPopover, setShowPopover] = useState(false);
   const [popoverStyle, setPopoverStyle] = useState<React.CSSProperties>({});
+  const [downloadingUrl, setDownloadingUrl] = useState<string | null>(null);
+  const [downloadError, setDownloadError] = useState("");
 
   useEffect(() => {
     if (!menuPosition) return;
@@ -120,6 +124,22 @@ export function ChatBubble({
     if (!content || isRecalled) return;
     await navigator.clipboard?.writeText(content);
     setMenuPosition(null);
+  };
+
+  const handleDownloadAttachment = async (file: Attachment) => {
+    if (!file.url || downloadingUrl) return;
+
+    setDownloadError("");
+    setDownloadingUrl(file.url);
+
+    try {
+      await downloadAttachment(file.url, file.filename);
+    } catch (error) {
+      console.error(error);
+      setDownloadError(error instanceof Error ? error.message : "Failed to download attachment");
+    } finally {
+      setDownloadingUrl(null);
+    }
   };
 
   const menuItemClass =
@@ -245,28 +265,37 @@ export function ChatBubble({
                   );
 
                   const className = cn(
-                    "flex items-center gap-2.5 p-2 border rounded-sm text-xs cursor-pointer select-none transition-colors",
+                    "flex w-full items-center gap-2.5 p-2 border rounded-sm text-xs cursor-pointer select-none transition-colors",
                     isOutgoing && isHighEmphasis
                       ? "bg-white/10 border-white/20 hover:bg-white/20 text-white"
                       : "bg-surface-card border-border-secondary hover:border-border-primary text-foreground",
                   );
 
                   return file.url ? (
-                    <a
+                    <button
                       key={idx}
-                      href={file.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className={className}
+                      type="button"
+                      onClick={() => void handleDownloadAttachment(file)}
+                      disabled={downloadingUrl === file.url}
+                      className={cn(
+                        className,
+                        "text-left disabled:cursor-wait disabled:opacity-70",
+                      )}
+                      title={downloadingUrl === file.url ? "Downloading attachment" : "Download attachment"}
                     >
                       {fileContent}
-                    </a>
+                    </button>
                   ) : (
                     <div key={idx} className={className}>
                       {fileContent}
                     </div>
                   );
                 })}
+                {downloadError && (
+                  <p className="text-[10px] text-danger select-none">
+                    {downloadError}
+                  </p>
+                )}
               </div>
             )}
           </div>
@@ -321,16 +350,23 @@ export function ChatBubble({
 
         {roomType === "group" && readByAvatars && readByAvatars.length > 0 && (
           <div className="flex gap-1 mt-1 justify-end w-full px-0.5">
-            {readByAvatars.map((avatarUrl, idx) => (
+            {readByAvatars.map((reader, idx) => (
               <div
                 key={idx}
-                className="h-4.5 w-4.5 border border-border-primary bg-surface-muted rounded-sm overflow-hidden select-none"
-                title="已讀"
+                className="h-4.5 w-4.5 border border-border-primary bg-surface-muted rounded-sm overflow-hidden select-none flex items-center justify-center"
+                title={reader.name}
               >
-                {avatarUrl ? (
-                  <img src={avatarUrl} alt="read status" className="h-full w-full object-cover" />
+                {reader.avatarUrl ? (
+                  <img src={resolveAssetUrl(reader.avatarUrl)} alt={reader.name} className="h-full w-full object-cover" />
                 ) : (
-                  <span className="text-[8px] flex items-center justify-center h-full w-full font-bold">R</span>
+                  <span className="text-[8px] font-bold leading-none">
+                    {reader.name
+                      .split(" ")
+                      .map((n) => n[0])
+                      .join("")
+                      .slice(0, 2)
+                      .toUpperCase() || "U"}
+                  </span>
                 )}
               </div>
             ))}

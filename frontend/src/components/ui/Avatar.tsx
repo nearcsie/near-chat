@@ -1,4 +1,5 @@
 import React from "react";
+import { resolveAssetUrl } from "@/lib/assets";
 import { cn } from "@/lib/utils";
 
 export interface AvatarProps {
@@ -10,6 +11,7 @@ export interface AvatarProps {
 }
 
 export function Avatar({ name, src, size = "md", isOnline = false, className }: AvatarProps) {
+  const resolvedSrc = resolveAssetUrl(src);
   const initials = name
     .split(" ")
     .map((n) => n[0])
@@ -32,9 +34,9 @@ export function Avatar({ name, src, size = "md", isOnline = false, className }: 
           className
         )}
       >
-        {src ? (
+        {resolvedSrc ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={src} alt={name} className="h-full w-full object-cover" />
+          <img src={resolvedSrc} alt={name} className="h-full w-full object-cover" />
         ) : (
           <span>{initials || "U"}</span>
         )}

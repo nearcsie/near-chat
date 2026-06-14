@@ -245,5 +245,14 @@
     "roleFailed": "更新成員角色失敗",
     "changeRole": "變更角色",
     "manageMember": "管理"
+  },
+  "mainRedirect": {
+    "emptyChats": "尚未建立聊天室"
+  },
+  "avatarUpload": {
+    "requirements": "僅支援 PNG、JPG、GIF、WebP，且檔案需小於 2 MB。",
+    "selected": "已選擇：{name}",
+    "invalidType": "請選擇 PNG、JPG、GIF 或 WebP 圖片。",
+    "tooLarge": "頭像圖片大小不可超過 2 MB。"
   }
 }

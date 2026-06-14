@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { UiLanguage, useChat, PreferencesInput } from "@/context/ChatContext";
 import { Avatar } from "@/components/ui/Avatar";
@@ -11,12 +11,18 @@ import FeedbackMessage, { SettingsFeedback } from "@/components/settings/Feedbac
 import SectionTitle from "@/components/settings/SectionTitle";
 import { useTranslation } from "@/hooks/useTranslation";
 
+const ACCEPTED_AVATAR_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
+const AVATAR_UPLOAD_MAX_BYTES = 2 * 1024 * 1024;
+
 export default function ProfileSettings() {
   const router = useRouter();
   const { user, rooms, uiLanguage, handleUpdateProfile, handleUpdatePreferences, handleDeleteAccount } = useChat();
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [personalUsername, setPersonalUsername] = useState("");
   const [personalEmail, setPersonalEmail] = useState("");
   const [personalAvatar, setPersonalAvatar] = useState("");
+  const [personalAvatarFile, setPersonalAvatarFile] = useState<File | null>(null);
+  const [avatarPreviewUrl, setAvatarPreviewUrl] = useState<string | null>(null);
   const [personalBio, setPersonalBio] = useState("");
   const [personalNewPassword, setPersonalNewPassword] = useState("");
   const [personalConfirmPassword, setPersonalConfirmPassword] = useState("");
@@ -46,6 +52,14 @@ export default function ProfileSettings() {
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [user]);
 
+  useEffect(() => {
+    return () => {
+      if (avatarPreviewUrl) {
+        URL.revokeObjectURL(avatarPreviewUrl);
+      }
+    };
+  }, [avatarPreviewUrl]);
+
   const { t } = useTranslation();
 
   const handleBack = () => {
@@ -71,14 +85,33 @@ export default function ProfileSettings() {
   };
 
   const handlePersonalAvatarChange = () => {
-    const avatars = [
-      "",
-      "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&h=100&fit=crop",
-      "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&h=100&fit=crop",
-      "https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?w=100&h=100&fit=crop",
-    ];
-    const currentIndex = avatars.indexOf(personalAvatar);
-    setPersonalAvatar(avatars[(currentIndex + 1) % avatars.length]);
+    fileInputRef.current?.click();
+  };
+
+  const handleAvatarFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!ACCEPTED_AVATAR_TYPES.includes(file.type)) {
+      setProfileFeedback({ type: "error", text: t("avatarUpload.invalidType") });
+      event.target.value = "";
+      return;
+    }
+
+    if (file.size > AVATAR_UPLOAD_MAX_BYTES) {
+      setProfileFeedback({ type: "error", text: t("avatarUpload.tooLarge") });
+      event.target.value = "";
+      return;
+    }
+
+    if (avatarPreviewUrl) {
+      URL.revokeObjectURL(avatarPreviewUrl);
+    }
+
+    const previewUrl = URL.createObjectURL(file);
+    setPersonalAvatarFile(file);
+    setAvatarPreviewUrl(previewUrl);
+    setProfileFeedback(null);
   };
 
   const handleProfileSubmit = async (event: React.FormEvent) => {
@@ -96,15 +129,25 @@ export default function ProfileSettings() {
     }
 
     try {
-      await handleUpdateProfile({
+      const updatedUser = await handleUpdateProfile({
         username: personalUsername,
         email: personalEmail,
         avatar: personalAvatar,
+        avatarFile: personalAvatarFile,
         password: personalNewPassword || undefined,
         bio: personalBio,
       });
+      setPersonalAvatar(updatedUser.avatar);
       setPersonalNewPassword("");
       setPersonalConfirmPassword("");
+      if (avatarPreviewUrl) {
+        URL.revokeObjectURL(avatarPreviewUrl);
+      }
+      setPersonalAvatarFile(null);
+      setAvatarPreviewUrl(null);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
       setProfileFeedback({ type: "success", text: t("profile.profileSaved") });
     } catch (error) {
       console.error(error);
@@ -121,10 +164,21 @@ export default function ProfileSettings() {
         <FeedbackMessage feedback={profileFeedback} />
         <SectionTitle title={t("profile.profile")} />
         <div className="flex items-center gap-6 py-2">
-          <Avatar name={personalUsername} src={personalAvatar} size="lg" />
+          <Avatar name={personalUsername} src={avatarPreviewUrl ?? personalAvatar} size="lg" />
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/gif,image/webp"
+            className="hidden"
+            onChange={handleAvatarFileChange}
+          />
           <Button type="button" variant="secondary" onClick={handlePersonalAvatarChange}>
             {t("profile.changeAvatar")}
           </Button>
+        </div>
+        <div className="text-xs text-text-muted -mt-3">
+          {t("avatarUpload.requirements")}
+          {personalAvatarFile ? ` ${t("avatarUpload.selected", { name: personalAvatarFile.name })}` : ""}
         </div>
         <div className="flex flex-col gap-4">
           <Input label={t("profile.userId")} value={user.userId} readOnly disabled />
@@ -214,7 +268,7 @@ export default function ProfileSettings() {
             if (window.confirm(t("profile.deleteAccountConfirm"))) {
               try {
                 await handleDeleteAccount();
-              } catch (err) {
+              } catch {
                 setProfileFeedback({ type: "error", text: t("profile.deleteAccountFailed") });
               }
             }

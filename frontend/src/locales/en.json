@@ -41,6 +41,9 @@
   "friendsPage": {
     "title": "Friend list"
   },
+  "mainRedirect": {
+    "emptyChats": "No chat rooms yet"
+  },
   "profilePage": {
     "title": "Profile settings"
   },
@@ -156,6 +159,7 @@
     "replyTo": "Reply to {name}",
     "readOnlyOrBlocked": "This chatroom is blocked or read-only; messages cannot be sent.",
     "uploadAttachment": "Upload Attachment",
+    "attachmentPreview": "Attachment preview",
     "inputPlaceholder": "Type a message...",
     "send": "Send",
     "membersList": "Members ({count})",
@@ -245,5 +249,11 @@
     "roleFailed": "Failed to update member role",
     "changeRole": "Change Role",
     "manageMember": "Manage"
+  },
+  "avatarUpload": {
+    "requirements": "PNG, JPG, GIF, or WebP up to 2 MB.",
+    "selected": "Selected: {name}",
+    "invalidType": "Please choose a PNG, JPG, GIF, or WebP image.",
+    "tooLarge": "Avatar image must be 2 MB or smaller."
   }
 }

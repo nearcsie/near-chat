@@ -10,18 +10,18 @@ flowchart TD
     classDef relation fill:#fff,stroke:#333,stroke-width:1.5px,font-style:italic;
 
     %% --- Entity Layer 1: Actors & Organization ---
-    User["<b>User</b><hr/><u>id</u><br/>email<br/>username<br/>bio<br/>last_login"]
+    User["<b>User</b><hr/><u>id</u><br/>email<br/>name<br/>bio<br/>last_activity"]
     Folder["<b>Folder</b><hr/><u>id</u><br/>name<br/>user_id"]
     class User,Folder entity;
 
     %% --- Entity Layer 2: Logic & Channel ---
-    ChatRoom["<b>ChatRoom</b><hr/><u>id</u><br/>type<br/>group_name<br/>invite_code"]
-    RoomMember["<b>RoomMember</b><hr/><u>id</u><br/>role<br/>nickname<br/>joined_at"]
+    ChatRoom["<b>ChatRoom</b><hr/><u>id</u><br/>type<br/>name<br/>invite_code"]
+    RoomMember["<b>RoomMember</b><hr/>role<br/>nickname<br/>join_time"]
     class ChatRoom,RoomMember entity;
 
     %% --- Entity Layer 3: Content & Data ---
-    Message["<b>Message</b><hr/><u>id</u><br/>content<br/>is_recalled<br/>created_at"]
-    Attachment["<b>Attachment</b><hr/><u>id</u><br/>file_path<br/>file_type<br/>file_size"]
+    Message["<b>Message</b><hr/><u>id</u><br/>content<br/>is_recalled<br/>sent_at"]
+    Attachment["<b>Attachment</b><hr/><u>id</u><br/>file_path<br/>file_type<br/>original_name"]
     class Message,Attachment entity;
 
     %% --- Relationship Diamonds ---
@@ -90,11 +90,11 @@ flowchart TD
 ### A. 核心實體與屬性定義
 | 實體 (Entity) | 角色功能 | 屬性詳解 |
 | :--- | :--- | :--- |
-| **User** | 系統的核心使用者 | `id` (主鍵), `email` (唯一索引), `username` (唯一索引), `password_hash`, `bio`, `last_login`, `auto_contact_days`, `deleted_at` |
-| **ChatRoom** | 溝通的管道橋樑 | `id` (主鍵), `type` (私訊/群組), `room_hash` (私訊唯一雜湊), `is_readonly`, `group_name`, `invite_code` (唯一索引), `needs_audit` |
-| **Message** | 系統主要資料流 | `id` (主鍵), `room_id` (外鍵), `sender_id` (外鍵), `content`, `reply_to_id` (遞迴外鍵), `is_recalled`, `created_at` |
+| **User** | 系統的核心使用者 | `id` (主鍵), `email` (唯一索引), `name` (姓名), `password_hash`, `bio`, `last_activity`, `warning_enabled`, `warning_days`, `deleted_at`, `lang_preference`, `app_theme`, `notify_desktop`, `notify_sound` |
+| **ChatRoom** | 溝通的管道橋樑 | `id` (主鍵), `type` (私訊/群組), `name` (群組名稱), `avatar_url`, `invite_code` (唯一索引), `require_approval`, `view_history`, `is_archived`, `is_readonly` |
+| **Message** | 系統主要資料流 | `id` (主鍵), `room_id` (外鍵), `sender_id` (外鍵), `content`, `reply_to_id` (遞迴外鍵), `is_recalled`, `sent_at` |
 | **Folder** | 使用者端的聊天室分類 | `id` (主鍵), `user_id` (外鍵), `name` (資料夾名稱) |
-| **Attachment** | 訊息中的檔案附件 | `id` (主鍵), `message_id` (外鍵), `file_path`, `file_type`, `file_size`, `original_name` |
+| **Attachment** | 訊息中的檔案附件 | `id` (主鍵), `message_id` (外鍵), `uploaded_by` (外鍵), `file_path`, `file_type`, `original_name`, `uploaded_at` |
 
 ### B. 關係邏輯與基數 (Cardinality) 說明
 1.  **聊天室成員關係 (1:N:1)**:
@@ -116,6 +116,6 @@ flowchart TD
     *   **Replies (N:1)**：多則訊息可以回覆同一則特定訊息（遞迴關係）。
 
 ### C. 進階架構完整性
-*   **私隱唯一性 (Privacy Uniqueness)**：`room_hash` 機制能有效防止同一對使用者之間重複產生多個私訊房間。
+*   **私隱唯一性 (Privacy Uniqueness)**：系統在建立私聊前會先透過 `findPrivateRoomByMembers(userA, userB)` 檢查是否已存在兩者之間的私訊聊天室，並在 `friendships` 狀態變更時自動建立或重新啟用私訊，以防止重複建立私聊。
 *   **資料持久化**: 透過 `User.deleted_at` 實施軟刪除（Soft-delete），確保即使帳號移除後，訊息審計追蹤與歷史脈絡仍能完整保留。
-*   **安全自動化**: 系統任務會定期對照 `last_login` 與 `auto_contact_days`，若超過設定期限則觸發 `緊急聯絡` 的通知程序。
+*   **安全自動化**: 系統任務會定期對照 `last_activity` 與 `warning_days`（即遺言模式天數），若超過設定期限則觸發 `緊急聯絡` 的通知程序。
