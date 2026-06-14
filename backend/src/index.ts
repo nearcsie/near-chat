@@ -106,6 +106,8 @@ const userService = makeUserService(
 const roomService = makeRoomService(roomRepo, roomMemberRepo, (roomId, eventName, payload) =>
   io.to(`room_${roomId}`).emit(eventName as any, payload),
   friendRepo,
+  userRepo,
+  messageRepo,
 );
 const messageService = makeMessageService(messageRepo, roomRepo, roomMemberRepo);
 const folderService = makeFolderService(folderRepo, roomMemberRepo);

@@ -349,6 +349,19 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
         {messages
           .filter((m) => m.roomId === activeRoom.id)
           .map((msg) => {
+            if (msg.content.startsWith("[System] ")) {
+              return (
+                <div
+                  key={msg.id}
+                  className="w-full flex justify-center my-2 select-none"
+                >
+                  <div className="bg-surface-card border border-border-secondary px-3 py-1 rounded-full text-xs text-text-muted">
+                    {msg.content.substring(9)}
+                  </div>
+                </div>
+              );
+            }
+
             const senderMember = activeRoom.members?.find((m) => m.userId === msg.senderId);
             const displayName = senderMember?.nickname || msg.senderName;
 
