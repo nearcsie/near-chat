@@ -8,10 +8,12 @@ import type {
   JwtPayload,
   MyProfile,
   PublicUser,
+  SearchUserResult,
   User,
   UserProfile,
   UserSettings,
 } from '../../../shared/types';
+
 import { ConflictError, NotFoundError, ValidationError } from '../errors/AppError';
 import { removeManagedAvatar, saveAvatarUpload } from '../lib/avatarUpload';
 import {
@@ -303,13 +305,23 @@ export const makeUserService = (
       return notifyContacts(userId, 'User has exceeded their inactivity warning threshold');
     },
 
-    async search(query: string): Promise<PublicUser[]> {
-      const parsed = searchQuerySchema.safeParse({ q: query });
+    async search(query: string, mode?: 'name' | 'userId' | 'email'): Promise<SearchUserResult[]> {
+      const parsed = searchQuerySchema.safeParse({ q: query, mode });
       if (!parsed.success) {
         throw new ValidationError(parsed.error.issues[0]?.message ?? 'Invalid query');
       }
-      const users = await repo.search(parsed.data.q);
-      return users.map(toPublicUser);
+      const users = await repo.search(parsed.data.q, parsed.data.mode);
+      return users.map((user) => {
+        const result: SearchUserResult = {
+          userId: user.userId,
+          name: user.name,
+          avatarUrl: user.avatarUrl,
+        };
+        if (parsed.data.mode !== 'name') {
+          result.email = user.email;
+        }
+        return result;
+      });
     },
 
     async refresh(refreshToken: string): Promise<AuthResponse & { refreshToken: string }> {

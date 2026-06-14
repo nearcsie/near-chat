@@ -727,8 +727,10 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
     const savedUser = localStorage.getItem("user");
     const savedTheme = localStorage.getItem("theme");
+    const systemPrefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    const initialTheme = savedTheme ?? (systemPrefersDark ? "dark" : "light");
 
-    if (savedTheme === "dark") {
+    if (initialTheme === "dark") {
       document.documentElement.classList.add("dark");
     } else {
       document.documentElement.classList.remove("dark");
@@ -765,7 +767,22 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           getMySettings(currentToken),
         ]);
         if (cancelled) return;
-        const stored = toStoredUser(profile, settings);
+
+        let finalTheme = settings?.theme;
+        const isJustRegistered = localStorage.getItem("just_registered") === "true";
+        if (isJustRegistered) {
+          const systemPrefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+          const systemTheme = systemPrefersDark ? "dark" : "light";
+          try {
+            await updateMySettings(currentToken, { theme: systemTheme });
+            finalTheme = systemTheme;
+          } catch (err) {
+            console.error("Failed to initialize backend theme on registration:", err);
+          }
+          localStorage.removeItem("just_registered");
+        }
+
+        const stored = toStoredUser(profile, { ...settings, theme: finalTheme || settings?.theme });
         localStorage.setItem("user", JSON.stringify(stored));
         localStorage.setItem("theme", stored.theme ?? "light");
         localStorage.setItem("notify-desktop", String(stored.notifyDesktop ?? true));
