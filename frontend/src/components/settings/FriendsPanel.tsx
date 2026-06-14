@@ -420,9 +420,7 @@ export default function FriendsPanel() {
                           <Avatar name={user.name} size="sm" />
                           <div className="min-w-0">
                             <p className="text-sm font-semibold text-foreground truncate">{user.name}</p>
-                            {user.email && (
-                              <p className="text-[10px] text-text-muted font-mono truncate">{user.email}</p>
-                            )}
+                            <p className="text-[10px] text-text-muted font-mono truncate">{user.userId}</p>
                           </div>
                         </div>
                         <div className="shrink-0">

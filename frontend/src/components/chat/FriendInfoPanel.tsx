@@ -94,7 +94,6 @@ export default function FriendInfoPanel({
           <Avatar name={friendName} src={avatar} size="lg" isOnline={status === "online"} />
           <div className="min-w-0 w-full">
             <h4 className="text-sm font-bold text-foreground truncate">{friendName}</h4>
-            <p className="text-[10px] text-text-muted font-mono truncate mt-1">{email}</p>
           </div>
         </div>
 
