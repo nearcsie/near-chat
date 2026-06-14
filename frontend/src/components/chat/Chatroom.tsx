@@ -68,6 +68,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
     typingUsers,
     activeProfilePopover,
     setActiveProfilePopover,
+    groupReadStates,
   } = useChat();
 
   const [inputText, setInputText] = useState("");
@@ -352,6 +353,21 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
             const senderMember = activeRoom.members?.find((m) => m.userId === msg.senderId);
             const displayName = senderMember?.nickname || msg.senderName;
 
+            // Calculate isRead for private chats
+            let isRead = msg.isRead || false;
+            if (activeRoom.type === "msg" && msg.isOutgoing) {
+              const otherUserId = activeRoom.otherMemberId || activeRoom.members?.find((m) => m.userId !== user.userId)?.userId;
+              if (otherUserId) {
+                const otherLastReadId = groupReadStates[activeRoom.id]?.[otherUserId];
+                if (otherLastReadId) {
+                  const roomMessages = messages.filter((m) => m.roomId === activeRoom.id);
+                  const msgIndex = roomMessages.findIndex((m) => m.id === msg.id);
+                  const lastReadIndex = roomMessages.findIndex((m) => m.id === otherLastReadId);
+                  isRead = lastReadIndex !== -1 && msgIndex !== -1 && msgIndex <= lastReadIndex;
+                }
+              }
+            }
+
             return (
               <div
                 key={msg.id}
@@ -373,7 +389,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
                       ? resolveAssetUrl(senderMember.avatarUrl)
                       : undefined
                   }
-                  isRead={msg.isRead}
+                  isRead={isRead}
                   readByAvatars={getReadAvatarsForMessage(activeRoom, msg)}
                   roomType={activeRoom.type}
                   senderId={msg.senderId || undefined}
