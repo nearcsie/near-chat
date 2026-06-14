@@ -161,15 +161,6 @@ export default function ProfilePopover({
         <span className="text-[9px] font-bold text-text-muted uppercase tracking-widest">
           {isSelf ? t("profileCard.myInfo") : friend ? t("profileCard.friendInfo") : t("profileCard.memberInfo")}
         </span>
-        <button
-          onClick={onClose}
-          type="button"
-          className="text-text-muted hover:text-foreground cursor-pointer p-0.5 hover:bg-surface-muted rounded-sm transition-colors"
-        >
-          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
       </div>
 
       {loading ? (

@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import { Avatar } from "./Avatar";
 import ProfilePopover from "../chat/ProfilePopover";
 import { downloadAttachment } from "@/lib/api";
+import { useChat } from "@/context/ChatContext";
 
 export interface Attachment {
   filename: string;
@@ -32,6 +33,7 @@ export interface ChatBubbleProps {
   canRecall?: boolean;
   canEdit?: boolean;
   senderId?: string;
+  messageId?: string;
 }
 
 const renderMentionContent = (
@@ -73,12 +75,15 @@ export function ChatBubble({
   canRecall = false,
   canEdit = false,
   senderId,
+  messageId,
 }: ChatBubbleProps) {
   const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null>(null);
-  const [showPopover, setShowPopover] = useState(false);
   const [popoverStyle, setPopoverStyle] = useState<React.CSSProperties>({});
   const [downloadingUrl, setDownloadingUrl] = useState<string | null>(null);
   const [downloadError, setDownloadError] = useState("");
+
+  const { activeProfilePopover, setActiveProfilePopover } = useChat();
+  const showPopover = messageId ? activeProfilePopover?.instanceId === messageId : false;
 
   useEffect(() => {
     if (!menuPosition) return;
@@ -94,6 +99,11 @@ export function ChatBubble({
   }, [menuPosition]);
 
   const handleTogglePopover = (event: React.MouseEvent) => {
+    if (!senderId) {
+      console.warn("No senderId provided to ChatBubble, cannot open profile popover");
+      return;
+    }
+
     const rect = event.currentTarget.getBoundingClientRect();
     const scrollEl = event.currentTarget.closest(".overflow-y-auto");
 
@@ -119,7 +129,13 @@ export function ChatBubble({
       });
     }
 
-    setShowPopover((current) => !current);
+    if (messageId) {
+      if (activeProfilePopover?.instanceId === messageId) {
+        setActiveProfilePopover(null);
+      } else {
+        setActiveProfilePopover({ instanceId: messageId, userId: senderId });
+      }
+    }
   };
 
   const handleCopy = async () => {
@@ -166,7 +182,7 @@ export function ChatBubble({
               username={senderName}
               onClose={(event) => {
                 event.stopPropagation();
-                setShowPopover(false);
+                setActiveProfilePopover(null);
               }}
               position="custom"
               className="absolute left-full ml-3"

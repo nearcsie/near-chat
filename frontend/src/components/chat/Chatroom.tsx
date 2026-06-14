@@ -65,6 +65,8 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
     showRightPanel,
     setShowRightPanel,
     typingUsers,
+    activeProfilePopover,
+    setActiveProfilePopover,
   } = useChat();
 
   const [inputText, setInputText] = useState("");
@@ -102,6 +104,14 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
     setPrevMentionResetKey(mentionResetKey);
     setSelectedMentionIndex(0);
   }
+
+  // Sync showHeaderPopover with activeProfilePopover
+  useEffect(() => {
+    const isHeaderActive = activeProfilePopover?.instanceId === `header-${activeRoom?.id}`;
+    if (!isHeaderActive && showHeaderPopover) {
+      setShowHeaderPopover(false);
+    }
+  }, [activeProfilePopover, activeRoom?.id, showHeaderPopover]);
 
   // Scroll to bottom when room or messages change
   const lastScrolledRoomIdRef = useRef<string | null>(null);
@@ -264,7 +274,16 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
           }`}
           onClick={() => {
             if (activeRoom.type === "msg") {
-              setShowHeaderPopover(!showHeaderPopover);
+              const instanceId = `header-${activeRoom.id}`;
+              if (activeProfilePopover?.instanceId === instanceId) {
+                setActiveProfilePopover(null);
+              } else {
+                const otherMember = activeRoom.members?.find((m) => m.userId !== user.userId);
+                if (otherMember) {
+                  setShowHeaderPopover(true);
+                  setActiveProfilePopover({ instanceId, userId: otherMember.userId });
+                }
+              }
             }
           }}
         >
@@ -296,7 +315,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
                 username={activeRoom.name}
                 onClose={(e) => {
                   e.stopPropagation();
-                  setShowHeaderPopover(false);
+                  setActiveProfilePopover(null);
                 }}
                 position="bottom"
               />
@@ -381,6 +400,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
                   readByAvatars={getReadAvatarsForMessage(activeRoom, msg)}
                   roomType={activeRoom.type}
                   senderId={msg.senderId || undefined}
+                  messageId={msg.id}
                   onReply={() => setReplyTarget(msg)}
                   onRecall={() => handleRecallMessage(msg.id)}
                   canRecall={Boolean(msg.isOutgoing) || canManageMembers}

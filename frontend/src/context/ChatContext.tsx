@@ -296,6 +296,8 @@ interface ChatContextType {
   saveEmergencySettings: (settings: EmergencySettings) => Promise<void>;
   triggerEmergencyAlertNow: (message?: string) => Promise<TriggerEmergencyAlertResult>;
   setUiLanguage: (language: UiLanguage) => void;
+  activeProfilePopover: { instanceId: string; userId: string } | null;
+  setActiveProfilePopover: React.Dispatch<React.SetStateAction<{ instanceId: string; userId: string } | null>>;
 }
 
 const ChatContext = createContext<ChatContextType | undefined>(undefined);
@@ -597,6 +599,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const [selectedFriendForSidebar, setSelectedFriendForSidebar] = useState<Friend | null>(null);
   const [showRightPanel, setShowRightPanel] = useState<boolean>(true);
   const [typingUsers, setTypingUsers] = useState<Record<string, string[]>>({});
+  const [activeProfilePopover, setActiveProfilePopover] = useState<{ instanceId: string; userId: string } | null>(null);
   const typingTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   const activeRoomId = useMemo(() => {
@@ -1682,6 +1685,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         triggerEmergencyAlertNow,
         setUiLanguage,
         typingUsers,
+        activeProfilePopover,
+        setActiveProfilePopover,
       }}
     >
       {children}
