@@ -108,7 +108,7 @@ flowchart TD
     *   **EmergencyContact (1:N)**：一位使用者可以指定多位緊急聯絡人。
 
 3.  **內容組織 (1:N 與 N:M)**:
-    *   **Folder Ownership (1:N)**：一位使用者擁候多個資料夾。
+    *   **Folder Ownership (1:N)**：一位使用者擁有多個資料夾。
     *   **Folder Mapping (N:M)**：資料夾與聊天室間的多對多關聯（透過中介表）。
     *   **Messaging (1:N)**：一位使用者發送多則訊息；一個聊天室包含多則訊息。
     *   **Attachments (1:N)**：一則訊息可夾帶多個附件檔案。
