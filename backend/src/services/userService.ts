@@ -218,11 +218,11 @@ export const makeUserService = (
       try {
         const updated = await repo.update(userId, { avatarUrl });
         if (currentUser.avatarUrl && currentUser.avatarUrl !== avatarUrl) {
-          await removeManagedAvatar(currentUser.avatarUrl);
+          await removeManagedAvatar(currentUser.avatarUrl, userId);
         }
         return toMyProfile(updated);
       } catch (error) {
-        await removeManagedAvatar(avatarUrl);
+        await removeManagedAvatar(avatarUrl, userId);
         throw error;
       }
     },
