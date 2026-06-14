@@ -1,21 +1,46 @@
-FROM node:lts-slim
+# Stage 1: Build the backend application
+FROM node:lts-slim AS builder
 
 RUN apt-get update -y && apt-get install -y openssl
 RUN corepack enable && corepack prepare pnpm@latest --activate
 
-WORKDIR /app
+WORKDIR /workspace
 
-# Give the built-in node user ownership of /app before switching
+# Copy global typescript and workspace configs
+COPY tsconfig.base.json ./
+COPY shared/ ./shared/
+
+# Copy backend dependency declarations
+COPY backend/package.json backend/pnpm-lock.yaml backend/tsconfig.json ./backend/
+
+WORKDIR /workspace/backend
+RUN pnpm install --no-frozen-lockfile --ignore-scripts
+
+# Copy backend source code and compile
+COPY backend/src ./src
+RUN pnpm build
+
+# Stage 2: Create a production runner image
+FROM node:lts-slim AS runner
+
+RUN apt-get update -y && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
+WORKDIR /app
 RUN chown -R node:node /app
 
 USER node
 
-COPY --chown=node:node package.json pnpm-lock.yaml ./
+# Copy production dependency declarations
+COPY --chown=node:node backend/package.json backend/pnpm-lock.yaml ./
+RUN pnpm install --prod --no-frozen-lockfile --ignore-scripts
 
-RUN pnpm install --no-frozen-lockfile --ignore-scripts
+# Copy compiled files and migrations
+COPY --from=builder --chown=node:node /workspace/backend/dist ./dist
+COPY --chown=node:node backend/migrations ./migrations
 
-COPY --chown=node:node . .
-
+# Expose port and run in production
 EXPOSE 4000
+ENV NODE_ENV=production
 
-CMD ["pnpm", "dev"]
+CMD ["sh", "-c", "pnpm run migrate:up && node dist/backend/src/index.js"]
