@@ -10,46 +10,46 @@
 
 | 分類 | 方法 | 路徑 | 驗證要求 | 說明 |
 | :--- | :--- | :--- | :--- | :--- |
-| **認證與帳號** | `POST` | `/auth/register` | 無需驗證 | 註冊新帳號 |
-| | `POST` | `/auth/login` | 無需驗證 | 帳號登入 |
-| | `POST` | `/auth/refresh` | 無需驗證 | 刷新存取權杖 |
-| | `POST` | `/auth/logout` | 需驗證 | 帳號登出 |
-| | `GET` | `/users/me` | 需驗證 | 取得目前登入者的個人資料 |
-| | `GET` | `/users/:id` | 需驗證 | 取得指定使用者的公開個人資料 |
-| | `PATCH` | `/users/me` | 需驗證 | 更新目前登入者的個人資料 |
-| | `GET` | `/users/me/settings` | 需驗證 | 取得目前登入者的設定偏好 |
-| | `PATCH` | `/users/me/settings` | 需驗證 | 更新目前登入者的設定偏好 |
-| | `DELETE` | `/users/me` | 需驗證 | 刪除目前登入者的帳號（軟刪除） |
-| | `GET` | `/users` | 需驗證 | 搜尋使用者 |
-| **好友與封鎖** | `GET` | `/friends` | 需驗證 | 取得好友列表 |
-| | `DELETE` | `/friends/:id` | 需驗證 | 移除好友關係 |
-| | `GET` | `/friend-requests` | 需驗證 | 取得所有待處理的好友邀請 |
-| | `POST` | `/friend-requests` | 需驗證 | 發送好友邀請 |
-| | `PATCH` | `/friend-requests/:id` | 需驗證 | 回覆好友邀請 |
-| | `POST` | `/blocks` | 需驗證 | 封鎖使用者 |
-| | `DELETE` | `/blocks/:id` | 需驗證 | 解除封鎖使用者 |
-| **聊天室** | `GET` | `/rooms` | 需驗證 | 取得聊天室列表與摘要 |
-| | `POST` | `/rooms` | 需驗證 | 建立聊天室（私聊或群組） |
-| | `GET` | `/rooms/:id` | 需驗證 | 取得特定聊天室資訊 |
-| | `PATCH` | `/rooms/:id` | 需驗證 | 更新聊天室設定或轉讓擁有權 |
-| | `POST` | `/rooms/:id/members` | 需驗證 | 透過邀請碼加入聊天室 |
-| | `DELETE` | `/rooms/:id/members/me` | 需驗證 | 退出聊天室 |
-| | `DELETE` | `/rooms/:id` | 需驗證 | 封存聊天室（僅限擁有者） |
-| **成員管理** | `GET` | `/rooms/:id/members` | 需驗證 | 取得聊天室成員列表 |
-| | `PATCH` | `/rooms/:id/members/:userId` | 需驗證 | 審核成員加入或修改成員權限與暱稱 |
-| | `DELETE` | `/rooms/:id/members/:userId` | 需驗證 | 踢出成員（需擁有者或管理員） |
-| **訊息與附件** | `GET` | `/rooms/:roomId/messages` | 需驗證 | 取得聊天室歷史訊息（分頁） |
-| | `POST` | `/attachments` | 需驗證 | 上傳附件檔案 |
-| | `GET` | `/attachments/:id` | 需驗證 | 下載附件檔案 |
-| **資料夾分類** | `GET` | `/folders` | 需驗證 | 取得資料夾列表 |
-| | `POST` | `/folders` | 需驗證 | 建立新資料夾 |
-| | `DELETE` | `/folders/:id` | 需驗證 | 刪除資料夾 |
-| | `PUT` | `/folders/:id/rooms` | 需驗證 | 更新資料夾內的聊天室關聯列表 |
-| **緊急聯絡** | `GET` | `/users/me/emergency-contacts` | 需驗證 | 取得緊急聯絡人列表 |
-| | `POST` | `/users/me/emergency-contacts` | 需驗證 | 新增或更新緊急聯絡人設定 |
-| | `DELETE` | `/users/me/emergency-contacts/:contactId` | 需驗證 | 刪除緊急聯絡人設定 |
-| | `POST` | `/users/me/emergency-alert` | 需驗證 | 立即向所有緊急聯絡人發送警報 |
-| | `POST` | `/users/me/emergency-alert/check-inactivity` | 需驗證 | 檢查不活躍狀態以判定是否發送警報 |
+| **認證與帳號** | `POST` | [`/auth/register`](#post-authregister) | 無需驗證 | 註冊新帳號 |
+| | `POST` | [`/auth/login`](#post-authlogin) | 無需驗證 | 帳號登入 |
+| | `POST` | [`/auth/refresh`](#post-authrefresh) | 無需驗證 | 刷新存取權杖 |
+| | `POST` | [`/auth/logout`](#post-authlogout) | 需驗證 | 帳號登出 |
+| | `GET` | [`/users/me`](#get-usersme) | 需驗證 | 取得目前登入者的個人資料 |
+| | `GET` | [`/users/:id`](#get-usersid) | 需驗證 | 取得指定使用者的公開個人資料 |
+| | `PATCH` | [`/users/me`](#patch-usersme) | 需驗證 | 更新目前登入者的個人資料 |
+| | `GET` | [`/users/me/settings`](#get-usersmesettings) | 需驗證 | 取得目前登入者的設定偏好 |
+| | `PATCH` | [`/users/me/settings`](#patch-usersmesettings) | 需驗證 | 更新目前登入者的設定偏好 |
+| | `DELETE` | [`/users/me`](#delete-usersme) | 需驗證 | 刪除目前登入者的帳號（軟刪除） |
+| | `GET` | [`/users`](#get-users) | 需驗證 | 搜尋使用者 |
+| **好友與封鎖** | `GET` | [`/friends`](#get-friends) | 需驗證 | 取得好友列表 |
+| | `DELETE` | [`/friends/:id`](#delete-friendsid) | 需驗證 | 移除好友關係 |
+| | `GET` | [`/friend-requests`](#get-friend-requests) | 需驗證 | 取得所有待處理的好友邀請 |
+| | `POST` | [`/friend-requests`](#post-friend-requests) | 需驗證 | 發送好友邀請 |
+| | `PATCH` | [`/friend-requests/:id`](#patch-friend-requestsid) | 需驗證 | 回覆好友邀請 |
+| | `POST` | [`/blocks`](#post-blocks) | 需驗證 | 封鎖使用者 |
+| | `DELETE` | [`/blocks/:id`](#delete-blocksid) | 需驗證 | 解除封鎖使用者 |
+| **聊天室** | `GET` | [`/rooms`](#get-rooms) | 需驗證 | 取得聊天室列表與摘要 |
+| | `POST` | [`/rooms`](#post-rooms) | 需驗證 | 建立聊天室（私聊或群組） |
+| | `GET` | [`/rooms/:id`](#get-roomsid) | 需驗證 | 取得特定聊天室資訊 |
+| | `PATCH` | [`/rooms/:id`](#patch-roomsid) | 需驗證 | 更新聊天室設定或轉讓擁有權 |
+| | `POST` | [`/rooms/:id/members`](#post-roomsidmembers) | 需驗證 | 透過邀請碼加入聊天室 |
+| | `DELETE` | [`/rooms/:id/members/me`](#delete-roomsidmembersme) | 需驗證 | 退出聊天室 |
+| | `DELETE` | [`/rooms/:id`](#delete-roomsid) | 需驗證 | 封存聊天室（僅限擁有者） |
+| **成員管理** | `GET` | [`/rooms/:id/members`](#get-roomsidmembers) | 需驗證 | 取得聊天室成員列表 |
+| | `PATCH` | [`/rooms/:id/members/:userId`](#patch-roomsidmembersuserid) | 需驗證 | 審核成員加入或修改成員權限與暱稱 |
+| | `DELETE` | [`/rooms/:id/members/:userId`](#delete-roomsidmembersuserid) | 需驗證 | 踢出成員（需擁有者或管理員） |
+| **訊息與附件** | `GET` | [`/rooms/:roomId/messages`](#get-roomsroomidmessages) | 需驗證 | 取得聊天室歷史訊息（分頁） |
+| | `POST` | [`/attachments`](#post-attachments) | 需驗證 | 上傳附件檔案 |
+| | `GET` | [`/attachments/:id`](#get-attachmentsid) | 需驗證 | 下載附件檔案 |
+| **資料夾分類** | `GET` | [`/folders`](#get-folders) | 需驗證 | 取得資料夾列表 |
+| | `POST` | [`/folders`](#post-folders) | 需驗證 | 建立新資料夾 |
+| | `DELETE` | [`/folders/:id`](#delete-foldersid) | 需驗證 | 刪除資料夾 |
+| | `PUT` | [`/folders/:id/rooms`](#put-foldersidrooms) | 需驗證 | 更新資料夾內的聊天室關聯列表 |
+| **緊急聯絡** | `GET` | [`/users/me/emergency-contacts`](#get-usersmeemergency-contacts) | 需驗證 | 取得緊急聯絡人列表 |
+| | `POST` | [`/users/me/emergency-contacts`](#post-usersmeemergency-contacts) | 需驗證 | 新增或更新緊急聯絡人設定 |
+| | `DELETE` | [`/users/me/emergency-contacts/:contactId`](#delete-usersmeemergency-contactscontactid) | 需驗證 | 刪除緊急聯絡人設定 |
+| | `POST` | [`/users/me/emergency-alert`](#post-usersmeemergency-alert) | 需驗證 | 立即向所有緊急聯絡人發送警報 |
+| | `POST` | [`/users/me/emergency-alert/check-inactivity`](#post-usersmeemergency-alertcheck-inactivity) | 需驗證 | 檢查不活躍狀態以判定是否發送警報 |
 
 ### Socket.io 即時通訊
 

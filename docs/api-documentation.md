@@ -10,46 +10,46 @@ This document defines the RESTful API and Socket.IO real-time communication inte
 
 | Category | Method | Path | Auth Required | Description |
 | :--- | :--- | :--- | :--- | :--- |
-| **Authentication & Profile** | `POST` | `/auth/register` | No | Register a new account |
-| | `POST` | `/auth/login` | No | User login |
-| | `POST` | `/auth/refresh` | No | Refresh access token |
-| | `POST` | `/auth/logout` | Yes | User logout |
-| | `GET` | `/users/me` | Yes | Get profile of current user |
-| | `GET` | `/users/:id` | Yes | Get public profile of specified user |
-| | `PATCH` | `/users/me` | Yes | Update profile of current user |
-| | `GET` | `/users/me/settings` | Yes | Get settings of current user |
-| | `PATCH` | `/users/me/settings` | Yes | Update settings of current user |
-| | `DELETE` | `/users/me` | Yes | Delete account of current user (soft delete) |
-| | `GET` | `/users` | Yes | Search users |
-| **Friends & Blocks** | `GET` | `/friends` | Yes | Get friends list |
-| | `DELETE` | `/friends/:id` | Yes | Remove friend relationship |
-| | `GET` | `/friend-requests` | Yes | Get pending friend requests |
-| | `POST` | `/friend-requests` | Yes | Send friend request |
-| | `PATCH` | `/friend-requests/:id` | Yes | Respond to friend request |
-| | `POST` | `/blocks` | Yes | Block user |
-| | `DELETE` | `/blocks/:id` | Yes | Unblock user |
-| **Chat Rooms** | `GET` | `/rooms` | Yes | Get rooms list and summaries |
-| | `POST` | `/rooms` | Yes | Create room (private or group) |
-| | `GET` | `/rooms/:id` | Yes | Get specified room details |
-| | `PATCH` | `/rooms/:id` | Yes | Update room settings or transfer ownership |
-| | `POST` | `/rooms/:id/members` | Yes | Join room via invite code |
-| | `DELETE` | `/rooms/:id/members/me` | Yes | Leave room |
-| | `DELETE` | `/rooms/:id` | Yes | Archive room (Owner only) |
-| **Member Management** | `GET` | `/rooms/:id/members` | Yes | Get room members list |
-| | `PATCH` | `/rooms/:id/members/:userId` | Yes | Approve member join or update member role/nickname |
-| | `DELETE` | `/rooms/:id/members/:userId` | Yes | Kick member (Owner or Admin only) |
-| **Messages & Attachments** | `GET` | `/rooms/:roomId/messages` | Yes | Get room message history (paginated) |
-| | `POST` | `/attachments` | Yes | Upload attachment file |
-| | `GET` | `/attachments/:id` | Yes | Download attachment file |
-| **Folders** | `GET` | `/folders` | Yes | Get folders list |
-| | `POST` | `/folders` | Yes | Create new folder |
-| | `DELETE` | `/folders/:id` | Yes | Delete folder |
-| | `PUT` | `/folders/:id/rooms` | Yes | Update rooms associated with folder |
-| **Emergency Contacts** | `GET` | `/users/me/emergency-contacts` | Yes | Get emergency contacts list |
-| | `POST` | `/users/me/emergency-contacts` | Yes | Add or update emergency contact |
-| | `DELETE` | `/users/me/emergency-contacts/:contactId` | Yes | Delete emergency contact |
-| | `POST` | `/users/me/emergency-alert` | Yes | Trigger emergency alert immediately to contacts |
-| | `POST` | `/users/me/emergency-alert/check-inactivity` | Yes | Check inactivity to trigger alert automatically |
+| **Authentication & Profile** | `POST` | [`/auth/register`](#post-authregister) | No | Register a new account |
+| | `POST` | [`/auth/login`](#post-authlogin) | No | User login |
+| | `POST` | [`/auth/refresh`](#post-authrefresh) | No | Refresh access token |
+| | `POST` | [`/auth/logout`](#post-authlogout) | Yes | User logout |
+| | `GET` | [`/users/me`](#get-usersme) | Yes | Get profile of current user |
+| | `GET` | [`/users/:id`](#get-usersid) | Yes | Get public profile of specified user |
+| | `PATCH` | [`/users/me`](#patch-usersme) | Yes | Update profile of current user |
+| | `GET` | [`/users/me/settings`](#get-usersmesettings) | Yes | Get settings of current user |
+| | `PATCH` | [`/users/me/settings`](#patch-usersmesettings) | Yes | Update settings of current user |
+| | `DELETE` | [`/users/me`](#delete-usersme) | Yes | Delete account of current user (soft delete) |
+| | `GET` | [`/users`](#get-users) | Yes | Search users |
+| **Friends & Blocks** | `GET` | [`/friends`](#get-friends) | Yes | Get friends list |
+| | `DELETE` | [`/friends/:id`](#delete-friendsid) | Yes | Remove friend relationship |
+| | `GET` | [`/friend-requests`](#get-friend-requests) | Yes | Get pending friend requests |
+| | `POST` | [`/friend-requests`](#post-friend-requests) | Yes | Send friend request |
+| | `PATCH` | [`/friend-requests/:id`](#patch-friend-requestsid) | Yes | Respond to friend request |
+| | `POST` | [`/blocks`](#post-blocks) | Yes | Block user |
+| | `DELETE` | [`/blocks/:id`](#delete-blocksid) | Yes | Unblock user |
+| **Chat Rooms** | `GET` | [`/rooms`](#get-rooms) | Yes | Get rooms list and summaries |
+| | `POST` | [`/rooms`](#post-rooms) | Yes | Create room (private or group) |
+| | `GET` | [`/rooms/:id`](#get-roomsid) | Yes | Get specified room details |
+| | `PATCH` | [`/rooms/:id`](#patch-roomsid) | Yes | Update room settings or transfer ownership |
+| | `POST` | [`/rooms/:id/members`](#post-roomsidmembers) | Yes | Join room via invite code |
+| | `DELETE` | [`/rooms/:id/members/me`](#delete-roomsidmembersme) | Yes | Leave room |
+| | `DELETE` | [`/rooms/:id`](#delete-roomsid) | Yes | Archive room (Owner only) |
+| **Member Management** | `GET` | [`/rooms/:id/members`](#get-roomsidmembers) | Yes | Get room members list |
+| | `PATCH` | [`/rooms/:id/members/:userId`](#patch-roomsidmembersuserid) | Yes | Approve member join or update member role/nickname |
+| | `DELETE` | [`/rooms/:id/members/:userId`](#delete-roomsidmembersuserid) | Yes | Kick member (Owner or Admin only) |
+| **Messages & Attachments** | `GET` | [`/rooms/:roomId/messages`](#get-roomsroomidmessages) | Yes | Get room message history (paginated) |
+| | `POST` | [`/attachments`](#post-attachments) | Yes | Upload attachment file |
+| | `GET` | [`/attachments/:id`](#get-attachmentsid) | Yes | Download attachment file |
+| **Folders** | `GET` | [`/folders`](#get-folders) | Yes | Get folders list |
+| | `POST` | [`/folders`](#post-folders) | Yes | Create new folder |
+| | `DELETE` | [`/folders/:id`](#delete-foldersid) | Yes | Delete folder |
+| | `PUT` | [`/folders/:id/rooms`](#put-foldersidrooms) | Yes | Update rooms associated with folder |
+| **Emergency Contacts** | `GET` | [`/users/me/emergency-contacts`](#get-usersmeemergency-contacts) | Yes | Get emergency contacts list |
+| | `POST` | [`/users/me/emergency-contacts`](#post-usersmeemergency-contacts) | Yes | Add or update emergency contact |
+| | `DELETE` | [`/users/me/emergency-contacts/:contactId`](#delete-usersmeemergency-contactscontactid) | Yes | Delete emergency contact |
+| | `POST` | [`/users/me/emergency-alert`](#post-usersmeemergency-alert) | Yes | Trigger emergency alert immediately to contacts |
+| | `POST` | [`/users/me/emergency-alert/check-inactivity`](#post-usersmeemergency-alertcheck-inactivity) | Yes | Check inactivity to trigger alert automatically |
 
 ### Socket.IO Real-Time Communication
 
