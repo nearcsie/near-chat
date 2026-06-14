@@ -288,7 +288,7 @@ interface ChatContextType {
   kickGroupMember: (roomId: string, userId: string) => Promise<Member[] | undefined>;
   transferGroupOwner: (roomId: string, userId: string) => Promise<Member[] | undefined>;
   handleDeleteGroupRoom: (roomId: string) => Promise<string | null>;
-  getReadAvatarsForMessage: (room: ChatRoom, msg: Message) => { name: string; avatarUrl: string }[];
+  getReadAvatarsForMessage: (room: ChatRoom, msg: Message) => { name: string; displayName?: string; avatarUrl: string }[];
 
   searchUsersForInvite: (query: string) => Promise<PublicUser[]>;
   handleJoinByInviteCode: (inviteCode: string) => Promise<string>;
@@ -1070,6 +1070,29 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
     localStorage.setItem("user", JSON.stringify(nextUser));
     setUser(nextUser);
+
+    if (nextUser.userId) {
+      setRooms((current) =>
+        current.map((room) => {
+          if (!room.members) return room;
+          const updatedMembers = room.members.map((m) => {
+            if (m.userId === nextUser.userId) {
+              return {
+                ...m,
+                name: nextUser.username,
+                avatarUrl: nextUser.avatar,
+              };
+            }
+            return m;
+          });
+          return {
+            ...room,
+            members: updatedMembers,
+          };
+        })
+      );
+    }
+
     return nextUser;
   };
 
@@ -1368,7 +1391,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     return remaining[0]?.id ?? null;
   };
 
-  const getReadAvatarsForMessage = (room: ChatRoom, msg: Message): { name: string; avatarUrl: string }[] => {
+  const getReadAvatarsForMessage = (room: ChatRoom, msg: Message): { name: string; displayName?: string; avatarUrl: string }[] => {
     if (room.type !== "group") return [];
 
     const roomReads = groupReadStates[room.id];
@@ -1378,7 +1401,11 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       .filter(([readerId, lastReadId]) => readerId !== currentUserId && lastReadId === msg.id)
       .map(([readerId]) => {
         const member = room.members?.find((m) => m.userId === readerId);
-        return { name: member?.nickname ?? member?.name ?? readerId, avatarUrl: member?.avatarUrl ?? "" };
+        return {
+          name: member?.name ?? readerId,
+          displayName: member?.nickname ?? member?.name ?? readerId,
+          avatarUrl: member?.avatarUrl ?? "",
+        };
       });
   };
 

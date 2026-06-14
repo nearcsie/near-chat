@@ -378,6 +378,11 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
                   onReply={() => setReplyTarget(msg)}
                   onRecall={() => handleRecallMessage(msg.id)}
                   canRecall={Boolean(msg.isOutgoing) || canManageMembers}
+                  avatarName={
+                    msg.isOutgoing
+                      ? user.username
+                      : senderMember?.name || msg.senderName
+                  }
                 />
 
                 {!msg.isRecalled && (

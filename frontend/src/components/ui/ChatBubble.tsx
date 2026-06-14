@@ -26,7 +26,7 @@ export interface ChatBubbleProps {
   attachments?: Attachment[];
   senderAvatar?: string;
   isRead?: boolean;
-  readByAvatars?: { name: string; avatarUrl: string }[];
+  readByAvatars?: { name: string; displayName?: string; avatarUrl: string }[];
   roomType?: "msg" | "group";
   onReply?: () => void;
   onRecall?: () => void;
@@ -34,6 +34,7 @@ export interface ChatBubbleProps {
   canEdit?: boolean;
   senderId?: string;
   messageId?: string;
+  avatarName?: string;
 }
 
 const renderMentionContent = (
@@ -76,6 +77,7 @@ export function ChatBubble({
   canEdit = false,
   senderId,
   messageId,
+  avatarName,
 }: ChatBubbleProps) {
   const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null>(null);
   const [popoverStyle, setPopoverStyle] = useState<React.CSSProperties>({});
@@ -175,7 +177,7 @@ export function ChatBubble({
           className="shrink-0 mt-1 relative cursor-pointer avatar-click-target"
           onClick={handleTogglePopover}
         >
-          <Avatar name={senderName} src={senderAvatar} size="sm" />
+          <Avatar name={avatarName || senderName} src={senderAvatar} size="sm" />
           {showPopover && (
             <ProfilePopover
               userId={senderId || ""}
@@ -373,7 +375,7 @@ export function ChatBubble({
               <div
                 key={idx}
                 className="h-4.5 w-4.5 border border-border-primary bg-surface-muted rounded-sm overflow-hidden select-none flex items-center justify-center"
-                title={reader.name}
+                title={reader.displayName || reader.name}
               >
                 {reader.avatarUrl ? (
                   <img src={resolveAssetUrl(reader.avatarUrl)} alt={reader.name} className="h-full w-full object-cover" />
