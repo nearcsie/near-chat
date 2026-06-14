@@ -191,4 +191,56 @@ describe('Room E2E', () => {
       .set('Authorization', `Bearer ${token}`);
     expect(fetchDeleted.status).toBe(404);
   });
+
+  it('should upload group avatar successfully by owner', async () => {
+    const createRes = await request(app)
+      .post('/api/v1/rooms')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        type: 'group',
+        name: 'Avatar E2E Room',
+      });
+    expect(createRes.status).toBe(201);
+    const roomId = createRes.body.roomId;
+
+    const buffer = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    const uploadRes = await request(app)
+      .post(`/api/v1/rooms/${roomId}/avatar`)
+      .set('Authorization', `Bearer ${token}`)
+      .attach('file', buffer, 'avatar.png');
+
+    expect(uploadRes.status).toBe(200);
+    expect(uploadRes.body.avatarUrl).toContain('/uploads/avatars/');
+
+    // Clean up uploaded file
+    const fs = await import('fs/promises');
+    const path = await import('path');
+    const filename = path.basename(uploadRes.body.avatarUrl);
+    const filepath = path.resolve(process.cwd(), 'uploads/avatars', filename);
+    await fs.unlink(filepath).catch(() => {});
+  });
+
+  it('should reject avatar upload by non-admin member', async () => {
+    const createRes = await request(app)
+      .post('/api/v1/rooms')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        type: 'group',
+        name: 'Avatar Reject Room',
+      });
+    const roomId = createRes.body.roomId;
+
+    await request(app)
+      .post(`/api/v1/rooms/${roomId}/members`)
+      .set('Authorization', `Bearer ${otherToken}`)
+      .send({ inviteCode: createRes.body.inviteCode });
+
+    const buffer = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    const uploadRes = await request(app)
+      .post(`/api/v1/rooms/${roomId}/avatar`)
+      .set('Authorization', `Bearer ${otherToken}`)
+      .attach('file', buffer, 'avatar.png');
+
+    expect(uploadRes.status).toBe(403);
+  });
 });
