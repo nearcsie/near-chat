@@ -87,3 +87,51 @@ jobs:
       - run: DATABASE_URL=$DATABASE_URL_TEST pnpm --prefix backend run migrate:up
       - run: pnpm --prefix backend run test:e2e
 
+  security-scan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scan backend dependencies for vulnerabilities
+        uses: OWASP/cve-lite-cli@v1
+        with:
+          path: "./backend"
+          all: "true"
+          verbose: "true"
+          fail-on: high
+          sarif: "true"
+      - name: Rename backend SARIF file
+        if: always()
+        run: |
+          if ls cve-lite-scan-*.sarif 1> /dev/null 2>&1; then
+            mv cve-lite-scan-*.sarif backend.sarif
+          fi
+      - name: Upload backend scan to GitHub Code Scanning
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: backend.sarif
+          category: backend
+      - name: Scan frontend dependencies for vulnerabilities
+        uses: OWASP/cve-lite-cli@v1
+        with:
+          path: "./frontend"
+          all: "true"
+          verbose: "true"
+          fail-on: high
+          sarif: "true"
+      - name: Rename frontend SARIF file
+        if: always()
+        run: |
+          if ls cve-lite-scan-*.sarif 1> /dev/null 2>&1; then
+            mv cve-lite-scan-*.sarif frontend.sarif
+          fi
+      - name: Upload frontend scan to GitHub Code Scanning
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: frontend.sarif
+          category: frontend
+
