@@ -12,6 +12,7 @@ interface UserService {
   getMe(userId: string): Promise<MyProfile>;
   getUserProfile(userId: string): Promise<UserProfile>;
   updateMe(userId: string, data: unknown): Promise<MyProfile>;
+  uploadAvatar(userId: string, file: Express.Multer.File): Promise<MyProfile>;
   getMySettings(userId: string): Promise<UserSettings>;
   updateMySettings(userId: string, data: unknown): Promise<UserSettings>;
   deleteMe(userId: string): Promise<void>;
@@ -42,6 +43,19 @@ export const makeUserController = (service: UserService) => ({
       }
       const userId = req.user!.userId;
       const updated = await service.updateMe(userId, parsed.data);
+      res.status(200).json(updated);
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async uploadAvatar(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      if (!req.file) {
+        return next(new ValidationError('file is required'));
+      }
+      const userId = req.user!.userId;
+      const updated = await service.uploadAvatar(userId, req.file);
       res.status(200).json(updated);
     } catch (err) {
       next(err);

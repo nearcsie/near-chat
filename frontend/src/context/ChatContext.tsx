@@ -58,6 +58,7 @@ import {
   transferRoomOwner,
   upsertEmergencyContact,
   uploadAttachment,
+  uploadAvatar as uploadAvatarApi,
   getActiveAccessToken,
   setActiveAccessToken,
   refreshTokens,
@@ -206,6 +207,7 @@ export interface ProfileInput {
   username: string;
   email: string;
   avatar: string;
+  avatarFile?: File | null;
   password?: string;
   bio?: string;
 }
@@ -259,7 +261,7 @@ interface ChatContextType {
   handleTyping: (roomId: string, isTyping: boolean) => void;
   handleUploadAttachment: (roomId: string, file: File) => Promise<void>;
   handleRecallMessage: (msgId: string) => void;
-  handleUpdateProfile: (profile: ProfileInput) => Promise<void>;
+  handleUpdateProfile: (profile: ProfileInput) => Promise<User>;
   handleUpdatePreferences: (preferences: PreferencesInput) => Promise<void>;
   handleCreateRoom: (name: string, type: "msg" | "group", folderId: string) => Promise<string>;
   handleOpenPrivateRoom: (targetUserId: string) => Promise<string>;
@@ -985,25 +987,58 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     };
 
     if (token) {
-      const updatedProfile = await updateMe(token, {
-        name: profile.username,
-        email: profile.email,
-        avatarUrl: profile.avatar,
-        bio: profile.bio,
-        ...(profile.password ? { password: profile.password } : {}),
-      });
-      nextUser = { ...nextUser, ...toStoredUser(updatedProfile, {
-        language: user.language ?? uiLanguage,
-        theme: user.theme ?? "light",
-        notifyDesktop: user.notifyDesktop ?? true,
-        notifySound: user.notifySound ?? true,
-        warningEnabled: user.warningEnabled ?? false,
-        warningDays: user.warningDays ?? 14,
-      }) };
+      const mergeStoredProfile = (updatedProfile: MyProfile) => {
+        nextUser = {
+          ...nextUser,
+          ...toStoredUser(updatedProfile, {
+            language: user.language ?? uiLanguage,
+            theme: user.theme ?? "light",
+            notifyDesktop: user.notifyDesktop ?? true,
+            notifySound: user.notifySound ?? true,
+            warningEnabled: user.warningEnabled ?? false,
+            warningDays: user.warningDays ?? 14,
+          }),
+        };
+      };
+
+      const updatePayload: {
+        name?: string;
+        email?: string;
+        avatarUrl?: string;
+        bio?: string;
+        password?: string;
+      } = {};
+
+      if (profile.username !== user.username) {
+        updatePayload.name = profile.username;
+      }
+      if (profile.email !== user.email) {
+        updatePayload.email = profile.email;
+      }
+      if ((profile.bio ?? "") !== (user.bio ?? "")) {
+        updatePayload.bio = profile.bio ?? "";
+      }
+      if (!profile.avatarFile && profile.avatar !== user.avatar) {
+        updatePayload.avatarUrl = profile.avatar;
+      }
+      if (profile.password) {
+        updatePayload.password = profile.password;
+      }
+
+      if (Object.keys(updatePayload).length > 0) {
+        const updatedProfile = await updateMe(token, updatePayload);
+        mergeStoredProfile(updatedProfile);
+      }
+
+      if (profile.avatarFile) {
+        const uploadedProfile = await uploadAvatarApi(token, profile.avatarFile);
+        mergeStoredProfile(uploadedProfile);
+      }
     }
 
     localStorage.setItem("user", JSON.stringify(nextUser));
     setUser(nextUser);
+    return nextUser;
   };
 
   const handleUpdatePreferences = async (preferences: PreferencesInput) => {
