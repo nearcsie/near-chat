@@ -31,6 +31,21 @@ export default function FriendInfoPanel({
 
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const handleCopyUid = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const uidToCopy = userId || friends.find((f) => f.name === friendName)?.id;
+    if (!uidToCopy) return;
+    navigator.clipboard.writeText(uidToCopy)
+      .then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      })
+      .catch((err) => {
+        console.error("Failed to copy UID:", err);
+      });
+  };
 
   // Fetch user profile if userId is provided
   useEffect(() => {
@@ -147,7 +162,20 @@ export default function FriendInfoPanel({
             <div className="min-w-0 w-full">
               <h4 className="text-sm font-bold text-foreground truncate">{displayName}</h4>
               {targetId && (
-                <p className="text-[10px] text-text-muted font-mono truncate mt-1">{targetId}</p>
+                <div className="relative inline-block mt-1 max-w-full">
+                  <p
+                    onClick={handleCopyUid}
+                    title="Click to copy UID"
+                    className="text-[10px] text-text-muted font-mono truncate cursor-pointer hover:text-foreground hover:underline transition-colors"
+                  >
+                    {targetId}
+                  </p>
+                  {copied && (
+                    <span className="absolute left-1/2 bottom-full -translate-x-1/2 mb-1 z-10 px-2 py-0.5 text-[9px] font-bold text-white bg-zinc-800 border border-zinc-700 rounded shadow-md whitespace-nowrap">
+                      Copied!
+                    </span>
+                  )}
+                </div>
               )}
             </div>
           </div>

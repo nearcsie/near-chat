@@ -43,6 +43,19 @@ export default function ProfilePopover({
 
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [copied, setCopied] = useState(false);
+
+  const handleCopyUid = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(userId)
+      .then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      })
+      .catch((err) => {
+        console.error("Failed to copy UID:", err);
+      });
+  };
 
   // Close popover if clicked outside
   useEffect(() => {
@@ -175,7 +188,20 @@ export default function ProfilePopover({
               <h4 className="text-xs font-bold text-foreground truncate">
                 {nickname && nickname !== displayName ? `${displayName} (${nickname})` : displayName}
               </h4>
-              <p className="text-[9px] text-text-muted font-mono truncate mt-0.5">{userId}</p>
+              <div className="relative inline-block mt-0.5 max-w-full">
+                <p
+                  onClick={handleCopyUid}
+                  title="Click to copy UID"
+                  className="text-[9px] text-text-muted font-mono truncate cursor-pointer hover:text-foreground hover:underline transition-colors"
+                >
+                  {userId}
+                </p>
+                {copied && (
+                  <span className="absolute left-1/2 bottom-full -translate-x-1/2 mb-1 z-[110] px-1.5 py-0.5 text-[8px] font-bold text-white bg-zinc-800 border border-zinc-700 rounded shadow-md whitespace-nowrap">
+                    Copied!
+                  </span>
+                )}
+              </div>
             </div>
           </div>
 
