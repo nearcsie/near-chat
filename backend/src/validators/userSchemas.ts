@@ -45,6 +45,7 @@ export const updateSettingsSchema = z
 export const searchQuerySchema = z.object({
   q: z.string().trim().min(1, 'Search query cannot be empty'),
   mode: z.enum(['name', 'userId', 'email']).optional(),
+  friendsOnly: z.preprocess((val) => val === 'true' || val === true, z.boolean()).optional(),
 });
 
 type RegisterSchema = z.infer<typeof registerSchema>;

@@ -281,10 +281,11 @@ export const updateMySettings = (
 
 export const searchUsers = (
   token: string,
-  params: { query: string; mode?: 'name' | 'userId' | 'email' },
+  params: { query: string; mode?: 'name' | 'userId' | 'email'; friendsOnly?: boolean },
 ): Promise<SearchUserResult[]> => {
   const qs = new URLSearchParams({ q: params.query });
   if (params.mode) qs.set('mode', params.mode);
+  if (params.friendsOnly) qs.set('friendsOnly', 'true');
   return requestJson<SearchUserResult[]>(`/users?${qs.toString()}`, {}, { token });
 };
 
