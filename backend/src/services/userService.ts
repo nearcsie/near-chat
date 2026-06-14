@@ -311,12 +311,17 @@ export const makeUserService = (
         throw new ValidationError(parsed.error.issues[0]?.message ?? 'Invalid query');
       }
       const users = await repo.search(parsed.data.q, parsed.data.mode);
-      return users.map((user) => ({
-        userId: user.userId,
-        name: user.name,
-        email: user.email,
-        avatarUrl: user.avatarUrl,
-      }));
+      return users.map((user) => {
+        const result: SearchUserResult = {
+          userId: user.userId,
+          name: user.name,
+          avatarUrl: user.avatarUrl,
+        };
+        if (parsed.data.mode !== 'name') {
+          result.email = user.email;
+        }
+        return result;
+      });
     },
 
     async refresh(refreshToken: string): Promise<AuthResponse & { refreshToken: string }> {

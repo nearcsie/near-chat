@@ -42,9 +42,10 @@ export interface PublicUser {
   avatarUrl?: string;
 }
 
-/** Extended projection returned by the user-search endpoint — includes email for display. */
+/** Extended projection returned by the user-search endpoint.
+ * email is omitted when mode=name to prevent email enumeration via fuzzy search. */
 export interface SearchUserResult extends PublicUser {
-  email: string;
+  email?: string;
 }
 
 export interface UserProfile {

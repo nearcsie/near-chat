@@ -58,10 +58,10 @@ export default function FriendsPanel() {
   const outgoingRequests = friendRequests.filter((r) => r.direction === "outgoing");
 
   /** Convert any user with id/name/email into a Friend shape for the sidebar. */
-  const toFriendShape = (user: { id: string; name: string; email: string }): Friend => ({
+  const toFriendShape = (user: { id: string; name: string; email?: string }): Friend => ({
     id: user.id,
     name: user.name,
-    email: user.email,
+    email: user.email ?? '',
     status: "offline",
   });
 
@@ -411,7 +411,7 @@ export default function FriendsPanel() {
                             setSelectedFriendForSidebar({
                               id: user.userId,
                               name: user.name,
-                              email: user.email,
+                              email: user.email ?? '',
                               status: "offline",
                             })
                           }
@@ -420,7 +420,9 @@ export default function FriendsPanel() {
                           <Avatar name={user.name} size="sm" />
                           <div className="min-w-0">
                             <p className="text-sm font-semibold text-foreground truncate">{user.name}</p>
-                            <p className="text-[10px] text-text-muted font-mono truncate">{user.email}</p>
+                            {user.email && (
+                              <p className="text-[10px] text-text-muted font-mono truncate">{user.email}</p>
+                            )}
                           </div>
                         </div>
                         <div className="shrink-0">

@@ -363,6 +363,37 @@ describe('userService', () => {
 
       expect(mockRepo.search).toHaveBeenCalledWith('Test', 'name');
     });
+
+    it('omits email from results when mode=name to prevent email enumeration', async () => {
+      mockRepo.search.mockResolvedValue([baseUser()]);
+
+      const results = await userService.search('Test', 'name');
+
+      expect(results).toEqual([
+        {
+          userId: 'u1',
+          name: 'Test User',
+          avatarUrl: 'https://example.com/avatar.png',
+        },
+      ]);
+      expect(results[0]).not.toHaveProperty('email');
+    });
+
+    it('includes email in results when mode=email', async () => {
+      mockRepo.search.mockResolvedValue([baseUser()]);
+
+      const results = await userService.search('test@example.com', 'email');
+
+      expect(results[0]).toMatchObject({ email: 'test@example.com' });
+    });
+
+    it('includes email in results when mode=userId', async () => {
+      mockRepo.search.mockResolvedValue([baseUser()]);
+
+      const results = await userService.search('u1', 'userId');
+
+      expect(results[0]).toMatchObject({ email: 'test@example.com' });
+    });
   });
 
   describe('schema sanity checks', () => {
