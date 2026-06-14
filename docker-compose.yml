@@ -30,6 +30,10 @@ services:
       - JWT_EXPIRES_IN=${JWT_EXPIRES_IN}
       - RATE_LIMIT_DISABLED=${RATE_LIMIT_DISABLED}
       - CORS_ORIGINS=${CORS_ORIGINS}
+      - ATTACHMENT_TYPE_RESTRICTION_ENABLED=${ATTACHMENT_TYPE_RESTRICTION_ENABLED:-false}
+      - ATTACHMENT_ALLOWED_MIME_TYPES=${ATTACHMENT_ALLOWED_MIME_TYPES:-image/jpeg,image/png,image/gif,application/pdf,application/zip,text/plain}
+      - ATTACHMENT_ALLOWED_EXTENSIONS=${ATTACHMENT_ALLOWED_EXTENSIONS:-.jpg,.jpeg,.png,.gif,.pdf,.zip,.txt}
+      - ATTACHMENT_MAX_BYTES=${ATTACHMENT_MAX_BYTES:-10485760}
       - CI=true
     volumes:
       - ./backend:/app
