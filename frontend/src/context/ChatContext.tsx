@@ -303,6 +303,7 @@ interface ChatContextType {
   setUiLanguage: (language: UiLanguage) => void;
   activeProfilePopover: { instanceId: string; userId: string } | null;
   setActiveProfilePopover: React.Dispatch<React.SetStateAction<{ instanceId: string; userId: string } | null>>;
+  refreshSocialData: () => Promise<void>;
 }
 
 const ChatContext = createContext<ChatContextType | undefined>(undefined);
@@ -1449,7 +1450,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     if (request?.direction === "incoming") {
       await respondFriendRequest(token, requestId, "rejected");
     }
-    setFriendRequests((prev) => prev.filter((item) => item.id !== requestId));
+    await refreshSocialData(token);
   };
 
   const removeFriend = async (friendId: string) => {
@@ -1464,18 +1465,14 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     if (!friend) return;
 
     await blockUserApi(token, friendId);
-    setBlockedUsers((prev) => {
-      if (prev.some((item) => item.id === friendId)) return prev;
-      return [...prev, { id: friend.id, name: friend.name, email: friend.email }];
-    });
     await refreshSocialData(token);
   };
 
   const unblockUser = async (blockedId: string) => {
     if (token) {
       await unblockUserApi(token, blockedId);
+      await refreshSocialData(token);
     }
-    setBlockedUsers((prev) => prev.filter((item) => item.id !== blockedId));
   };
 
   const saveEmergencySettings = async (settings: EmergencySettings) => {
@@ -1632,6 +1629,12 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     });
   }, [rooms, friends, currentUserId]);
 
+  const handleRefreshSocialData = async () => {
+    if (token) {
+      await refreshSocialData(token);
+    }
+  };
+
   return (
     <ChatContext.Provider
       value={{
@@ -1696,6 +1699,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         typingUsers,
         activeProfilePopover,
         setActiveProfilePopover,
+        refreshSocialData: handleRefreshSocialData,
       }}
     >
       {children}

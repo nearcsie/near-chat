@@ -27,6 +27,7 @@ export default function FriendsPanel() {
     blockFriend,
     unblockUser,
     setSelectedFriendForSidebar,
+    refreshSocialData,
   } = useChat();
   const { t } = useTranslation();
 
@@ -102,6 +103,7 @@ export default function FriendsPanel() {
     try {
       await sendFriendRequestApi(token, targetUserId);
       setSentIds((prev) => new Set(prev).add(targetUserId));
+      await refreshSocialData();
     } catch (err) {
       console.error(err);
       const msg = err instanceof Error ? err.message : "Failed";
