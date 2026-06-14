@@ -1412,7 +1412,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   };
 
   const getReadAvatarsForMessage = (room: ChatRoom, msg: Message): { name: string; displayName?: string; avatarUrl: string }[] => {
-    if (room.type !== "group") return [];
+    if (room.type !== "group" && room.type !== "msg") return [];
 
     const roomReads = groupReadStates[room.id];
     if (!roomReads) return [];

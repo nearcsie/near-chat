@@ -1,7 +1,23 @@
 import { io, type Socket } from 'socket.io-client';
 import type { ClientToServerEvents, ServerToClientEvents } from '@shared/types';
 
-const SOCKET_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
+const getSocketUrl = (): string => {
+  if (typeof window !== 'undefined') {
+    const envUrl = process.env.NEXT_PUBLIC_API_URL;
+    let port = '4005';
+    if (envUrl) {
+      try {
+        const urlObj = new URL(envUrl);
+        if (urlObj.port) port = urlObj.port;
+      } catch (e) {
+        // ignore
+      }
+    }
+    return `${window.location.protocol}//${window.location.hostname}:${port}`;
+  }
+  return process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
+};
+const SOCKET_URL = getSocketUrl();
 
 export type ChatSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 
