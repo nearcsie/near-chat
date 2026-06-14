@@ -207,9 +207,6 @@ export function ChatBubble({
         <div className="flex items-end gap-1.5">
           {isOutgoing && (
             <div className="flex flex-col items-end text-[10px] text-text-muted font-mono leading-none select-none mb-0.5">
-              {roomType === "msg" && isRead && (
-                <span className="text-primary font-bold text-[9px] mb-1 font-sans">已讀</span>
-              )}
               <span>{timestamp}</span>
             </div>
           )}
@@ -369,7 +366,7 @@ export function ChatBubble({
           )}
         </div>
 
-        {roomType === "group" && readByAvatars && readByAvatars.length > 0 && (
+        {(roomType === "group" || roomType === "msg") && readByAvatars && readByAvatars.length > 0 && (
           <div className="flex gap-1 mt-1 justify-end w-full px-0.5">
             {readByAvatars.map((reader, idx) => (
               <div
