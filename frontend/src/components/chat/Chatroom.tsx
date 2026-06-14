@@ -73,7 +73,6 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
   const [mentionDraft, setMentionDraft] = useState<MentionDraft | null>(null);
   const [selectedMentionIndex, setSelectedMentionIndex] = useState(0);
   const [replyTarget, setReplyTarget] = useState<Message | null>(null);
-  const [showHeaderPopover, setShowHeaderPopover] = useState(false);
   const [isModifyNickOpen, setIsModifyNickOpen] = useState(false);
   const [nickInputValue, setNickInputValue] = useState("");
   const [pendingAttachment, setPendingAttachment] = useState<File | null>(null);
@@ -104,14 +103,6 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
     setPrevMentionResetKey(mentionResetKey);
     setSelectedMentionIndex(0);
   }
-
-  // Sync showHeaderPopover with activeProfilePopover
-  useEffect(() => {
-    const isHeaderActive = activeProfilePopover?.instanceId === `header-${activeRoom?.id}`;
-    if (!isHeaderActive && showHeaderPopover) {
-      setShowHeaderPopover(false);
-    }
-  }, [activeProfilePopover, activeRoom?.id, showHeaderPopover]);
 
   // Scroll to bottom when room or messages change
   const lastScrolledRoomIdRef = useRef<string | null>(null);
@@ -268,25 +259,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
   return (
     <div className="flex-1 flex flex-col bg-background h-full overflow-hidden">
       <div className="h-14 border-b border-border-primary px-6 flex items-center justify-between select-none shrink-0 bg-surface-card z-10">
-        <div
-          className={`flex items-center gap-3 relative avatar-click-target ${
-            activeRoom.type === "msg" ? "cursor-pointer hover:opacity-85 transition-opacity" : ""
-          }`}
-          onClick={() => {
-            if (activeRoom.type === "msg") {
-              const instanceId = `header-${activeRoom.id}`;
-              if (activeProfilePopover?.instanceId === instanceId) {
-                setActiveProfilePopover(null);
-              } else {
-                const otherMember = activeRoom.members?.find((m) => m.userId !== user.userId);
-                if (otherMember) {
-                  setShowHeaderPopover(true);
-                  setActiveProfilePopover({ instanceId, userId: otherMember.userId });
-                }
-              }
-            }
-          }}
-        >
+        <div className="flex items-center gap-3 relative">
           <Avatar
             name={activeRoom.name}
             src={getAvatarForUser(activeRoom.name, user.avatar, user.username)}
@@ -306,21 +279,6 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
               </span>
             )}
           </div>
-
-          {showHeaderPopover && activeRoom.type === "msg" && (() => {
-            const otherMember = activeRoom.members?.find((m) => m.userId !== user.userId);
-            return (
-              <ProfilePopover
-                userId={otherMember?.userId || ""}
-                username={activeRoom.name}
-                onClose={(e) => {
-                  e.stopPropagation();
-                  setActiveProfilePopover(null);
-                }}
-                position="bottom"
-              />
-            );
-          })()}
         </div>
 
         <div className="flex items-center gap-3">
