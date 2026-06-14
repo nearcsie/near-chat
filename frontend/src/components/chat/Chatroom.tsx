@@ -107,27 +107,14 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
 
   // Scroll to bottom when room or messages change
   const lastScrolledRoomIdRef = useRef<string | null>(null);
-  const lastMessagesLengthRef = useRef<number>(0);
-  const lastMessageIdRef = useRef<string | null>(null);
-
   useLayoutEffect(() => {
-    const activeRoomMessages = messages.filter((m) => m.roomId === roomId);
-    const latestMessage = activeRoomMessages.at(-1);
-    const latestMessageId = latestMessage?.id ?? null;
-    const currentLength = activeRoomMessages.length;
-
     if (lastScrolledRoomIdRef.current !== roomId) {
       messageEndRef.current?.scrollIntoView({ behavior: "auto" });
-      lastScrolledRoomIdRef.current = roomId;
-      lastMessagesLengthRef.current = currentLength;
-      lastMessageIdRef.current = latestMessageId;
-    } else if (
-      currentLength > lastMessagesLengthRef.current ||
-      latestMessageId !== lastMessageIdRef.current
-    ) {
+      if (messages.length > 0) {
+        lastScrolledRoomIdRef.current = roomId;
+      }
+    } else {
       messageEndRef.current?.scrollIntoView({ behavior: "smooth" });
-      lastMessagesLengthRef.current = currentLength;
-      lastMessageIdRef.current = latestMessageId;
     }
   }, [roomId, messages]);
 
