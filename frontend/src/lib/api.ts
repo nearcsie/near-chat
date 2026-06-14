@@ -13,6 +13,7 @@ import type {
   Room,
   RoomMember,
   RoomSummary,
+  SearchUserResult,
   UserProfile,
   UserSettings,
 } from '@shared/types';
@@ -278,9 +279,13 @@ export const updateMySettings = (
     { token },
   );
 
-export const searchUsers = (token: string, params: { query: string }): Promise<PublicUser[]> => {
-  const query = new URLSearchParams({ q: params.query });
-  return requestJson<PublicUser[]>(`/users?${query.toString()}`, {}, { token });
+export const searchUsers = (
+  token: string,
+  params: { query: string; mode?: 'name' | 'userId' | 'email' },
+): Promise<SearchUserResult[]> => {
+  const qs = new URLSearchParams({ q: params.query });
+  if (params.mode) qs.set('mode', params.mode);
+  return requestJson<SearchUserResult[]>(`/users?${qs.toString()}`, {}, { token });
 };
 
 export const listFriends = (token: string): Promise<FriendResponse[]> =>

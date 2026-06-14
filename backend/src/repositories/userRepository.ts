@@ -2,6 +2,10 @@ import { Pool } from "pg";
 import type { User } from "@shared/types";
 import type { IUserRepository } from "./IUserRepository";
 
+const USER_COLUMNS =
+  'user_id, name, email, password_hash, bio, avatar_url, lang_preference, app_theme, ' +
+  'notify_desktop, notify_sound, warning_enabled, warning_days, last_activity, created_at, deleted_at';
+
 function mapRowToUser(row: any): User {
   return {
     userId: row.user_id,
@@ -26,22 +30,47 @@ export class UserRepository implements IUserRepository {
   constructor(private db: Pool) {}
 
   async findById(userId: string): Promise<User | null> {
-    const res = await this.db.query("SELECT * FROM users WHERE user_id = $1 AND deleted_at IS NULL", [userId]);
+    const res = await this.db.query(
+      `SELECT ${USER_COLUMNS} FROM users WHERE user_id = $1 AND deleted_at IS NULL`,
+      [userId]
+    );
     if (res.rows.length === 0) return null;
     return mapRowToUser(res.rows[0]);
   }
 
   async findByEmail(email: string): Promise<User | null> {
-    const res = await this.db.query("SELECT * FROM users WHERE email = $1 AND deleted_at IS NULL", [email]);
+    const res = await this.db.query(
+      `SELECT ${USER_COLUMNS} FROM users WHERE email = $1 AND deleted_at IS NULL`,
+      [email]
+    );
     if (res.rows.length === 0) return null;
     return mapRowToUser(res.rows[0]);
   }
 
-  async search(query: string): Promise<User[]> {
-    const res = await this.db.query(
-      `SELECT * FROM users WHERE (name ILIKE $1 OR user_id::text = $2 OR email ILIKE $1) AND deleted_at IS NULL LIMIT 20`,
-      [`%${query}%`, query]
-    );
+  async search(query: string, mode?: 'name' | 'userId' | 'email'): Promise<User[]> {
+    let res;
+    if (mode === 'userId') {
+      res = await this.db.query(
+        `SELECT ${USER_COLUMNS} FROM users WHERE user_id::text = $1 AND deleted_at IS NULL LIMIT 20`,
+        [query]
+      );
+    } else if (mode === 'email') {
+      res = await this.db.query(
+        `SELECT ${USER_COLUMNS} FROM users WHERE email = $1 AND deleted_at IS NULL LIMIT 20`,
+        [query]
+      );
+    } else if (mode === 'name') {
+      res = await this.db.query(
+        `SELECT ${USER_COLUMNS} FROM users WHERE name ILIKE $1 AND deleted_at IS NULL LIMIT 20`,
+        [`%${query}%`]
+      );
+    } else {
+      // Legacy: combined search across name, user_id, and email
+      res = await this.db.query(
+        `SELECT ${USER_COLUMNS} FROM users WHERE (name ILIKE $1 OR user_id::text = $2 OR email ILIKE $1) AND deleted_at IS NULL LIMIT 20`,
+        [`%${query}%`, query]
+      );
+    }
     return res.rows.map(mapRowToUser);
   }
 
@@ -60,7 +89,7 @@ export class UserRepository implements IUserRepository {
     const res = await this.db.query(
       `INSERT INTO users (name, email, password_hash)
        VALUES ($1, $2, $3)
-       RETURNING *`,
+       RETURNING ${USER_COLUMNS}`,
       [data.name, data.email, data.passwordHash]
     );
     return mapRowToUser(res.rows[0]);
@@ -145,7 +174,10 @@ export class UserRepository implements IUserRepository {
     }
 
     if (fields.length === 0) {
-      const res = await this.db.query("SELECT * FROM users WHERE user_id = $1", [userId]);
+      const res = await this.db.query(
+        `SELECT ${USER_COLUMNS} FROM users WHERE user_id = $1`,
+        [userId]
+      );
       if (res.rows.length === 0) {
         throw new Error("User not found");
       }
@@ -154,10 +186,10 @@ export class UserRepository implements IUserRepository {
 
     values.push(userId);
     const query = `
-      UPDATE users 
-      SET ${fields.join(", ")} 
-      WHERE user_id = $${queryIdx} 
-      RETURNING *
+      UPDATE users
+      SET ${fields.join(", ")}
+      WHERE user_id = $${queryIdx}
+      RETURNING ${USER_COLUMNS}
     `;
     const res = await this.db.query(query, values);
     if (res.rows.length === 0) {

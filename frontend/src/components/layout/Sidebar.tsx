@@ -11,6 +11,7 @@ import { Modal } from "@/components/ui/Modal";
 import { useTranslation } from "@/hooks/useTranslation";
 import ChatList from "./ChatList";
 import FriendInfoPanel from "@/components/chat/FriendInfoPanel";
+import { Icon } from "@iconify/react";
 
 export default function Sidebar() {
   const router = useRouter();
@@ -37,13 +38,12 @@ export default function Sidebar() {
   const activeRoomId = params?.chatId as string | undefined;
   const isSettingsPage = pathname === "/settings";
   const isChatPage = pathname === "/" || pathname.startsWith("/chat");
-  const [isCreateRoomOpen, setIsCreateRoomOpen] = useState(false);
-  const [isCreateFolderOpen, setIsCreateFolderOpen] = useState(false);
-  const [isJoinRoomOpen, setIsJoinRoomOpen] = useState(false);
+  const [isActionsModalOpen, setIsActionsModalOpen] = useState(false);
+  const [actionsView, setActionsView] = useState<"menu" | "createGroup" | "createFolder" | "joinGroup">("menu");
   const [joinInviteCode, setJoinInviteCode] = useState("");
   const [joinError, setJoinError] = useState("");
   const [newRoomName, setNewRoomName] = useState("");
-  const [newRoomType, setNewRoomType] = useState<"msg" | "group">("msg");
+  const [newRoomType, setNewRoomType] = useState<"msg" | "group">("group");
   const [newRoomFolder, setNewRoomFolder] = useState("");
   const [newFolderName, setNewFolderName] = useState("");
 
@@ -54,10 +54,12 @@ export default function Sidebar() {
     if (!newRoomName.trim()) return;
 
     try {
-      const newId = await handleCreateRoom(newRoomName, newRoomType, newRoomFolder);
+      // Force roomType to "group"
+      const newId = await handleCreateRoom(newRoomName, "group", newRoomFolder);
       setNewRoomName("");
       setNewRoomFolder("");
-      setIsCreateRoomOpen(false);
+      setIsActionsModalOpen(false);
+      setActionsView("menu");
 
       if (newId) {
         router.push(`/chat/${newId}`);
@@ -75,7 +77,8 @@ export default function Sidebar() {
     try {
       await handleCreateFolder(newFolderName);
       setNewFolderName("");
-      setIsCreateFolderOpen(false);
+      setIsActionsModalOpen(false);
+      setActionsView("menu");
     } catch (error) {
       console.error(error);
       alert(error instanceof Error ? error.message : "Failed to create folder");
@@ -91,7 +94,8 @@ export default function Sidebar() {
     try {
       const newId = await handleJoinByInviteCode(joinInviteCode);
       setJoinInviteCode("");
-      setIsJoinRoomOpen(false);
+      setIsActionsModalOpen(false);
+      setActionsView("menu");
       router.push(`/chat/${newId}`);
     } catch (error) {
       setJoinError(error instanceof Error ? error.message : t("sidebar.joinFailed"));
@@ -106,12 +110,7 @@ export default function Sidebar() {
       label: t("rail.chats"),
       active: pathname === "/" || pathname.startsWith("/chat"),
       onClick: () => router.push(firstChatPath),
-      icon: (
-        <svg className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-          <path strokeLinecap="round" strokeLinejoin="round" d="M7 8h10M7 12h6" />
-          <path strokeLinecap="round" strokeLinejoin="round" d="M5 19l3.5-3H18a3 3 0 003-3V7a3 3 0 00-3-3H6a3 3 0 00-3 3v6a3 3 0 003 3h.5L5 19z" />
-        </svg>
-      ),
+      icon: <Icon icon="boxicons:message-detail" className="h-5 w-5 shrink-0" />,
     },
     {
       label: t("rail.friends"),
@@ -121,44 +120,25 @@ export default function Sidebar() {
         router.push("/friends");
       },
       badge: pendingIncoming,
-      icon: (
-        <svg className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-          <path strokeLinecap="round" strokeLinejoin="round" d="M16 11a4 4 0 10-8 0 4 4 0 008 0z" />
-          <path strokeLinecap="round" strokeLinejoin="round" d="M4 20a8 8 0 0116 0" />
-        </svg>
-      ),
+      icon: <Icon icon="boxicons:group" className="h-5 w-5 shrink-0" />,
     },
     {
       label: t("rail.emergency"),
       active: pathname === "/emergency",
       onClick: () => router.push("/emergency"),
-      icon: (
-        <svg className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-          <path strokeLinecap="round" strokeLinejoin="round" d="M12 3l8 15H4L12 3z" />
-          <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 3h.01" />
-        </svg>
-      ),
+      icon: <Icon icon="boxicons:alert-triangle" className="h-5 w-5 shrink-0" />,
     },
     {
       label: t("sidebar.settings"),
       active: isSettingsPage,
       onClick: () => router.push("/settings"),
-      icon: (
-        <svg className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-          <path strokeLinecap="round" strokeLinejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.43l-1.003.828c-.293.241-.438.613-.43.992a7.723 7.723 0 010 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.43l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 010-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.28z" />
-          <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-        </svg>
-      ),
+      icon: <Icon icon="boxicons:cog" className="h-5 w-5 shrink-0" />,
     },
     {
       label: t("sidebar.logout"),
       active: false,
       onClick: handleLogout,
-      icon: (
-        <svg className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-          <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9" />
-        </svg>
-      ),
+      icon: <Icon icon="boxicons:arrow-out-left-square-half-filled" className="h-5 w-5 shrink-0" />,
     },
   ];
 
@@ -169,9 +149,7 @@ export default function Sidebar() {
           {/* Search bar */}
           <div className="flex-1 relative">
             <span className="absolute inset-y-0 left-0 flex items-center pl-2 text-text-muted">
-              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
+              <Icon icon="boxicons:bx-search" className="h-3.5 w-3.5" />
             </span>
             <input
               type="text"
@@ -183,15 +161,19 @@ export default function Sidebar() {
           </div>
           {/* Action buttons */}
           <div className="flex gap-1 shrink-0">
-            <IconButton label={t("sidebar.newFolder")} onClick={() => setIsCreateFolderOpen(true)}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M3 7h6l2 2h10v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" />
-            </IconButton>
-            <IconButton label={t("sidebar.newChat")} onClick={() => setIsCreateRoomOpen(true)}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-            </IconButton>
-            <IconButton label={t("sidebar.joinGroup")} onClick={() => { setJoinInviteCode(""); setJoinError(""); setIsJoinRoomOpen(true); }}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M11 16l-4-4m0 0l4-4m-4 4h14" />
-            </IconButton>
+            <IconButton
+              label={t("sidebar.actions")}
+              icon="boxicons:plus"
+              onClick={() => {
+                setJoinInviteCode("");
+                setJoinError("");
+                setNewRoomName("");
+                setNewRoomFolder("");
+                setNewFolderName("");
+                setActionsView("menu");
+                setIsActionsModalOpen(true);
+              }}
+            />
           </div>
         </div>
       ) : pathname === "/friends" && selectedFriendForSidebar ? (
@@ -203,7 +185,7 @@ export default function Sidebar() {
       ) : (
         <div className="h-14 border-b border-border-primary px-4 flex items-center justify-between select-none shrink-0" />
       )}
-
+ 
       <div className="flex-1 overflow-y-auto select-none flex flex-col">
         {isChatPage ? (
           <ChatList searchQuery={searchQuery} />
@@ -216,10 +198,7 @@ export default function Sidebar() {
             />
           ) : (
             <div className="flex flex-col items-center justify-center h-full text-text-muted text-xs text-center p-4">
-              <svg className="h-10 w-10 text-text-muted/30 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M16 11a4 4 0 10-8 0 4 4 0 008 0z" />
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4 20a8 8 0 0116 0" />
-              </svg>
+              <Icon icon="boxicons:user" className="h-10 w-10 text-text-muted/30 mb-2" />
               <p>{t("profileCard.selectPrompt")}</p>
             </div>
           )
@@ -266,104 +245,151 @@ export default function Sidebar() {
         </div>
       </div>
 
-      <Modal isOpen={isCreateRoomOpen} onClose={() => setIsCreateRoomOpen(false)} title={t("sidebar.createChat")}>
-        <form onSubmit={handleCreateRoomSubmit} className="flex flex-col gap-5">
-          <Input
-            label={t("sidebar.chatName")}
-            value={newRoomName}
-            onChange={(event) => setNewRoomName(event.target.value)}
-            required
-            placeholder={t("sidebar.chatNamePlaceholder")}
-          />
-          <div className="flex gap-6">
-            <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
-              <input
-                type="radio"
-                name="roomType"
-                checked={newRoomType === "msg"}
-                onChange={() => setNewRoomType("msg")}
-                className="accent-primary"
-              />
-              {t("sidebar.directMessage")}
-            </label>
-            <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
-              <input
-                type="radio"
-                name="roomType"
-                checked={newRoomType === "group"}
-                onChange={() => setNewRoomType("group")}
-                className="accent-primary"
-              />
-              {t("sidebar.group")}
-            </label>
-          </div>
-          <label className="flex flex-col gap-1.5">
-            <span className="text-xs font-bold uppercase tracking-wider text-text-muted">{t("sidebar.folder")}</span>
-            <select
-              value={newRoomFolder}
-              onChange={(event) => setNewRoomFolder(event.target.value)}
-              className="bg-surface-card border border-border-secondary hover:border-border-primary focus:border-primary focus:outline-none rounded-sm px-3 py-2.5 text-sm text-foreground transition-colors"
+      <Modal
+        isOpen={isActionsModalOpen}
+        onClose={() => {
+          setIsActionsModalOpen(false);
+          setActionsView("menu");
+        }}
+        title={
+          actionsView === "menu"
+            ? t("sidebar.actions")
+            : actionsView === "createGroup"
+            ? t("sidebar.createGroup")
+            : actionsView === "createFolder"
+            ? t("sidebar.createFolder")
+            : t("sidebar.joinGroup")
+        }
+      >
+        {actionsView === "menu" && (
+          <div className="border border-border-primary rounded-sm bg-surface-card overflow-hidden flex flex-col">
+            {/* Create Group Card */}
+            <button
+              type="button"
+              onClick={() => {
+                setNewRoomName("");
+                setNewRoomFolder("");
+                setActionsView("createGroup");
+              }}
+              className="flex items-center gap-4 p-4 border-b border-border-primary hover:bg-surface-muted transition-all cursor-pointer text-left w-full group select-none rounded-none"
             >
-              <option value="">{t("sidebar.rootChats")}</option>
-              {folders.map((folder) => (
-                <option key={folder.id} value={folder.id}>
-                  {folder.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <div className="border-t border-border-primary pt-5 flex items-center justify-end gap-3">
-            <Button type="button" variant="secondary" onClick={() => setIsCreateRoomOpen(false)}>
-              {t("sidebar.cancel")}
-            </Button>
-            <Button type="submit" variant="primary">
-              {t("sidebar.create")}
-            </Button>
-          </div>
-        </form>
-      </Modal>
+              <Icon icon="boxicons:plus-square" className="h-6 w-6 text-text-muted group-hover:text-primary transition-colors shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold text-foreground leading-snug">{t("sidebar.createGroup")}</p>
+                <p className="text-xs text-text-muted mt-1 leading-normal">{t("sidebar.createGroupDesc")}</p>
+              </div>
+            </button>
 
-      <Modal isOpen={isCreateFolderOpen} onClose={() => setIsCreateFolderOpen(false)} title={t("sidebar.createFolder")}>
-        <form onSubmit={handleCreateFolderSubmit} className="flex flex-col gap-5">
-          <Input
-            label={t("sidebar.folderName")}
-            value={newFolderName}
-            onChange={(event) => setNewFolderName(event.target.value)}
-            required
-            placeholder={t("sidebar.folderNamePlaceholder")}
-          />
-          <div className="border-t border-border-primary pt-5 flex items-center justify-end gap-3">
-            <Button type="button" variant="secondary" onClick={() => setIsCreateFolderOpen(false)}>
-              {t("sidebar.cancel")}
-            </Button>
-            <Button type="submit" variant="primary">
-              {t("sidebar.create")}
-            </Button>
-          </div>
-        </form>
-      </Modal>
+            {/* Join Group Card */}
+            <button
+              type="button"
+              onClick={() => {
+                setJoinInviteCode("");
+                setJoinError("");
+                setActionsView("joinGroup");
+              }}
+              className="flex items-center gap-4 p-4 border-b border-border-primary hover:bg-surface-muted transition-all cursor-pointer text-left w-full group select-none rounded-none"
+            >
+              <Icon icon="boxicons:arrow-down-stroke-square" className="h-6 w-6 text-text-muted group-hover:text-primary transition-colors shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold text-foreground leading-snug">{t("sidebar.joinGroup")}</p>
+                <p className="text-xs text-text-muted mt-1 leading-normal">{t("sidebar.joinGroupDesc")}</p>
+              </div>
+            </button>
 
-      <Modal isOpen={isJoinRoomOpen} onClose={() => setIsJoinRoomOpen(false)} title={t("sidebar.joinGroup")}>
-        <form onSubmit={handleJoinRoomSubmit} className="flex flex-col gap-5">
-          <Input
-            label={t("sidebar.inviteCode")}
-            value={joinInviteCode}
-            onChange={(e) => setJoinInviteCode(e.target.value)}
-            required
-            placeholder={t("sidebar.inviteCodePlaceholder")}
-          />
-          {joinError && (
-            <p className="text-xs text-red-600">{joinError}</p>
-          )}
-          <div className="border-t border-border-primary pt-5 flex items-center justify-end gap-3">
-            <Button type="button" variant="secondary" onClick={() => setIsJoinRoomOpen(false)}>
-              {t("sidebar.cancel")}
-            </Button>
-            <Button type="submit" variant="primary">
-              {t("sidebar.join")}
-            </Button>
+            {/* Create Folder Card */}
+            <button
+              type="button"
+              onClick={() => {
+                setNewFolderName("");
+                setActionsView("createFolder");
+              }}
+              className="flex items-center gap-4 p-4 hover:bg-surface-muted transition-all cursor-pointer text-left w-full group select-none rounded-none"
+            >
+              <Icon icon="boxicons:folder-plus" className="h-6 w-6 text-text-muted group-hover:text-primary transition-colors shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold text-foreground leading-snug">{t("sidebar.createFolder")}</p>
+                <p className="text-xs text-text-muted mt-1 leading-normal">{t("sidebar.createFolderDesc")}</p>
+              </div>
+            </button>
           </div>
-        </form>
+        )}
+
+        {actionsView === "createGroup" && (
+          <form onSubmit={handleCreateRoomSubmit} className="flex flex-col gap-5">
+            <Input
+              label={t("sidebar.chatName")}
+              value={newRoomName}
+              onChange={(event) => setNewRoomName(event.target.value)}
+              required
+              placeholder={t("sidebar.chatNamePlaceholder")}
+            />
+            <label className="flex flex-col gap-1.5">
+              <span className="text-xs font-bold uppercase tracking-wider text-text-muted">{t("sidebar.folder")}</span>
+              <select
+                value={newRoomFolder}
+                onChange={(event) => setNewRoomFolder(event.target.value)}
+                className="bg-surface-card border border-border-secondary hover:border-border-primary focus:border-primary focus:outline-none rounded-sm px-3 py-2.5 text-sm text-foreground transition-colors"
+              >
+                <option value="">{t("sidebar.rootChats")}</option>
+                {folders.map((folder) => (
+                  <option key={folder.id} value={folder.id}>
+                    {folder.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="border-t border-border-primary pt-5 flex items-center justify-end gap-3">
+              <Button type="button" variant="secondary" onClick={() => setActionsView("menu")}>
+                {t("sidebar.back")}
+              </Button>
+              <Button type="submit" variant="primary">
+                {t("sidebar.create")}
+              </Button>
+            </div>
+          </form>
+        )}
+
+        {actionsView === "createFolder" && (
+          <form onSubmit={handleCreateFolderSubmit} className="flex flex-col gap-5">
+            <Input
+              label={t("sidebar.folderName")}
+              value={newFolderName}
+              onChange={(event) => setNewFolderName(event.target.value)}
+              required
+              placeholder={t("sidebar.folderNamePlaceholder")}
+            />
+            <div className="border-t border-border-primary pt-5 flex items-center justify-end gap-3">
+              <Button type="button" variant="secondary" onClick={() => setActionsView("menu")}>
+                {t("sidebar.back")}
+              </Button>
+              <Button type="submit" variant="primary">
+                {t("sidebar.create")}
+              </Button>
+            </div>
+          </form>
+        )}
+
+        {actionsView === "joinGroup" && (
+          <form onSubmit={handleJoinRoomSubmit} className="flex flex-col gap-5">
+            <Input
+              label={t("sidebar.inviteCode")}
+              value={joinInviteCode}
+              onChange={(e) => setJoinInviteCode(e.target.value)}
+              required
+              placeholder={t("sidebar.inviteCodePlaceholder")}
+            />
+            {joinError && <p className="text-xs text-red-600">{joinError}</p>}
+            <div className="border-t border-border-primary pt-5 flex items-center justify-end gap-3">
+              <Button type="button" variant="secondary" onClick={() => setActionsView("menu")}>
+                {t("sidebar.back")}
+              </Button>
+              <Button type="submit" variant="primary">
+                {t("sidebar.join")}
+              </Button>
+            </div>
+          </form>
+        )}
       </Modal>
     </div>
   );
@@ -372,22 +398,20 @@ export default function Sidebar() {
 function IconButton({
   label,
   onClick,
-  children,
+  icon,
 }: {
   label: string;
   onClick: () => void;
-  children: React.ReactNode;
+  icon: string;
 }) {
   return (
     <button
       onClick={onClick}
       title={label}
       aria-label={label}
-      className="p-1 text-text-muted hover:text-foreground border border-transparent hover:border-border-primary rounded-sm transition-colors cursor-pointer"
+      className="p-1 text-text-muted hover:text-foreground border border-transparent hover:border-border-primary rounded-sm transition-colors cursor-pointer flex items-center justify-center shrink-0"
     >
-      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-        {children}
-      </svg>
+      <Icon icon={icon} className="h-4 w-4" />
     </button>
   );
 }

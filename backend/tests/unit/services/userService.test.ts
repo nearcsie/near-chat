@@ -330,6 +330,7 @@ describe('userService', () => {
         {
           userId: 'u1',
           name: 'Test User',
+          email: 'test@example.com',
           avatarUrl: 'https://example.com/avatar.png',
         },
       ]);
@@ -337,6 +338,61 @@ describe('userService', () => {
 
     it('rejects empty search queries', async () => {
       await expect(userService.search('')).rejects.toThrow(ValidationError);
+    });
+
+    it('passes mode=email to repo for exact email lookup', async () => {
+      mockRepo.search.mockResolvedValue([baseUser()]);
+
+      await userService.search('test@example.com', 'email');
+
+      expect(mockRepo.search).toHaveBeenCalledWith('test@example.com', 'email');
+    });
+
+    it('passes mode=userId to repo for exact userId lookup', async () => {
+      mockRepo.search.mockResolvedValue([baseUser()]);
+
+      await userService.search('u1', 'userId');
+
+      expect(mockRepo.search).toHaveBeenCalledWith('u1', 'userId');
+    });
+
+    it('passes mode=name to repo for fuzzy name search', async () => {
+      mockRepo.search.mockResolvedValue([baseUser()]);
+
+      await userService.search('Test', 'name');
+
+      expect(mockRepo.search).toHaveBeenCalledWith('Test', 'name');
+    });
+
+    it('omits email from results when mode=name to prevent email enumeration', async () => {
+      mockRepo.search.mockResolvedValue([baseUser()]);
+
+      const results = await userService.search('Test', 'name');
+
+      expect(results).toEqual([
+        {
+          userId: 'u1',
+          name: 'Test User',
+          avatarUrl: 'https://example.com/avatar.png',
+        },
+      ]);
+      expect(results[0]).not.toHaveProperty('email');
+    });
+
+    it('includes email in results when mode=email', async () => {
+      mockRepo.search.mockResolvedValue([baseUser()]);
+
+      const results = await userService.search('test@example.com', 'email');
+
+      expect(results[0]).toMatchObject({ email: 'test@example.com' });
+    });
+
+    it('includes email in results when mode=userId', async () => {
+      mockRepo.search.mockResolvedValue([baseUser()]);
+
+      const results = await userService.search('u1', 'userId');
+
+      expect(results[0]).toMatchObject({ email: 'test@example.com' });
     });
   });
 

@@ -33,7 +33,13 @@
     "inviteCodePlaceholder": "請輸入邀請碼…",
     "joinFailed": "加入失敗，請確認邀請碼是否正確",
     "join": "加入",
-    "searchChatsPlaceholder": "搜尋聊天室..."
+    "searchChatsPlaceholder": "搜尋聊天室...",
+    "actions": "新增...",
+    "createGroup": "建立群組",
+    "createGroupDesc": "建立一個新的多人群組聊天室",
+    "joinGroupDesc": "透過邀請碼加入已有的群組",
+    "createFolderDesc": "建立一個資料夾來分類聊天室",
+    "back": "返回"
   },
   "emergencyPage": {
     "title": "緊急聯絡設定"
@@ -99,7 +105,20 @@
     "blockedUsers": "封鎖名單",
     "blocked": "已封鎖",
     "unblock": "解除封鎖",
-    "noBlocked": "沒有封鎖使用者。"
+    "noBlocked": "沒有封鎖使用者。",
+    "tabFriends": "好友",
+    "tabIncoming": "待邀請",
+    "tabOutgoing": "送出邀請",
+    "tabBlocked": "封鎖名單",
+    "tabAdd": "新增好友",
+    "searchMode": "查詢方式",
+    "byUserId": "User ID",
+    "byName": "名稱",
+    "byEmail": "Email",
+    "searchBtn": "查詢",
+    "searching": "查詢中...",
+    "noResults": "找不到符合的使用者。",
+    "requested": "已送出"
   },
   "profile": {
     "profile": "個人資料",
