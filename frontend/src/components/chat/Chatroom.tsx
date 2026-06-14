@@ -54,6 +54,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
     rooms,
     messages,
     user,
+    friends,
     activeRoomNicknames,
     handleSendMessage,
     handleTyping,
@@ -262,7 +263,22 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
         <div className="flex items-center gap-3 relative">
           <Avatar
             name={activeRoom.name}
-            src={getAvatarForUser(activeRoom.name, user.avatar, user.username)}
+            src={(() => {
+              if (activeRoom.avatarUrl) {
+                return resolveAssetUrl(activeRoom.avatarUrl);
+              }
+              if (activeRoom.type === "msg") {
+                const otherMember = activeRoom.members?.find((m) => m.userId !== user.userId);
+                if (otherMember?.avatarUrl) {
+                  return resolveAssetUrl(otherMember.avatarUrl);
+                }
+                const friend = friends.find((f) => f.id === activeRoom.otherMemberId || f.name === activeRoom.name);
+                if (friend?.avatarUrl) {
+                  return resolveAssetUrl(friend.avatarUrl);
+                }
+              }
+              return getAvatarForUser(activeRoom.name, user.avatar, user.username);
+            })()}
             size="sm"
             isOnline={activeRoom.isOnline}
           />
