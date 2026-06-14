@@ -147,7 +147,7 @@ export default function FriendInfoPanel({
             <div className="min-w-0 w-full">
               <h4 className="text-sm font-bold text-foreground truncate">{displayName}</h4>
               {targetId && (
-                <p className="text-[10px] text-text-muted font-mono truncate mt-1">UID: {targetId}</p>
+                <p className="text-[10px] text-text-muted font-mono truncate mt-1">{targetId}</p>
               )}
             </div>
           </div>

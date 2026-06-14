@@ -184,7 +184,7 @@ export default function ProfilePopover({
               <h4 className="text-xs font-bold text-foreground truncate">
                 {nickname && nickname !== displayName ? `${displayName} (${nickname})` : displayName}
               </h4>
-              <p className="text-[9px] text-text-muted font-mono truncate mt-0.5">UID: {userId}</p>
+              <p className="text-[9px] text-text-muted font-mono truncate mt-0.5">{userId}</p>
             </div>
           </div>
 
