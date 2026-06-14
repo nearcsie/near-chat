@@ -388,6 +388,20 @@ export const updateRoom = (
     { token },
   );
 
+export const uploadRoomAvatar = (token: string, roomId: string, file: File): Promise<Room> => {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  return requestJson<Room>(
+    `/rooms/${roomId}/avatar`,
+    {
+      method: 'POST',
+      body: formData,
+    },
+    { token },
+  );
+};
+
 export const deleteRoom = (token: string, roomId: string): Promise<void> =>
   requestJson<void>(`/rooms/${roomId}`, { method: 'DELETE' }, { token });
 

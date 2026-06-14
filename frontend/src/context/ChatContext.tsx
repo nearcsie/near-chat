@@ -60,6 +60,7 @@ import {
   upsertEmergencyContact,
   uploadAttachment,
   uploadAvatar as uploadAvatarApi,
+  uploadRoomAvatar as uploadRoomAvatarApi,
   getActiveAccessToken,
   setActiveAccessToken,
   refreshTokens,
@@ -232,6 +233,7 @@ interface GroupSettingsInput {
   requireApproval: boolean;
   viewHistory: boolean;
   isArchived?: boolean;
+  avatarFile?: File | null;
 }
 
 interface ChatContextType {
@@ -1344,12 +1346,16 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const saveGroupSettings = async (roomId: string, settings: GroupSettingsInput) => {
     if (!token) return;
 
-    const updated = await updateRoom(token, roomId, {
+    let updated = await updateRoom(token, roomId, {
       name: settings.name,
       requireApproval: settings.requireApproval,
       viewHistory: settings.viewHistory,
       ...(settings.isArchived !== undefined && { isArchived: settings.isArchived }),
     });
+
+    if (settings.avatarFile) {
+      updated = await uploadRoomAvatarApi(token, roomId, settings.avatarFile);
+    }
 
     setRooms((current) =>
       current.map((room) =>
@@ -1361,6 +1367,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
               requireApproval: updated.requireApproval,
               viewHistory: updated.viewHistory,
               isArchived: updated.isArchived,
+              avatarUrl: updated.avatarUrl,
             }
           : room,
       ),
