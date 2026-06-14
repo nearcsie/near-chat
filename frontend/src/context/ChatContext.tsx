@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import { resolveAssetUrl } from "@/lib/assets";
 import type {
   Attachment as ApiAttachment,
   EmergencyContactResponse,
@@ -106,6 +107,7 @@ export interface ChatRoom {
   unreadCount?: number;
   lastMessagePreview?: string;
   lastMessageAt?: string;
+  avatarUrl?: string;
 }
 
 export interface Message {
@@ -156,6 +158,7 @@ export interface Friend {
   email: string;
   status: "online" | "offline";
   isEmergencyContact?: boolean;
+  avatarUrl?: string;
 }
 
 export interface FriendRequest {
@@ -163,12 +166,14 @@ export interface FriendRequest {
   name: string;
   email: string;
   direction: "incoming" | "outgoing";
+  avatarUrl?: string;
 }
 
 export interface BlockedUser {
   id: string;
   name: string;
   email: string;
+  avatarUrl?: string;
 }
 
 export interface EmergencyContact {
@@ -199,7 +204,7 @@ export const getAvatarForUser = (
   currentUsername?: string,
 ) => {
   if (currentUsername && username === currentUsername) {
-    return currentUserAvatar || "";
+    return currentUserAvatar ? resolveAssetUrl(currentUserAvatar) : "";
   }
   return "";
 };
@@ -432,6 +437,7 @@ const mapRooms = (
     return {
       id: room.roomId,
       type: room.type === "group" ? "group" : "msg",
+      avatarUrl: room.avatarUrl,
       name:
         room.name ||
         (currentRoom?.name && !isPrivateRoomFallbackName(currentRoom.name, room.roomId)
@@ -479,6 +485,7 @@ const mapFriend = (item: FriendResponse, emergencyContactIds: Set<string>): Frie
   email: "",
   status: item.status || "offline",
   isEmergencyContact: emergencyContactIds.has(item.friend.userId),
+  avatarUrl: item.friend.avatarUrl,
 });
 
 const mapFriendRequest = (item: FriendRequestResponse, currentUserId: string): FriendRequest => {
@@ -488,6 +495,7 @@ const mapFriendRequest = (item: FriendRequestResponse, currentUserId: string): F
       name: item.addressee?.name ?? item.addresseeId,
       email: "",
       direction: "outgoing",
+      avatarUrl: item.addressee?.avatarUrl,
     };
   }
   return {
@@ -495,6 +503,7 @@ const mapFriendRequest = (item: FriendRequestResponse, currentUserId: string): F
     name: item.requester?.name ?? item.requesterId,
     email: "",
     direction: "incoming",
+    avatarUrl: item.requester?.avatarUrl,
   };
 };
 
@@ -678,7 +687,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
         setFriends(apiFriends.map((friend) => mapFriend(friend, emergencyContactIds)));
         setFriendRequests(apiRequests.map((req) => mapFriendRequest(req, effectiveUserId)));
-        setBlockedUsers(apiBlockedUsers.map(u => ({ id: u.userId, name: u.name, email: u.email })));
+        setBlockedUsers(apiBlockedUsers.map(u => ({ id: u.userId, name: u.name, email: u.email, avatarUrl: u.avatarUrl })));
         setEmergencySettings({
           warningEnabled: settings?.warningEnabled ?? user.warningEnabled ?? false,
           warningDays: settings?.warningDays ?? user.warningDays ?? 0,
