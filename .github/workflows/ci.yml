@@ -102,11 +102,17 @@ jobs:
           verbose: "true"
           fail-on: high
           sarif: "true"
+      - name: Rename backend SARIF file
+        if: always()
+        run: |
+          if ls cve-lite-scan-*.sarif 1> /dev/null 2>&1; then
+            mv cve-lite-scan-*.sarif backend.sarif
+          fi
       - name: Upload backend scan to GitHub Code Scanning
         uses: github/codeql-action/upload-sarif@v3
         if: always()
         with:
-          sarif_file: cve-lite.sarif
+          sarif_file: backend.sarif
           category: backend
       - name: Scan frontend dependencies for vulnerabilities
         uses: OWASP/cve-lite-cli@v1
@@ -116,10 +122,16 @@ jobs:
           verbose: "true"
           fail-on: high
           sarif: "true"
+      - name: Rename frontend SARIF file
+        if: always()
+        run: |
+          if ls cve-lite-scan-*.sarif 1> /dev/null 2>&1; then
+            mv cve-lite-scan-*.sarif frontend.sarif
+          fi
       - name: Upload frontend scan to GitHub Code Scanning
         uses: github/codeql-action/upload-sarif@v3
         if: always()
         with:
-          sarif_file: cve-lite.sarif
+          sarif_file: frontend.sarif
           category: frontend
 
