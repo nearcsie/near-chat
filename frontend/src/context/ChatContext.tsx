@@ -105,6 +105,7 @@ export interface ChatRoom {
   viewHistory?: boolean;
   members?: Member[];
   isArchived?: boolean;
+  isReadonly?: boolean;
   unreadCount?: number;
   lastMessagePreview?: string;
   lastMessageAt?: string;
@@ -364,6 +365,30 @@ const summarizeMessagePreview = (message: {
 const isPrivateRoomFallbackName = (roomName: string | undefined, roomId: string) =>
   roomName === `Private ${roomId.slice(0, 8)}`;
 
+const getPrivateRoomName = (
+  room: Pick<ChatRoom, "id" | "name" | "members" | "otherMemberId">,
+  currentUserId?: string,
+) => {
+  const otherMember =
+    room.members?.find((member) =>
+      currentUserId
+        ? member.userId !== currentUserId
+        : room.otherMemberId
+          ? member.userId === room.otherMemberId
+          : true,
+    ) ?? null;
+
+  if (otherMember?.name) {
+    return otherMember.name;
+  }
+
+  if (room.name && !isPrivateRoomFallbackName(room.name, room.id)) {
+    return room.name;
+  }
+
+  return "";
+};
+
 const mapMessage = (message: MessageWithSender, currentUserId?: string): Message => ({
   id: message.messageId,
   roomId: message.roomId,
@@ -425,6 +450,7 @@ const mapRooms = (
   apiRooms: RoomSummary[],
   apiFolders: ApiFolder[],
   currentRooms: ChatRoom[],
+  currentUserId?: string,
 ): ChatRoom[] => {
   const currentRoomById = new Map(currentRooms.map((room) => [room.id, room]));
   const folderByRoom = new Map<string, string>();
@@ -451,16 +477,25 @@ const mapRooms = (
       avatarUrl: room.avatarUrl,
       name:
         room.name ||
-        (currentRoom?.name && !isPrivateRoomFallbackName(currentRoom.name, room.roomId)
-          ? currentRoom.name
-          : room.type === "group"
-            ? `Group ${room.roomId.slice(0, 8)}`
-            : ""),
+        (room.type === "group"
+          ? (currentRoom?.name && !isPrivateRoomFallbackName(currentRoom.name, room.roomId)
+              ? currentRoom.name
+              : `Group ${room.roomId.slice(0, 8)}`)
+          : getPrivateRoomName(
+              {
+                id: room.roomId,
+                name: currentRoom?.name ?? "",
+                members: currentRoom?.members,
+                otherMemberId: room.otherMemberId ?? currentRoom?.otherMemberId,
+              },
+              currentUserId,
+            )),
       folderId: folderByRoom.get(room.roomId) ?? currentRoom?.folderId ?? null,
       inviteCode: room.inviteCode,
       requireApproval: room.requireApproval,
       viewHistory: room.viewHistory,
       isArchived: room.isArchived,
+      isReadonly: room.isReadonly,
       isOnline: room.isOnline ?? currentRoom?.isOnline,
       otherMemberId: room.otherMemberId ?? currentRoom?.otherMemberId,
       members: currentRoom?.members ?? (room.type === "group" ? [] : undefined),
@@ -655,7 +690,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
   const refreshRoomsAndFolders = async (authToken: string, userId = currentUserId) => {
     const [apiRooms, apiFolders] = await Promise.all([listRooms(authToken), listFolders(authToken)]);
-    const nextRooms = mapRooms(apiRooms, apiFolders, roomsRef.current);
+    const nextRooms = mapRooms(apiRooms, apiFolders, roomsRef.current, userId);
 
     setFolders((current) => mapFolders(apiFolders, current));
     setRooms(nextRooms);
@@ -1256,25 +1291,20 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       return { isDeleted: true, newActiveId: remaining[0]?.id };
     }
 
-    const newArchived = !room.isArchived;
-    if (token) {
-      await updateRoom(token, roomId, { isArchived: newArchived });
-      const targetUserId = room.members?.find((m) => m.userId !== currentUserId)?.userId;
-      if (targetUserId) {
-        if (newArchived) {
-          await blockUserApi(token, targetUserId).catch(console.error);
-        } else {
-          await unblockUserApi(token, targetUserId).catch(console.error);
-        }
-        await refreshSocialData(token).catch(console.error);
-      }
+    const targetUserId =
+      room.otherMemberId ?? room.members?.find((member) => member.userId !== currentUserId)?.userId;
+    if (!targetUserId) return { isDeleted: false };
+
+    if (room.isReadonly) {
+      await unblockUserApi(token, targetUserId).catch(console.error);
+    } else {
+      await blockUserApi(token, targetUserId).catch(console.error);
     }
 
-    setRooms((current) =>
-      current.map((item) =>
-        item.id === roomId ? { ...item, isArchived: newArchived } : item,
-      ),
-    );
+    await Promise.all([
+      refreshRoomsAndFolders(token, currentUserId).catch(console.error),
+      refreshSocialData(token).catch(console.error),
+    ]);
     return { isDeleted: false };
   };
 
@@ -1512,7 +1542,10 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const removeFriend = async (friendId: string) => {
     if (!token) return;
     await deleteFriend(token, friendId);
-    await refreshSocialData(token);
+    await Promise.all([
+      refreshRoomsAndFolders(token, currentUserId),
+      refreshSocialData(token),
+    ]);
   };
 
   const blockFriend = async (friendId: string) => {
@@ -1521,13 +1554,19 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     if (!friend) return;
 
     await blockUserApi(token, friendId);
-    await refreshSocialData(token);
+    await Promise.all([
+      refreshRoomsAndFolders(token, currentUserId),
+      refreshSocialData(token),
+    ]);
   };
 
   const unblockUser = async (blockedId: string) => {
     if (token) {
       await unblockUserApi(token, blockedId);
-      await refreshSocialData(token);
+      await Promise.all([
+        refreshRoomsAndFolders(token, currentUserId),
+        refreshSocialData(token),
+      ]);
     }
   };
 
@@ -1670,11 +1709,19 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
       if (room.type === "msg") {
         const otherMemberId = room.otherMemberId || room.members?.find((m) => m.userId !== currentUserId)?.userId;
+        const blockedUser = otherMemberId ? blockedUsers.find((item) => item.id === otherMemberId) : undefined;
+        const privateRoomName = getPrivateRoomName(room, currentUserId);
+        if (privateRoomName) {
+          nextName = privateRoomName;
+        }
         if (otherMemberId) {
           const friend = friends.find((f) => f.id === otherMemberId);
           if (friend) {
             nextName = friend.name;
             nextIsOnline = friend.status === "online";
+          } else if (blockedUser) {
+            nextName = blockedUser.name;
+            nextIsOnline = false;
           }
         }
       }
@@ -1684,7 +1731,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         isOnline: nextIsOnline,
       };
     });
-  }, [rooms, friends, currentUserId]);
+  }, [rooms, friends, blockedUsers, currentUserId]);
 
   const handleRefreshSocialData = async () => {
     if (token) {
