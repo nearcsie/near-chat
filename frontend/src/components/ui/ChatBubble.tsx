@@ -31,6 +31,7 @@ export interface ChatBubbleProps {
   onRecall?: () => void;
   canRecall?: boolean;
   canEdit?: boolean;
+  senderId?: string;
 }
 
 const renderMentionContent = (
@@ -71,6 +72,7 @@ export function ChatBubble({
   onRecall,
   canRecall = false,
   canEdit = false,
+  senderId,
 }: ChatBubbleProps) {
   const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null>(null);
   const [showPopover, setShowPopover] = useState(false);
@@ -160,6 +162,7 @@ export function ChatBubble({
           <Avatar name={senderName} src={senderAvatar} size="sm" />
           {showPopover && (
             <ProfilePopover
+              userId={senderId || ""}
               username={senderName}
               onClose={(event) => {
                 event.stopPropagation();

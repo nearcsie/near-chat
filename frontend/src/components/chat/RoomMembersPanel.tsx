@@ -1,14 +1,15 @@
 "use client";
 
 import React, { useState } from "react";
-import { ChatRoom, Member, getAvatarForUser, useChat } from "@/context/ChatContext";
+import { ChatRoom, Member, useChat } from "@/context/ChatContext";
 import { Avatar } from "@/components/ui/Avatar";
 import ProfilePopover from "./ProfilePopover";
 import { useTranslation } from "@/hooks/useTranslation";
+import { resolveAssetUrl } from "@/lib/assets";
 
 export default function RoomMembersPanel({ room, members }: { room: ChatRoom; members: Member[] }) {
   const { user } = useChat();
-  const [selectedMemberName, setSelectedMemberName] = useState<string | null>(null);
+  const [selectedMember, setSelectedMember] = useState<Member | null>(null);
   const [popoverTop, setPopoverTop] = useState<number>(0);
   const { t } = useTranslation();
 
@@ -28,7 +29,7 @@ export default function RoomMembersPanel({ room, members }: { room: ChatRoom; me
           }
           return (
             <div
-              key={`${member.name}-${index}`}
+              key={`${member.userId}-${index}`}
               onClick={(e) => {
                 const rect = e.currentTarget.getBoundingClientRect();
                 const parentEl = e.currentTarget.closest(".members-panel-root");
@@ -49,12 +50,12 @@ export default function RoomMembersPanel({ room, members }: { room: ChatRoom; me
                   }
                   setPopoverTop(topVal);
                 }
-                setSelectedMemberName(selectedMemberName === member.name ? null : member.name);
+                setSelectedMember(selectedMember?.userId === member.userId ? null : member);
               }}
               className="p-3.5 flex items-center justify-between hover:bg-surface-muted/50 transition-colors cursor-pointer relative avatar-click-target"
             >
               <div className="flex items-center gap-3 min-w-0">
-                <Avatar name={member.name} src={getAvatarForUser(member.name, user.avatar, user.username)} size="sm" />
+                <Avatar name={member.name} src={member.avatarUrl ? resolveAssetUrl(member.avatarUrl) : undefined} size="sm" />
                 <div className="min-w-0">
                   <p className="text-xs font-semibold text-foreground truncate">{displayNick}</p>
                   <p className="text-[9px] text-text-muted capitalize mt-0.5 font-mono">{member.role}</p>
@@ -66,12 +67,14 @@ export default function RoomMembersPanel({ room, members }: { room: ChatRoom; me
         })}
       </div>
 
-      {selectedMemberName && (
+      {selectedMember && (
         <ProfilePopover
-          username={selectedMemberName}
+          userId={selectedMember.userId}
+          username={selectedMember.name}
+          nickname={selectedMember.nickname}
           onClose={(e) => {
             e.stopPropagation();
-            setSelectedMemberName(null);
+            setSelectedMember(null);
           }}
           position="custom"
           className="absolute right-full mr-3 -translate-y-1/2"

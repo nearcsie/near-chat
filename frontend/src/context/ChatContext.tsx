@@ -518,7 +518,7 @@ const fetchRoomMembers = async (authToken: string, roomId: string): Promise<Memb
   const apiMembers = await listRoomMembers(authToken, roomId);
   const profiles = await Promise.all(
     apiMembers.map((member) =>
-      getUserProfile(authToken, member.userId).catch(() => undefined),
+      getUserProfile(member.userId, authToken).catch(() => undefined),
     ),
   );
 

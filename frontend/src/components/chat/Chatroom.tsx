@@ -2,7 +2,8 @@
 
 import React, { useState, useEffect, useLayoutEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { useChat, getAvatarForUser, Message } from "@/context/ChatContext";
+import { useChat, getAvatarForUser, Message, ChatRoom } from "@/context/ChatContext";
+import { resolveAssetUrl } from "@/lib/assets";
 import { Button } from "@/components/ui/Button";
 import { Dropdown } from "@/components/ui/Dropdown";
 import { Avatar } from "@/components/ui/Avatar";
@@ -287,16 +288,20 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
             )}
           </div>
 
-          {showHeaderPopover && activeRoom.type === "msg" && (
-            <ProfilePopover
-              username={activeRoom.name}
-              onClose={(e) => {
-                e.stopPropagation();
-                setShowHeaderPopover(false);
-              }}
-              position="bottom"
-            />
-          )}
+          {showHeaderPopover && activeRoom.type === "msg" && (() => {
+            const otherMember = activeRoom.members?.find((m) => m.userId !== user.userId);
+            return (
+              <ProfilePopover
+                userId={otherMember?.userId || ""}
+                username={activeRoom.name}
+                onClose={(e) => {
+                  e.stopPropagation();
+                  setShowHeaderPopover(false);
+                }}
+                position="bottom"
+              />
+            );
+          })()}
         </div>
 
         <div className="flex items-center gap-3">
@@ -365,10 +370,17 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
                   isRecalled={msg.isRecalled}
                   replyTo={msg.replyTo || undefined}
                   attachments={msg.attachments}
-                  senderAvatar={msg.isOutgoing ? user.avatar : getAvatarForUser(msg.senderName, user.avatar, user.username)}
+                  senderAvatar={
+                    msg.isOutgoing
+                      ? user.avatar
+                      : senderMember?.avatarUrl
+                      ? resolveAssetUrl(senderMember.avatarUrl)
+                      : undefined
+                  }
                   isRead={msg.isRead}
                   readByAvatars={getReadAvatarsForMessage(activeRoom, msg)}
                   roomType={activeRoom.type}
+                  senderId={msg.senderId || undefined}
                   onReply={() => setReplyTarget(msg)}
                   onRecall={() => handleRecallMessage(msg.id)}
                   canRecall={Boolean(msg.isOutgoing) || canManageMembers}

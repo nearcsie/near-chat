@@ -233,7 +233,7 @@ export const logout = (token: string): Promise<void> =>
 export const getMe = (token: string): Promise<MyProfile> =>
   requestJson<MyProfile>('/users/me', {}, { token });
 
-export const getUserProfile = (token: string, userId: string): Promise<UserProfile> =>
+export const getUserProfile = (userId: string, token?: string): Promise<UserProfile> =>
   requestJson<UserProfile>(`/users/${userId}`, {}, { token });
 
 export const updateMe = (token: string, data: UpdateMeRequest): Promise<MyProfile> =>
