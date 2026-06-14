@@ -6,6 +6,18 @@
 
 ## 0. 通用規則 (General)
 
+### 本機整合環境 (Local Integration Environment)
+
+Docker Compose 在本機映射的連接埠如下：
+- **前端應用 (Next.js)**: `http://localhost:3005` (容器內部埠 `3000`)
+- **後端 API / Socket 伺服器**: `http://localhost:4005` (容器內部埠 `4000`)
+- **PostgreSQL 資料庫**: `localhost:5435` (容器內部埠 `5432`)
+
+在前端連接後端時，應設定環境變數：
+```env
+NEXT_PUBLIC_API_URL=http://localhost:4005
+```
+
 ### Base URL
 
 所有 REST API 路徑以 `/api/v1` 開頭。
