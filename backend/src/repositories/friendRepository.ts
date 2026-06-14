@@ -111,11 +111,23 @@ export const makeFriendRepository = (db: Pool) => {
          FROM friendships f
          JOIN users u ON u.user_id = f.addressee_id AND u.deleted_at IS NULL
          WHERE f.requester_id = $1 AND f.status = 'accepted'
+           AND NOT EXISTS (
+             SELECT 1
+             FROM blocks b
+             WHERE (b.blocker_id = f.requester_id AND b.blocked_id = f.addressee_id)
+                OR (b.blocker_id = f.addressee_id AND b.blocked_id = f.requester_id)
+           )
          UNION ALL
          SELECT f.created_at as friendship_created_at, u.user_id, u.name, u.email, u.avatar_url
          FROM friendships f
          JOIN users u ON u.user_id = f.requester_id AND u.deleted_at IS NULL
-         WHERE f.addressee_id = $1 AND f.status = 'accepted'`,
+         WHERE f.addressee_id = $1 AND f.status = 'accepted'
+           AND NOT EXISTS (
+             SELECT 1
+             FROM blocks b
+             WHERE (b.blocker_id = f.requester_id AND b.blocked_id = f.addressee_id)
+                OR (b.blocker_id = f.addressee_id AND b.blocked_id = f.requester_id)
+           )`,
         [userId]
       );
       return res.rows.map(row => ({

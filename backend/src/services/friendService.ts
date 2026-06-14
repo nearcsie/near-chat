@@ -102,13 +102,15 @@ export function makeFriendService(
         throw new ValidationError('Cannot block yourself');
       }
       await repo.blockUser(userId, targetUserId);
-      await repo.deleteFriendship(userId, targetUserId);
       await privateRooms?.markPrivateReadOnly(userId, targetUserId);
       return { status: 'blocked' };
     },
 
     async unblockUser(userId: string, blockedId: string) {
-      return repo.unblockUser(userId, blockedId);
+      await repo.unblockUser(userId, blockedId);
+      if (await repo.areFriends(userId, blockedId)) {
+        await privateRooms?.reopenPrivateRoom?.(userId, blockedId);
+      }
     },
 
     async getBlockedUsers(userId: string) {

@@ -234,6 +234,50 @@ describe('Friendships & Blocks E2E', () => {
       expect(row.rows[0].is_readonly).toBe(true);
     });
 
+    it('should restore the friendship after unblocking a blocked friend', async () => {
+      await request(app)
+        .post('/api/v1/friend-requests')
+        .set('Authorization', `Bearer ${tokenA}`)
+        .send({ target_user_id: userB.userId });
+      await request(app)
+        .patch(`/api/v1/friend-requests/${userA.userId}`)
+        .set('Authorization', `Bearer ${tokenB}`)
+        .send({ status: 'accepted' });
+
+      const privateRoom = await request(app)
+        .post('/api/v1/rooms')
+        .set('Authorization', `Bearer ${tokenA}`)
+        .send({ type: 'private', targetUserId: userB.userId });
+      expect(privateRoom.status).toBe(200);
+
+      const blockRes = await request(app)
+        .post('/api/v1/blocks')
+        .set('Authorization', `Bearer ${tokenA}`)
+        .send({ target_user_id: userB.userId });
+      expect(blockRes.status).toBe(201);
+
+      const blockedFriends = await request(app)
+        .get('/api/v1/friends')
+        .set('Authorization', `Bearer ${tokenA}`);
+      expect(blockedFriends.status).toBe(200);
+      expect(blockedFriends.body).toEqual([]);
+
+      const unblockRes = await request(app)
+        .delete(`/api/v1/blocks/${userB.userId}`)
+        .set('Authorization', `Bearer ${tokenA}`);
+      expect(unblockRes.status).toBe(204);
+
+      const restoredFriends = await request(app)
+        .get('/api/v1/friends')
+        .set('Authorization', `Bearer ${tokenA}`);
+      expect(restoredFriends.status).toBe(200);
+      expect(restoredFriends.body).toHaveLength(1);
+      expect(restoredFriends.body[0].friend.userId).toBe(userB.userId);
+
+      const row = await testPool.query('SELECT is_readonly FROM chat_rooms WHERE room_id = $1', [privateRoom.body.roomId]);
+      expect(row.rows[0].is_readonly).toBe(false);
+    });
+
     it('should list blocked users', async () => {
       // A blocks C (done in earlier test, but tests might not be perfectly isolated, let's block C if not blocked or use B)
       await request(app)
