@@ -4,6 +4,12 @@ import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '.
 import type { IRoomRepository } from '../../../src/repositories/IRoomRepository';
 import type { IRoomMemberRepository } from '../../../src/repositories/IRoomMemberRepository';
 import type { Room, RoomMember } from '../../../../shared/types';
+import { saveAvatarUpload, removeManagedAvatar } from '../../../src/lib/avatarUpload';
+
+vi.mock('../../../src/lib/avatarUpload', () => ({
+  saveAvatarUpload: vi.fn(),
+  removeManagedAvatar: vi.fn(),
+}));
 
 describe('roomService', () => {
   let mockRepo: Mocked<IRoomRepository>;
@@ -318,6 +324,92 @@ describe('roomService', () => {
         content: '[System] Bob已加入',
       });
       expect(mockEmit).toHaveBeenCalledWith('room-1', 'new_message', { messageId: 'msg-sys', content: '[System] Bob已加入' });
+    });
+  });
+
+  describe('uploadAvatar', () => {
+    let mockFile: any;
+
+    beforeEach(() => {
+      mockFile = {
+        buffer: Buffer.from('mock-image-data'),
+        mimetype: 'image/png',
+        originalname: 'avatar.png',
+      } as any;
+
+      vi.mocked(saveAvatarUpload).mockReset();
+      vi.mocked(removeManagedAvatar).mockReset();
+      
+      vi.mocked(saveAvatarUpload).mockResolvedValue('/uploads/avatars/new-avatar.png');
+    });
+
+    it('updates room avatar successfully by owner', async () => {
+      mockRepo.findById.mockResolvedValue(room);
+      mockMemberRepo.findMember.mockResolvedValue(ownerMember);
+      
+      const updatedRoom = { ...room, avatarUrl: '/uploads/avatars/new-avatar.png' };
+      mockRepo.update.mockResolvedValue(updatedRoom);
+
+      const result = await roomService.uploadAvatar('room-1', 'user-1', mockFile);
+
+      expect(mockRepo.findById).toHaveBeenCalledWith('room-1');
+      expect(mockMemberRepo.findMember).toHaveBeenCalledWith('room-1', 'user-1');
+      expect(saveAvatarUpload).toHaveBeenCalledWith('room-1', mockFile);
+      expect(mockRepo.update).toHaveBeenCalledWith('room-1', { avatarUrl: '/uploads/avatars/new-avatar.png' });
+      expect(result.avatarUrl).toBe('/uploads/avatars/new-avatar.png');
+    });
+
+    it('updates room avatar successfully by admin', async () => {
+      mockRepo.findById.mockResolvedValue(room);
+      mockMemberRepo.findMember.mockResolvedValue({ role: 'admin' } as RoomMember);
+      
+      const updatedRoom = { ...room, avatarUrl: '/uploads/avatars/new-avatar.png' };
+      mockRepo.update.mockResolvedValue(updatedRoom);
+
+      const result = await roomService.uploadAvatar('room-1', 'user-1', mockFile);
+      expect(result.avatarUrl).toBe('/uploads/avatars/new-avatar.png');
+    });
+
+    it('throws ForbiddenError if caller is normal member', async () => {
+      mockRepo.findById.mockResolvedValue(room);
+      mockMemberRepo.findMember.mockResolvedValue({ role: 'member' } as RoomMember);
+
+      await expect(roomService.uploadAvatar('room-1', 'user-1', mockFile)).rejects.toThrow(ForbiddenError);
+    });
+
+    it('throws NotFoundError if room does not exist', async () => {
+      mockRepo.findById.mockResolvedValue(null);
+
+      await expect(roomService.uploadAvatar('room-1', 'user-1', mockFile)).rejects.toThrow(NotFoundError);
+    });
+
+    it('throws ValidationError if room is a private room', async () => {
+      const privateRoom = { ...room, type: 'private' as const };
+      mockRepo.findById.mockResolvedValue(privateRoom);
+
+      await expect(roomService.uploadAvatar('room-1', 'user-1', mockFile)).rejects.toThrow(ValidationError);
+    });
+
+    it('deletes newly uploaded avatar and throws error if db update fails', async () => {
+      mockRepo.findById.mockResolvedValue(room);
+      mockMemberRepo.findMember.mockResolvedValue(ownerMember);
+      mockRepo.update.mockRejectedValue(new Error('DB failure'));
+
+      await expect(roomService.uploadAvatar('room-1', 'user-1', mockFile)).rejects.toThrow('DB failure');
+      expect(removeManagedAvatar).toHaveBeenCalledWith('/uploads/avatars/new-avatar.png');
+    });
+
+    it('deletes old avatar after successful update', async () => {
+      const roomWithOldAvatar = { ...room, avatarUrl: '/uploads/avatars/old-avatar.png' };
+      mockRepo.findById.mockResolvedValue(roomWithOldAvatar);
+      mockMemberRepo.findMember.mockResolvedValue(ownerMember);
+      
+      const updatedRoom = { ...room, avatarUrl: '/uploads/avatars/new-avatar.png' };
+      mockRepo.update.mockResolvedValue(updatedRoom);
+
+      await roomService.uploadAvatar('room-1', 'user-1', mockFile);
+      
+      expect(removeManagedAvatar).toHaveBeenCalledWith('/uploads/avatars/old-avatar.png');
     });
   });
 });

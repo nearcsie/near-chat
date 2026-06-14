@@ -1,6 +1,7 @@
 import type { Room, RoomSummary } from '@shared/types';
 import { randomBytes } from 'crypto';
 import { isUserOnline } from '../realtime/presence';
+import { removeManagedAvatar, saveAvatarUpload } from '../lib/avatarUpload';
 import type { IRoomRepository } from '../repositories/IRoomRepository';
 import type { IRoomMemberRepository } from '../repositories/IRoomMemberRepository';
 import type { IUserRepository } from '../repositories/IUserRepository';
@@ -303,6 +304,33 @@ export const makeRoomService = (
       await roomMemberRepo.remove(roomId, targetUserId);
       if (emitRoomEvent) {
         emitRoomEvent(roomId, 'room_update', { type: 'MEMBER_KICKED', data: { userId: targetUserId } });
+      }
+    },
+
+    async uploadAvatar(roomId: string, callerId: string, file: Express.Multer.File): Promise<Room> {
+      const room = await repo.findById(roomId);
+      if (!room) throw new NotFoundError('room', roomId);
+      if (room.type !== 'group') throw new ValidationError('Cannot upload avatar for a private room');
+
+      const member = await roomMemberRepo.findMember(roomId, callerId);
+      if (!member || (member.role !== 'owner' && member.role !== 'admin')) {
+        throw new ForbiddenError('Only owner or admin can update room avatar');
+      }
+
+      const avatarUrl = await saveAvatarUpload(roomId, file);
+
+      try {
+        const updated = await repo.update(roomId, { avatarUrl });
+        if (room.avatarUrl && room.avatarUrl !== avatarUrl) {
+          await removeManagedAvatar(room.avatarUrl);
+        }
+        if (emitRoomEvent) {
+          emitRoomEvent(roomId, 'room_update', { type: 'ROOM_AVATAR_UPDATED', data: { roomId, avatarUrl } });
+        }
+        return updated;
+      } catch (error) {
+        await removeManagedAvatar(avatarUrl);
+        throw error;
       }
     },
   };

@@ -1,6 +1,23 @@
 import { Router } from 'express';
+import multer from 'multer';
+import { ValidationError } from '../errors/AppError';
+import { ALLOWED_AVATAR_MIME_TYPES, AVATAR_UPLOAD_MAX_BYTES } from '../lib/avatarUpload';
 import { authMiddleware } from '../middlewares/authMiddleware';
 import type { makeRoomController } from '../controllers/roomController';
+
+const avatarUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: AVATAR_UPLOAD_MAX_BYTES,
+    files: 1,
+  },
+  fileFilter: (_req, file, cb) => {
+    if (!ALLOWED_AVATAR_MIME_TYPES.includes(file.mimetype as (typeof ALLOWED_AVATAR_MIME_TYPES)[number])) {
+      return cb(new ValidationError('Unsupported avatar file type'));
+    }
+    cb(null, true);
+  },
+});
 
 export const makeRoomRoutes = (ctrl: ReturnType<typeof makeRoomController>): Router => {
   const router = Router();
@@ -18,6 +35,7 @@ export const makeRoomRoutes = (ctrl: ReturnType<typeof makeRoomController>): Rou
   router.post('/:id/members/:userId/approve', ctrl.approveMember.bind(ctrl));
   router.get('/:id', ctrl.getById.bind(ctrl));
   router.patch('/:id', ctrl.update.bind(ctrl));
+  router.post('/:id/avatar', avatarUpload.single('file'), ctrl.uploadAvatar.bind(ctrl));
   router.delete('/:id', ctrl.deleteGroup.bind(ctrl));
 
   return router;

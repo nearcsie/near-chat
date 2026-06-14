@@ -11,6 +11,10 @@ import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { useTranslation } from "@/hooks/useTranslation";
 import { Dropdown, DropdownItem } from "@/components/ui/Dropdown";
+import { resolveAssetUrl } from "@/lib/assets";
+
+const ACCEPTED_AVATAR_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
+const AVATAR_UPLOAD_MAX_BYTES = 2 * 1024 * 1024;
 
 interface GroupSettingsProps {
   roomId: string;
@@ -50,6 +54,17 @@ export default function GroupSettings({ roomId, onClose }: GroupSettingsProps) {
   const [nickInputValue, setNickInputValue] = useState("");
   const [memberActionUserId, setMemberActionUserId] = useState<string | null>(null);
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarPreviewUrl, setAvatarPreviewUrl] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    return () => {
+      if (avatarPreviewUrl) {
+        URL.revokeObjectURL(avatarPreviewUrl);
+      }
+    };
+  }, [avatarPreviewUrl]);
 
   const currentMember = useMemo(
     () => members.find((member) => member.userId === user.userId || member.name === user.username),
@@ -157,13 +172,51 @@ export default function GroupSettings({ roomId, onClose }: GroupSettingsProps) {
     setIsSaving(true);
     setFeedback("");
     try {
-      await saveGroupSettings(roomId, { name, requireApproval, viewHistory });
+      await saveGroupSettings(roomId, { name, requireApproval, viewHistory, avatarFile });
       setFeedback(t("groupSettings.settingsSaved"));
+      setAvatarFile(null);
+      if (avatarPreviewUrl) {
+        URL.revokeObjectURL(avatarPreviewUrl);
+        setAvatarPreviewUrl(null);
+      }
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
     } catch (error) {
       setFeedback(error instanceof Error ? error.message : t("groupSettings.roleFailed"));
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const handleAvatarClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleAvatarFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!ACCEPTED_AVATAR_TYPES.includes(file.type)) {
+      setFeedback(t("avatarUpload.invalidType"));
+      event.target.value = "";
+      return;
+    }
+
+    if (file.size > AVATAR_UPLOAD_MAX_BYTES) {
+      setFeedback(t("avatarUpload.tooLarge"));
+      event.target.value = "";
+      return;
+    }
+
+    if (avatarPreviewUrl) {
+      URL.revokeObjectURL(avatarPreviewUrl);
+    }
+
+    const previewUrl = URL.createObjectURL(file);
+    setAvatarFile(file);
+    setAvatarPreviewUrl(previewUrl);
+    setFeedback("");
   };
 
   const handleApprove = async (member: Member) =>
@@ -359,6 +412,27 @@ export default function GroupSettings({ roomId, onClose }: GroupSettingsProps) {
           {canManageMembers && (
             <section className="flex flex-col gap-4">
               <SectionTitle title={t("groupSettings.basicSettings")} />
+              <div className="flex items-center gap-6 py-2">
+                <Avatar
+                  name={name}
+                  src={avatarPreviewUrl ?? (activeRoom.avatarUrl ? resolveAssetUrl(activeRoom.avatarUrl) : undefined)}
+                  size="lg"
+                />
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/gif,image/webp"
+                  className="hidden"
+                  onChange={handleAvatarFileChange}
+                />
+                <Button type="button" variant="secondary" onClick={handleAvatarClick}>
+                  {t("profile.changeAvatar")}
+                </Button>
+              </div>
+              <div className="text-xs text-text-muted -mt-3">
+                {t("avatarUpload.requirements")}
+                {avatarFile ? ` ${t("avatarUpload.selected", { name: avatarFile.name })}` : ""}
+              </div>
               <Input
                 label={t("groupSettings.groupName")}
                 value={name}
