@@ -97,6 +97,7 @@ export class RoomRepository implements IRoomRepository {
            WHERE m.room_id = cr.room_id
              AND (cr.view_history = true OR m.sent_at >= rm.join_time)
              AND (last_read.sent_at IS NULL OR m.sent_at > last_read.sent_at)
+             AND (m.sender_id IS NULL OR m.sender_id != $1)
            LIMIT 100
          ) _sub
        ) unread ON true
