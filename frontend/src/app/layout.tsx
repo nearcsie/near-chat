@@ -41,6 +41,17 @@ export default function RootLayout({
                   document.documentElement.classList.remove('dark');
                 }
               } catch (_) {}
+
+              try {
+                if (typeof Element !== 'undefined' && Element.prototype.releasePointerCapture) {
+                  const originalRelease = Element.prototype.releasePointerCapture;
+                  Element.prototype.releasePointerCapture = function(pointerId) {
+                    try {
+                      originalRelease.call(this, pointerId);
+                    } catch (_) {}
+                  };
+                }
+              } catch (_) {}
             `,
           }}
         />
