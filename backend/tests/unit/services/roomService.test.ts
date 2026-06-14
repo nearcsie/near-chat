@@ -249,4 +249,75 @@ describe('roomService', () => {
       await expect(roomService.kickMember('room-1', 'user-1', 'user-2')).rejects.toThrow(ForbiddenError);
     });
   });
+
+  describe('system messages on join/approve', () => {
+    let mockUserRepo: any;
+    let mockMessageRepo: any;
+    let mockEmit: any;
+
+    beforeEach(() => {
+      mockUserRepo = {
+        findById: vi.fn().mockResolvedValue({ userId: 'user-2', name: 'Bob' }),
+      };
+      mockMessageRepo = {
+        create: vi.fn().mockResolvedValue({ messageId: 'msg-sys', content: '[System] Bob已加入' }),
+      };
+      mockEmit = vi.fn();
+    });
+
+    it('creates system message on direct joinByCode', async () => {
+      const service = makeRoomService(
+        mockRepo,
+        mockMemberRepo,
+        mockEmit,
+        undefined,
+        mockUserRepo,
+        mockMessageRepo,
+      );
+
+      mockRepo.findByInviteCode.mockResolvedValue(room);
+      mockMemberRepo.findMember.mockResolvedValue(null);
+
+      await service.joinByCode('user-2', 'ABCDEF');
+
+      expect(mockUserRepo.findById).toHaveBeenCalledWith('user-2');
+      expect(mockMessageRepo.create).toHaveBeenCalledWith({
+        roomId: 'room-1',
+        senderId: null,
+        content: '[System] Bob已加入',
+      });
+      expect(mockEmit).toHaveBeenCalledWith('room-1', 'new_message', { messageId: 'msg-sys', content: '[System] Bob已加入' });
+    });
+
+    it('creates system message on approveMember', async () => {
+      const service = makeRoomService(
+        mockRepo,
+        mockMemberRepo,
+        mockEmit,
+        undefined,
+        mockUserRepo,
+        mockMessageRepo,
+      );
+
+      mockRepo.findById.mockResolvedValue(room);
+      mockMemberRepo.findMember.mockImplementation(async (roomId, userId) => {
+        if (userId === 'user-1') return ownerMember; // caller (owner)
+        if (userId === 'user-2') return { role: 'pending' } as RoomMember; // target
+        return null;
+      });
+
+      const approvedRoom = { ...room, requireApproval: true };
+      mockRepo.findById.mockResolvedValue(approvedRoom);
+
+      await service.approveMember('room-1', 'user-1', 'user-2');
+
+      expect(mockUserRepo.findById).toHaveBeenCalledWith('user-2');
+      expect(mockMessageRepo.create).toHaveBeenCalledWith({
+        roomId: 'room-1',
+        senderId: null,
+        content: '[System] Bob已加入',
+      });
+      expect(mockEmit).toHaveBeenCalledWith('room-1', 'new_message', { messageId: 'msg-sys', content: '[System] Bob已加入' });
+    });
+  });
 });

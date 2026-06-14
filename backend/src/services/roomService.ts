@@ -3,6 +3,8 @@ import { randomBytes } from 'crypto';
 import { isUserOnline } from '../realtime/presence';
 import type { IRoomRepository } from '../repositories/IRoomRepository';
 import type { IRoomMemberRepository } from '../repositories/IRoomMemberRepository';
+import type { IUserRepository } from '../repositories/IUserRepository';
+import type { IMessageRepository } from '../repositories/IMessageRepository';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../errors/AppError';
 import {
   createRoomSchema,
@@ -21,6 +23,8 @@ export const makeRoomService = (
   roomMemberRepo: IRoomMemberRepository,
   emitRoomEvent?: (roomId: string, eventName: string, payload: any) => void,
   socialRepo?: { isBlocked(userA: string, userB: string): Promise<boolean>; areFriends(userA: string, userB: string): Promise<boolean> },
+  userRepo?: IUserRepository,
+  messageRepo?: IMessageRepository,
 ) => {
   const ensureMember = async (roomId: string, userId: string) => {
     const existing = await roomMemberRepo.findMember(roomId, userId);
@@ -145,6 +149,21 @@ export const makeRoomService = (
       if (existing) throw new ConflictError('User is already a member of this room');
       const role = room.requireApproval ? 'pending' : 'member';
       await roomMemberRepo.add({ roomId: room.roomId, userId, role });
+
+      if (role === 'member' && userRepo && messageRepo) {
+        const user = await userRepo.findById(userId);
+        if (user) {
+          const sysMsg = await messageRepo.create({
+            roomId: room.roomId,
+            senderId: null,
+            content: `[System] ${user.name}已加入`,
+          });
+          if (emitRoomEvent) {
+            emitRoomEvent(room.roomId, 'new_message', sysMsg);
+          }
+        }
+      }
+
       return room;
     },
 
@@ -214,6 +233,20 @@ export const makeRoomService = (
       await roomMemberRepo.update(roomId, targetUserId, { role: 'member' });
       if (emitRoomEvent) {
         emitRoomEvent(roomId, 'room_update', { type: 'MEMBER_APPROVED', data: { userId: targetUserId } });
+      }
+
+      if (userRepo && messageRepo) {
+        const user = await userRepo.findById(targetUserId);
+        if (user) {
+          const sysMsg = await messageRepo.create({
+            roomId,
+            senderId: null,
+            content: `[System] ${user.name}已加入`,
+          });
+          if (emitRoomEvent) {
+            emitRoomEvent(roomId, 'new_message', sysMsg);
+          }
+        }
       }
     },
 
