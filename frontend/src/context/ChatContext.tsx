@@ -260,7 +260,11 @@ interface ChatContextType {
   handleLogout: () => void;
   handleSendMessage: (roomId: string, content: string, replyTarget: Message | null) => void;
   handleTyping: (roomId: string, isTyping: boolean) => void;
-  handleUploadAttachment: (roomId: string, file: File) => Promise<void>;
+  handleUploadAttachment: (
+    roomId: string,
+    file: File,
+    options?: { content?: string; replyTarget?: Message | null },
+  ) => Promise<void>;
   handleRecallMessage: (msgId: string) => void;
   handleUpdateProfile: (profile: ProfileInput) => Promise<User>;
   handleUpdatePreferences: (preferences: PreferencesInput) => Promise<void>;
@@ -981,12 +985,21 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     sendTyping(socketRef.current, { roomId, isTyping });
   };
 
-  const handleUploadAttachment = async (roomId: string, file: File) => {
+  const handleUploadAttachment = async (
+    roomId: string,
+    file: File,
+    options?: { content?: string; replyTarget?: Message | null },
+  ) => {
     if (!token || !socketRef.current) return;
     const uploaded = await uploadAttachment(token, file);
+    const content = options?.content?.trim()
+      ? options.content.trim()
+      : formatUploadedAttachmentMessage(uiLanguage, file.name);
+
     sendMessage(socketRef.current, {
       roomId,
-      content: formatUploadedAttachmentMessage(uiLanguage, file.name),
+      content,
+      replyTo: options?.replyTarget?.id,
       attachmentIds: [uploaded.attachmentId],
     });
   };

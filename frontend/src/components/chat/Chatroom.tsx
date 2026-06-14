@@ -134,14 +134,32 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
     );
   }
 
-  const handleSend = (e: React.FormEvent) => {
+  const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputText.trim()) return;
+    if (isUploadingAttachment) return;
+    if (!inputText.trim() && !pendingAttachment) return;
 
-    handleSendMessage(activeRoom.id, inputText, replyTarget);
-    handleTyping(activeRoom.id, false);
-    setInputText("");
-    setReplyTarget(null);
+    try {
+      if (pendingAttachment) {
+        setIsUploadingAttachment(true);
+        await handleUploadAttachment(activeRoom.id, pendingAttachment, {
+          content: inputText,
+          replyTarget,
+        });
+        setPendingAttachment(null);
+      } else {
+        handleSendMessage(activeRoom.id, inputText, replyTarget);
+      }
+
+      handleTyping(activeRoom.id, false);
+      setInputText("");
+      setReplyTarget(null);
+    } catch (error) {
+      console.error(error);
+      alert(error instanceof Error ? error.message : "Failed to send message");
+    } finally {
+      setIsUploadingAttachment(false);
+    }
   };
 
   const handleAttach = () => {
@@ -153,21 +171,6 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
     event.target.value = "";
     if (!file) return;
     setPendingAttachment(file);
-  };
-
-  const handleConfirmAttachmentUpload = async () => {
-    if (!pendingAttachment) return;
-
-    setIsUploadingAttachment(true);
-    try {
-      await handleUploadAttachment(activeRoom.id, pendingAttachment);
-      setPendingAttachment(null);
-    } catch (error) {
-      console.error(error);
-      alert(error instanceof Error ? error.message : "Failed to upload attachment");
-    } finally {
-      setIsUploadingAttachment(false);
-    }
   };
 
   const handleRemovePendingAttachment = () => {
@@ -439,15 +442,6 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
               className="hidden"
               onChange={handleFileSelected}
             />
-            <button
-              type="button"
-              onClick={handleAttach}
-              title={t("chatroom.uploadAttachment")}
-              className="p-2.5 border border-border-secondary hover:border-border-primary rounded-sm text-text-muted hover:text-foreground transition-colors cursor-pointer shrink-0 mb-0.5"
-            >
-              <Icon icon="boxicons:paperclip" className="h-4 w-4" />
-            </button>
-
             {pendingAttachment && (
               <div className="bg-surface-muted border border-border-primary px-6 py-2 flex items-center justify-between text-xs select-none rounded-sm">
                 <div className="flex-1 min-w-0 border-l-2 border-primary pl-2">
@@ -457,31 +451,30 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
                     {pendingAttachment.type || "application/octet-stream"} · {formatFileSize(pendingAttachment.size)}
                   </p>
                 </div>
-                <div className="flex items-center gap-2 shrink-0 ml-4">
-                  <Button
-                    type="button"
-                    onClick={() => void handleConfirmAttachmentUpload()}
-                    disabled={isUploadingAttachment}
-                    className="py-1.5 px-3"
-                  >
-                    {isUploadingAttachment ? "Uploading..." : t("chatroom.send")}
-                  </Button>
-                  <button
-                    type="button"
-                    onClick={handleRemovePendingAttachment}
-                    disabled={isUploadingAttachment}
-                    className="text-text-muted hover:text-foreground cursor-pointer p-0.5 border border-transparent hover:border-border-primary rounded-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                    title={t("chatroom.cancel")}
-                  >
-                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={handleRemovePendingAttachment}
+                  disabled={isUploadingAttachment}
+                  className="text-text-muted hover:text-foreground cursor-pointer p-0.5 border border-transparent hover:border-border-primary rounded-sm disabled:opacity-50 disabled:cursor-not-allowed shrink-0 ml-4"
+                  title={t("chatroom.cancel")}
+                >
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
               </div>
             )}
 
             <form onSubmit={handleSend} className="flex gap-4 items-end">
+              <button
+                type="button"
+                onClick={handleAttach}
+                title={t("chatroom.uploadAttachment")}
+                className="p-2.5 border border-border-secondary hover:border-border-primary rounded-sm text-text-muted hover:text-foreground transition-colors cursor-pointer shrink-0 mb-0.5"
+              >
+                <Icon icon="boxicons:paperclip" className="h-4 w-4" />
+              </button>
+
               <div className="relative flex-1">
                 {mentionCandidates.length > 0 && (
                   <div className="absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-sm border border-border-primary bg-surface-card shadow-lg">
@@ -536,8 +529,13 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
                 />
               </div>
 
-              <Button type="submit" variant="primary" className="py-2.5 px-5 shrink-0 select-none">
-                {t("chatroom.send")}
+              <Button
+                type="submit"
+                variant="primary"
+                disabled={isUploadingAttachment}
+                className="py-2.5 px-5 shrink-0 select-none"
+              >
+                {isUploadingAttachment ? "Uploading..." : t("chatroom.send")}
               </Button>
             </form>
           </div>
