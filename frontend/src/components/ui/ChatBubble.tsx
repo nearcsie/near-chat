@@ -25,7 +25,7 @@ export interface ChatBubbleProps {
   attachments?: Attachment[];
   senderAvatar?: string;
   isRead?: boolean;
-  readByAvatars?: string[];
+  readByAvatars?: { name: string; avatarUrl: string }[];
   roomType?: "msg" | "group";
   onReply?: () => void;
   onRecall?: () => void;
@@ -350,16 +350,23 @@ export function ChatBubble({
 
         {roomType === "group" && readByAvatars && readByAvatars.length > 0 && (
           <div className="flex gap-1 mt-1 justify-end w-full px-0.5">
-            {readByAvatars.map((avatarUrl, idx) => (
+            {readByAvatars.map((reader, idx) => (
               <div
                 key={idx}
-                className="h-4.5 w-4.5 border border-border-primary bg-surface-muted rounded-sm overflow-hidden select-none"
-                title="已讀"
+                className="h-4.5 w-4.5 border border-border-primary bg-surface-muted rounded-sm overflow-hidden select-none flex items-center justify-center"
+                title={reader.name}
               >
-                {avatarUrl ? (
-                  <img src={resolveAssetUrl(avatarUrl)} alt="read status" className="h-full w-full object-cover" />
+                {reader.avatarUrl ? (
+                  <img src={resolveAssetUrl(reader.avatarUrl)} alt={reader.name} className="h-full w-full object-cover" />
                 ) : (
-                  <span className="text-[8px] flex items-center justify-center h-full w-full font-bold">R</span>
+                  <span className="text-[8px] font-bold leading-none">
+                    {reader.name
+                      .split(" ")
+                      .map((n) => n[0])
+                      .join("")
+                      .slice(0, 2)
+                      .toUpperCase() || "U"}
+                  </span>
                 )}
               </div>
             ))}

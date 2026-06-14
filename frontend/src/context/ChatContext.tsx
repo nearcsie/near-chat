@@ -88,6 +88,7 @@ export interface Member {
   nickname?: string;
   isMuted?: boolean;
   lastReadId?: string | null;
+  avatarUrl?: string;
 }
 
 export interface ChatRoom {
@@ -282,7 +283,7 @@ interface ChatContextType {
   kickGroupMember: (roomId: string, userId: string) => Promise<Member[] | undefined>;
   transferGroupOwner: (roomId: string, userId: string) => Promise<Member[] | undefined>;
   handleDeleteGroupRoom: (roomId: string) => Promise<string | null>;
-  getReadAvatarsForMessage: (room: ChatRoom, msg: Message) => string[];
+  getReadAvatarsForMessage: (room: ChatRoom, msg: Message) => { name: string; avatarUrl: string }[];
 
   searchUsersForInvite: (query: string) => Promise<PublicUser[]>;
   handleJoinByInviteCode: (inviteCode: string) => Promise<string>;
@@ -510,6 +511,7 @@ const mapRoomMember = (member: ApiRoomMember, profile?: UserProfile): Member => 
   nickname: member.nickname,
   isMuted: member.isMuted,
   lastReadId: member.lastReadId ?? null,
+  avatarUrl: profile?.avatarUrl,
 });
 
 const fetchRoomMembers = async (authToken: string, roomId: string): Promise<Member[]> => {
@@ -1336,7 +1338,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     return remaining[0]?.id ?? null;
   };
 
-  const getReadAvatarsForMessage = (room: ChatRoom, msg: Message): string[] => {
+  const getReadAvatarsForMessage = (room: ChatRoom, msg: Message): { name: string; avatarUrl: string }[] => {
     if (room.type !== "group") return [];
 
     const roomReads = groupReadStates[room.id];
@@ -1344,7 +1346,10 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
     return Object.entries(roomReads)
       .filter(([readerId, lastReadId]) => readerId !== currentUserId && lastReadId === msg.id)
-      .map(() => "");
+      .map(([readerId]) => {
+        const member = room.members?.find((m) => m.userId === readerId);
+        return { name: member?.nickname ?? member?.name ?? readerId, avatarUrl: member?.avatarUrl ?? "" };
+      });
   };
 
   const searchUsersForInvite = async (query: string): Promise<PublicUser[]> => {
