@@ -91,4 +91,47 @@ describe('RoomRepository (pg)', () => {
     expect(room.type).toBe('private');
     expect(typeof room.roomId).toBe('string');
   });
+
+  it('findByMember unreadCount logic: own messages are not counted as unread', async () => {
+    const user1Res = await testPool.query(
+      "INSERT INTO users (name, email, password_hash) VALUES ('Alice', 'alice@test.com', 'hash') RETURNING user_id"
+    );
+    const user2Res = await testPool.query(
+      "INSERT INTO users (name, email, password_hash) VALUES ('Bob', 'bob@test.com', 'hash') RETURNING user_id"
+    );
+    const aliceId = user1Res.rows[0].user_id;
+    const bobId = user2Res.rows[0].user_id;
+
+    const room = await repo.create({
+      type: 'group',
+      name: 'Group Chat',
+      requireApproval: false,
+      viewHistory: true,
+    });
+
+    await testPool.query(
+      'INSERT INTO room_members (room_id, user_id, role) VALUES ($1, $2, $3), ($1, $4, $5)',
+      [room.roomId, aliceId, 'owner', bobId, 'member']
+    );
+
+    const msg1Res = await testPool.query(
+      'INSERT INTO messages (room_id, sender_id, content) VALUES ($1, $2, $3) RETURNING message_id',
+      [room.roomId, bobId, 'Hello from Bob']
+    );
+    const msg1Id = msg1Res.rows[0].message_id;
+
+    await testPool.query(
+      'INSERT INTO messages (room_id, sender_id, content) VALUES ($1, $2, $3) RETURNING message_id',
+      [room.roomId, aliceId, 'Hello from Alice']
+    );
+
+    await testPool.query(
+      'UPDATE room_members SET last_read_id = $1 WHERE room_id = $2 AND user_id = $3',
+      [msg1Id, room.roomId, aliceId]
+    );
+
+    const rooms = await repo.findByMember(aliceId);
+    expect(rooms).toHaveLength(1);
+    expect(rooms[0].unreadCount).toBe(0);
+  });
 });

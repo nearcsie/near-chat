@@ -1,8 +1,9 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useLayoutEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { useChat, getAvatarForUser, Message } from "@/context/ChatContext";
+import { useChat, getAvatarForUser, Message, ChatRoom } from "@/context/ChatContext";
+import { resolveAssetUrl } from "@/lib/assets";
 import { Button } from "@/components/ui/Button";
 import { Dropdown } from "@/components/ui/Dropdown";
 import { Avatar } from "@/components/ui/Avatar";
@@ -12,6 +13,7 @@ import { useTranslation } from "@/hooks/useTranslation";
 import { Modal } from "@/components/ui/Modal";
 import { Input } from "@/components/ui/Input";
 import ProfilePopover from "./ProfilePopover";
+import { Icon } from "@iconify/react";
 
 interface ChatroomProps {
   roomId: string;
@@ -52,6 +54,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
     rooms,
     messages,
     user,
+    friends,
     activeRoomNicknames,
     handleSendMessage,
     handleTyping,
@@ -63,13 +66,15 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
     showRightPanel,
     setShowRightPanel,
     typingUsers,
+    activeProfilePopover,
+    setActiveProfilePopover,
+    groupReadStates,
   } = useChat();
 
   const [inputText, setInputText] = useState("");
   const [mentionDraft, setMentionDraft] = useState<MentionDraft | null>(null);
   const [selectedMentionIndex, setSelectedMentionIndex] = useState(0);
   const [replyTarget, setReplyTarget] = useState<Message | null>(null);
-  const [showHeaderPopover, setShowHeaderPopover] = useState(false);
   const [isModifyNickOpen, setIsModifyNickOpen] = useState(false);
   const [nickInputValue, setNickInputValue] = useState("");
   const [pendingAttachment, setPendingAttachment] = useState<File | null>(null);
@@ -101,8 +106,17 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
     setSelectedMentionIndex(0);
   }
 
-  useEffect(() => {
-    messageEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  // Scroll to bottom when room or messages change
+  const lastScrolledRoomIdRef = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    if (lastScrolledRoomIdRef.current !== roomId) {
+      messageEndRef.current?.scrollIntoView({ behavior: "auto" });
+      if (messages.length > 0) {
+        lastScrolledRoomIdRef.current = roomId;
+      }
+    } else {
+      messageEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
   }, [roomId, messages]);
 
   useEffect(() => {
@@ -124,14 +138,32 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
     );
   }
 
-  const handleSend = (e: React.FormEvent) => {
+  const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputText.trim()) return;
+    if (isUploadingAttachment) return;
+    if (!inputText.trim() && !pendingAttachment) return;
 
-    handleSendMessage(activeRoom.id, inputText, replyTarget);
-    handleTyping(activeRoom.id, false);
-    setInputText("");
-    setReplyTarget(null);
+    try {
+      if (pendingAttachment) {
+        setIsUploadingAttachment(true);
+        await handleUploadAttachment(activeRoom.id, pendingAttachment, {
+          content: inputText,
+          replyTarget,
+        });
+        setPendingAttachment(null);
+      } else {
+        handleSendMessage(activeRoom.id, inputText, replyTarget);
+      }
+
+      handleTyping(activeRoom.id, false);
+      setInputText("");
+      setReplyTarget(null);
+    } catch (error) {
+      console.error(error);
+      alert(error instanceof Error ? error.message : "Failed to send message");
+    } finally {
+      setIsUploadingAttachment(false);
+    }
   };
 
   const handleAttach = () => {
@@ -143,21 +175,6 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
     event.target.value = "";
     if (!file) return;
     setPendingAttachment(file);
-  };
-
-  const handleConfirmAttachmentUpload = async () => {
-    if (!pendingAttachment) return;
-
-    setIsUploadingAttachment(true);
-    try {
-      await handleUploadAttachment(activeRoom.id, pendingAttachment);
-      setPendingAttachment(null);
-    } catch (error) {
-      console.error(error);
-      alert(error instanceof Error ? error.message : "Failed to upload attachment");
-    } finally {
-      setIsUploadingAttachment(false);
-    }
   };
 
   const handleRemovePendingAttachment = () => {
@@ -247,19 +264,25 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
   return (
     <div className="flex-1 flex flex-col bg-background h-full overflow-hidden">
       <div className="h-14 border-b border-border-primary px-6 flex items-center justify-between select-none shrink-0 bg-surface-card z-10">
-        <div
-          className={`flex items-center gap-3 relative avatar-click-target ${
-            activeRoom.type === "msg" ? "cursor-pointer hover:opacity-85 transition-opacity" : ""
-          }`}
-          onClick={() => {
-            if (activeRoom.type === "msg") {
-              setShowHeaderPopover(!showHeaderPopover);
-            }
-          }}
-        >
+        <div className="flex items-center gap-3 relative">
           <Avatar
             name={activeRoom.name}
-            src={getAvatarForUser(activeRoom.name, user.avatar, user.username)}
+            src={(() => {
+              if (activeRoom.avatarUrl) {
+                return resolveAssetUrl(activeRoom.avatarUrl);
+              }
+              if (activeRoom.type === "msg") {
+                const otherMember = activeRoom.members?.find((m) => m.userId !== user.userId);
+                if (otherMember?.avatarUrl) {
+                  return resolveAssetUrl(otherMember.avatarUrl);
+                }
+                const friend = friends.find((f) => f.id === activeRoom.otherMemberId || f.name === activeRoom.name);
+                if (friend?.avatarUrl) {
+                  return resolveAssetUrl(friend.avatarUrl);
+                }
+              }
+              return getAvatarForUser(activeRoom.name, user.avatar, user.username);
+            })()}
             size="sm"
             isOnline={activeRoom.isOnline}
           />
@@ -276,17 +299,6 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
               </span>
             )}
           </div>
-
-          {showHeaderPopover && activeRoom.type === "msg" && (
-            <ProfilePopover
-              username={activeRoom.name}
-              onClose={(e) => {
-                e.stopPropagation();
-                setShowHeaderPopover(false);
-              }}
-              position="bottom"
-            />
-          )}
         </div>
 
         <div className="flex items-center gap-3">
@@ -296,9 +308,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
               onClick={onOpenGroupSettings}
               className="py-1 px-3 text-xs flex items-center gap-1.5"
             >
-              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
-              </svg>
+              <Icon icon="boxicons:slider-vertical" className="h-3.5 w-3.5" />
               {t("chatroom.groupSettings")}
             </Button>
           )}
@@ -309,9 +319,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
                 className="p-1.5 border border-border-secondary hover:border-border-primary rounded-sm text-text-muted hover:text-foreground transition-colors cursor-pointer"
                 title={t("chatroom.chatOptions")}
               >
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
-                </svg>
+                <Icon icon="bx:dots-horizontal-rounded" className="h-4 w-4" />
               </button>
             }
             items={[
@@ -333,10 +341,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
             }`}
             title={showRightPanel ? t("chatroom.hideInfoPanel") : t("chatroom.showInfoPanel")}
           >
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v14a1 1 0 01-1 1H5a1 1 0 01-1-1V5z" />
-              <path strokeLinecap="round" strokeLinejoin="round" d="M16 4v16" />
-            </svg>
+            <Icon icon="boxicons:sidebar-right" className="h-4 w-4" />
           </button>
         </div>
       </div>
@@ -345,8 +350,36 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
         {messages
           .filter((m) => m.roomId === activeRoom.id)
           .map((msg) => {
+            if (msg.content.startsWith("[System] ")) {
+              return (
+                <div
+                  key={msg.id}
+                  className="w-full flex justify-center my-2 select-none"
+                >
+                  <div className="bg-surface-card border border-border-secondary px-3 py-1 rounded-full text-xs text-text-muted">
+                    {msg.content.substring(9)}
+                  </div>
+                </div>
+              );
+            }
+
             const senderMember = activeRoom.members?.find((m) => m.userId === msg.senderId);
             const displayName = senderMember?.nickname || msg.senderName;
+
+            // Calculate isRead for private chats
+            let isRead = msg.isRead || false;
+            if (activeRoom.type === "msg" && msg.isOutgoing) {
+              const otherUserId = activeRoom.otherMemberId || activeRoom.members?.find((m) => m.userId !== user.userId)?.userId;
+              if (otherUserId) {
+                const otherLastReadId = groupReadStates[activeRoom.id]?.[otherUserId];
+                if (otherLastReadId) {
+                  const roomMessages = messages.filter((m) => m.roomId === activeRoom.id);
+                  const msgIndex = roomMessages.findIndex((m) => m.id === msg.id);
+                  const lastReadIndex = roomMessages.findIndex((m) => m.id === otherLastReadId);
+                  isRead = lastReadIndex !== -1 && msgIndex !== -1 && msgIndex <= lastReadIndex;
+                }
+              }
+            }
 
             return (
               <div
@@ -362,13 +395,26 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
                   isRecalled={msg.isRecalled}
                   replyTo={msg.replyTo || undefined}
                   attachments={msg.attachments}
-                  senderAvatar={msg.isOutgoing ? user.avatar : getAvatarForUser(msg.senderName, user.avatar, user.username)}
-                  isRead={msg.isRead}
+                  senderAvatar={
+                    msg.isOutgoing
+                      ? user.avatar
+                      : senderMember?.avatarUrl
+                      ? resolveAssetUrl(senderMember.avatarUrl)
+                      : undefined
+                  }
+                  isRead={isRead}
                   readByAvatars={getReadAvatarsForMessage(activeRoom, msg)}
                   roomType={activeRoom.type}
+                  senderId={msg.senderId || undefined}
+                  messageId={msg.id}
                   onReply={() => setReplyTarget(msg)}
                   onRecall={() => handleRecallMessage(msg.id)}
                   canRecall={Boolean(msg.isOutgoing) || canManageMembers}
+                  avatarName={
+                    msg.isOutgoing
+                      ? user.username
+                      : senderMember?.name || msg.senderName
+                  }
                 />
 
                 {!msg.isRecalled && (
@@ -405,9 +451,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
             onClick={() => setReplyTarget(null)}
             className="text-text-muted hover:text-foreground cursor-pointer p-0.5 border border-transparent hover:border-border-primary rounded-sm ml-4"
           >
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
+            <Icon icon="boxicons:x" className="h-3.5 w-3.5" />
           </button>
         </div>
       )}
@@ -438,7 +482,6 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
               className="hidden"
               onChange={handleFileSelected}
             />
-
             {pendingAttachment && (
               <div className="bg-surface-muted border border-border-primary px-6 py-2 flex items-center justify-between text-xs select-none rounded-sm">
                 <div className="flex-1 min-w-0 border-l-2 border-primary pl-2">
@@ -448,27 +491,17 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
                     {pendingAttachment.type || "application/octet-stream"} · {formatFileSize(pendingAttachment.size)}
                   </p>
                 </div>
-                <div className="flex items-center gap-2 shrink-0 ml-4">
-                  <Button
-                    type="button"
-                    onClick={() => void handleConfirmAttachmentUpload()}
-                    disabled={isUploadingAttachment}
-                    className="py-1.5 px-3"
-                  >
-                    {isUploadingAttachment ? "Uploading..." : t("chatroom.send")}
-                  </Button>
-                  <button
-                    type="button"
-                    onClick={handleRemovePendingAttachment}
-                    disabled={isUploadingAttachment}
-                    className="text-text-muted hover:text-foreground cursor-pointer p-0.5 border border-transparent hover:border-border-primary rounded-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                    title={t("chatroom.cancel")}
-                  >
-                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={handleRemovePendingAttachment}
+                  disabled={isUploadingAttachment}
+                  className="text-text-muted hover:text-foreground cursor-pointer p-0.5 border border-transparent hover:border-border-primary rounded-sm disabled:opacity-50 disabled:cursor-not-allowed shrink-0 ml-4"
+                  title={t("chatroom.cancel")}
+                >
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
               </div>
             )}
 
@@ -479,9 +512,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
                 title={t("chatroom.uploadAttachment")}
                 className="p-2.5 border border-border-secondary hover:border-border-primary rounded-sm text-text-muted hover:text-foreground transition-colors cursor-pointer shrink-0 mb-0.5"
               >
-                <svg className="h-4.5 w-4.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
-                </svg>
+                <Icon icon="boxicons:paperclip" className="h-4 w-4" />
               </button>
 
               <div className="relative flex-1">
@@ -538,8 +569,13 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
                 />
               </div>
 
-              <Button type="submit" variant="primary" className="py-2.5 px-5 shrink-0 select-none">
-                {t("chatroom.send")}
+              <Button
+                type="submit"
+                variant="primary"
+                disabled={isUploadingAttachment}
+                className="py-2.5 px-5 shrink-0 select-none"
+              >
+                {isUploadingAttachment ? "Uploading..." : t("chatroom.send")}
               </Button>
             </form>
           </div>

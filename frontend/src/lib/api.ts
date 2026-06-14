@@ -13,6 +13,7 @@ import type {
   Room,
   RoomMember,
   RoomSummary,
+  SearchUserResult,
   UserProfile,
   UserSettings,
 } from '@shared/types';
@@ -232,7 +233,7 @@ export const logout = (token: string): Promise<void> =>
 export const getMe = (token: string): Promise<MyProfile> =>
   requestJson<MyProfile>('/users/me', {}, { token });
 
-export const getUserProfile = (token: string, userId: string): Promise<UserProfile> =>
+export const getUserProfile = (userId: string, token?: string): Promise<UserProfile> =>
   requestJson<UserProfile>(`/users/${userId}`, {}, { token });
 
 export const updateMe = (token: string, data: UpdateMeRequest): Promise<MyProfile> =>
@@ -278,9 +279,14 @@ export const updateMySettings = (
     { token },
   );
 
-export const searchUsers = (token: string, params: { query: string }): Promise<PublicUser[]> => {
-  const query = new URLSearchParams({ q: params.query });
-  return requestJson<PublicUser[]>(`/users?${query.toString()}`, {}, { token });
+export const searchUsers = (
+  token: string,
+  params: { query: string; mode?: 'name' | 'userId' | 'email'; friendsOnly?: boolean },
+): Promise<SearchUserResult[]> => {
+  const qs = new URLSearchParams({ q: params.query });
+  if (params.mode) qs.set('mode', params.mode);
+  if (params.friendsOnly) qs.set('friendsOnly', 'true');
+  return requestJson<SearchUserResult[]>(`/users?${qs.toString()}`, {}, { token });
 };
 
 export const listFriends = (token: string): Promise<FriendResponse[]> =>
@@ -381,6 +387,20 @@ export const updateRoom = (
     },
     { token },
   );
+
+export const uploadRoomAvatar = (token: string, roomId: string, file: File): Promise<Room> => {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  return requestJson<Room>(
+    `/rooms/${roomId}/avatar`,
+    {
+      method: 'POST',
+      body: formData,
+    },
+    { token },
+  );
+};
 
 export const deleteRoom = (token: string, roomId: string): Promise<void> =>
   requestJson<void>(`/rooms/${roomId}`, { method: 'DELETE' }, { token });

@@ -25,8 +25,26 @@ export default function RootLayout({
   return (
     <html
       lang="zh-TW"
+      suppressHydrationWarning
       className={`${inter.variable} ${jetbrainsMono.variable} h-full antialiased`}
     >
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              try {
+                const savedTheme = localStorage.getItem('theme');
+                const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+                if (savedTheme === 'dark' || (!savedTheme && prefersDark)) {
+                  document.documentElement.classList.add('dark');
+                } else {
+                  document.documentElement.classList.remove('dark');
+                }
+              } catch (_) {}
+            `,
+          }}
+        />
+      </head>
       <body className="min-h-full flex flex-col bg-[#faf9fe] dark:bg-black text-foreground">
         {children}
       </body>

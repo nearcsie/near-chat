@@ -178,14 +178,35 @@ describe('userController', () => {
   });
 
   it('searches users', async () => {
-    service.search.mockResolvedValue([{ userId: 'user-2', name: 'Bob', avatarUrl: undefined }]);
+    service.search.mockResolvedValue([{ userId: 'user-2', name: 'Bob', email: 'bob@example.com', avatarUrl: undefined }]);
     const res = mockRes();
     const next = vi.fn();
 
     await ctrl.search(authedReq({ query: { q: 'bob' } }), res, next);
 
-    expect(service.search).toHaveBeenCalledWith('bob');
-    expect(res.json).toHaveBeenCalledWith([{ userId: 'user-2', name: 'Bob', avatarUrl: undefined }]);
+    expect(service.search).toHaveBeenCalledWith('bob', undefined);
+    expect(res.json).toHaveBeenCalledWith([{ userId: 'user-2', name: 'Bob', email: 'bob@example.com', avatarUrl: undefined }]);
+  });
+
+  it('searches users with mode', async () => {
+    service.search.mockResolvedValue([{ userId: 'user-2', name: 'Bob', email: 'bob@example.com', avatarUrl: undefined }]);
+    const res = mockRes();
+    const next = vi.fn();
+
+    await ctrl.search(authedReq({ query: { q: 'bob', mode: 'email' } }), res, next);
+
+    expect(service.search).toHaveBeenCalledWith('bob', 'email');
+    expect(res.json).toHaveBeenCalledWith([{ userId: 'user-2', name: 'Bob', email: 'bob@example.com', avatarUrl: undefined }]);
+  });
+
+  it('rejects invalid mode value', async () => {
+    const res = mockRes();
+    const next = vi.fn();
+
+    await ctrl.search(authedReq({ query: { q: 'bob', mode: 'invalid' } }), res, next);
+
+    expect(next).toHaveBeenCalledWith(expect.any(ValidationError));
+    expect(service.search).not.toHaveBeenCalled();
   });
 
   it('soft deletes the current user', async () => {

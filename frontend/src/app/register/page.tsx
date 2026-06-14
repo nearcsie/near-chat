@@ -44,6 +44,7 @@ export default function RegisterPage() {
           avatar: result.user.avatarUrl ?? "",
         }),
       );
+      localStorage.setItem("just_registered", "true");
       router.push("/");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Registration failed.");

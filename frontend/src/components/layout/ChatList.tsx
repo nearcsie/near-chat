@@ -6,6 +6,7 @@ import { ChatRoom, getAvatarForUser, useChat } from "@/context/ChatContext";
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
 import { useTranslation } from "@/hooks/useTranslation";
+import { resolveAssetUrl } from "@/lib/assets";
 
 interface ChatListProps {
   searchQuery: string;
@@ -19,6 +20,7 @@ export default function ChatList({ searchQuery }: ChatListProps) {
     rooms,
     folders,
     user,
+    friends,
     toggleFolder,
     handleDeleteFolder,
     handleCategorizeRoom,
@@ -178,7 +180,22 @@ export default function ChatList({ searchQuery }: ChatListProps) {
                   onClick={() => router.push(`/chat/${room.id}`)}
                   onDragStart={(event) => handleRoomDragStart(event, room.id)}
                   onDragEnd={resetDragState}
-                  avatarSrc={getAvatarForUser(room.name, user.avatar, user.username)}
+                  avatarSrc={(() => {
+                    if (room.avatarUrl) {
+                      return resolveAssetUrl(room.avatarUrl);
+                    }
+                    if (room.type === "msg") {
+                      const otherMember = room.members?.find((m) => m.userId !== user.userId);
+                      if (otherMember?.avatarUrl) {
+                        return resolveAssetUrl(otherMember.avatarUrl);
+                      }
+                      const friend = friends.find((f) => f.id === room.otherMemberId || f.name === room.name);
+                      if (friend?.avatarUrl) {
+                        return resolveAssetUrl(friend.avatarUrl);
+                      }
+                    }
+                    return getAvatarForUser(room.name, user.avatar, user.username);
+                  })()}
                   noMessagesText={t("sidebar.noMessages")}
                 />
               ))}
@@ -241,7 +258,22 @@ export default function ChatList({ searchQuery }: ChatListProps) {
                         onClick={() => router.push(`/chat/${room.id}`)}
                         onDragStart={(event) => handleRoomDragStart(event, room.id)}
                         onDragEnd={resetDragState}
-                        avatarSrc={getAvatarForUser(room.name, user.avatar, user.username)}
+                        avatarSrc={(() => {
+                          if (room.avatarUrl) {
+                            return resolveAssetUrl(room.avatarUrl);
+                          }
+                          if (room.type === "msg") {
+                            const otherMember = room.members?.find((m) => m.userId !== user.userId);
+                            if (otherMember?.avatarUrl) {
+                              return resolveAssetUrl(otherMember.avatarUrl);
+                            }
+                            const friend = friends.find((f) => f.id === room.otherMemberId || f.name === room.name);
+                            if (friend?.avatarUrl) {
+                              return resolveAssetUrl(friend.avatarUrl);
+                            }
+                          }
+                          return getAvatarForUser(room.name, user.avatar, user.username);
+                        })()}
                         noMessagesText={t("sidebar.noMessages")}
                       />
                     ))}
