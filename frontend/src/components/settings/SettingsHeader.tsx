@@ -11,7 +11,7 @@ export default function SettingsHeader({ title }: { title: string }) {
   const { t } = useTranslation();
 
   return (
-    <div className="h-14 border-b border-border-primary px-6 flex items-center justify-between select-none shrink-0 bg-surface-card z-10">
+    <div className="h-14 border-b border-border-primary px-4 md:px-6 flex items-center justify-between select-none shrink-0 bg-surface-card z-10">
       <h1 className="text-sm font-bold text-foreground tracking-wider">{title}</h1>
       <Button
         type="button"

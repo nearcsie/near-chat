@@ -219,9 +219,20 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
   return (
     <div className="flex-1 flex flex-col bg-background h-full overflow-hidden">
       {/* Chat Panel Header */}
-      <div className="h-14 border-b border-border-primary px-6 flex items-center justify-between select-none shrink-0 bg-surface-card z-10">
+      <div className="h-14 border-b border-border-primary px-3 md:px-6 flex items-center justify-between select-none shrink-0 bg-surface-card z-10 gap-2">
+        <div className="flex items-center gap-1 md:gap-3 min-w-0">
+        <button
+          type="button"
+          onClick={() => router.push("/")}
+          aria-label={t("settingsHeader.backToChat")}
+          className="md:hidden shrink-0 p-1.5 -ml-1 text-text-muted hover:text-foreground rounded-sm transition-colors cursor-pointer"
+        >
+          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+          </svg>
+        </button>
         <div
-          className={`flex items-center gap-3 relative avatar-click-target ${
+          className={`flex items-center gap-3 relative avatar-click-target min-w-0 ${
             activeRoom.type === "msg" ? "cursor-pointer hover:opacity-85 transition-opacity" : ""
           }`}
           onClick={() => {
@@ -261,9 +272,10 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
             />
           )}
         </div>
+        </div>
 
         {/* Header Action Elements */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 md:gap-3 shrink-0">
           {/* Group Settings Button */}
           {activeRoom.type === "group" && onOpenGroupSettings && (
             <Button
@@ -274,7 +286,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
               <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
               </svg>
-              {t("chatroom.groupSettings")}
+              <span className="hidden sm:inline">{t("chatroom.groupSettings")}</span>
             </Button>
           )}
 
@@ -319,7 +331,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
       </div>
 
       {/* Chat Messages Area */}
-      <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-4">
+      <div className="flex-1 overflow-y-auto p-3 md:p-6 flex flex-col gap-4">
         {messages
           .filter((m) => m.roomId === activeRoom.id)
           .map((msg) => {
@@ -375,7 +387,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
 
       {/* Reply Quote Banner */}
       {replyTarget && (
-        <div className="bg-surface-muted border-t border-border-primary px-6 py-2 flex items-center justify-between text-xs select-none">
+        <div className="bg-surface-muted border-t border-border-primary px-3 md:px-6 py-2 flex items-center justify-between text-xs select-none">
           <div className="flex-1 min-w-0 border-l-2 border-primary pl-2">
             <span className="font-bold text-foreground block">{t("chatroom.replyTo", { name: activeRoom.members?.find((m) => m.userId === replyTarget.senderId)?.nickname || replyTarget.senderName })}</span>
             <p className="text-text-muted truncate mt-0.5">{replyTarget.content}</p>
@@ -398,20 +410,20 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
           ? `${names[0]} is typing...`
           : `${names.slice(0, 2).join(', ')} are typing...`;
         return (
-          <div className="px-6 py-1 text-xs text-text-muted italic select-none">
+          <div className="px-3 md:px-6 py-1 text-xs text-text-muted italic select-none">
             {label}
           </div>
         );
       })()}
 
       {/* Input Box Area */}
-      <div className="border-t border-border-primary bg-surface-card px-6 py-4 shrink-0">
+      <div className="border-t border-border-primary bg-surface-card px-3 py-3 md:px-6 md:py-4 shrink-0">
         {activeRoom.isArchived ? (
           <div className="w-full text-center py-2.5 bg-surface-muted text-xs text-text-muted uppercase tracking-wider select-none border border-dashed border-border-secondary rounded-sm">
             {t("chatroom.readOnlyOrBlocked")}
           </div>
         ) : (
-          <form onSubmit={handleSend} className="flex gap-4 items-end">
+          <form onSubmit={handleSend} className="flex gap-2 md:gap-4 items-end">
             <input
               ref={fileInputRef}
               type="file"
@@ -483,7 +495,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
               />
             </div>
 
-            <Button type="submit" variant="primary" className="py-2.5 px-5 shrink-0 select-none">
+            <Button type="submit" variant="primary" className="py-2.5 px-4 md:px-5 shrink-0 select-none">
               {t("chatroom.send")}
             </Button>
           </form>

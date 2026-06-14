@@ -13,7 +13,7 @@ export default function RoomMembersPanel({ room, members }: { room: ChatRoom; me
   const { t } = useTranslation();
 
   return (
-    <div className="members-panel-root w-[240px] shrink-0 border-l border-border-primary bg-surface-card flex flex-col h-full select-none relative">
+    <div className="members-panel-root w-[280px] max-w-[85vw] lg:w-[240px] shrink-0 border-l border-border-primary bg-surface-card flex flex-col h-full select-none relative">
       <div className="h-14 border-b border-border-primary px-4 flex items-center select-none shrink-0 bg-surface-muted">
         <span className="text-[10px] font-bold text-text-muted uppercase tracking-widest block">
           {t("chatroom.membersList", { count: members.length })}
