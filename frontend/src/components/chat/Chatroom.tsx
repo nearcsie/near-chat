@@ -87,6 +87,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
   const activeRoom = rooms.find((r) => r.id === roomId);
   const currentMember = activeRoom?.members?.find((m) => m.userId === user.userId || m.name === user.username);
   const canManageMembers = currentMember?.role === "owner" || currentMember?.role === "admin";
+  const isReadOnlyRoom = Boolean(activeRoom?.isArchived || activeRoom?.isReadonly);
 
   const mentionCandidates =
     mentionDraft
@@ -203,7 +204,12 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
   };
 
   const handleLeaveOrBlockAction = async () => {
-    const action = activeRoom.type === "group" ? t("chatroom.leave") : activeRoom.isArchived ? t("chatroom.unblock") : t("chatroom.block");
+    const action =
+      activeRoom.type === "group"
+        ? t("chatroom.leave")
+        : activeRoom.isReadonly
+          ? t("chatroom.unblock")
+          : t("chatroom.block");
     if (confirm(t("chatroom.confirmLeaveOrBlock", { action, name: activeRoom.name }))) {
       const { isDeleted, newActiveId } = await handleLeaveOrBlock(activeRoom.id);
       if (isDeleted) {
@@ -291,7 +297,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
               <h1 className="text-sm font-bold text-foreground truncate max-w-[200px]">
                 {activeRoom.name}
               </h1>
-              {activeRoom.isArchived && <Badge variant="danger">{t("chatroom.readOnly")}</Badge>}
+              {isReadOnlyRoom && <Badge variant="danger">{t("chatroom.readOnly")}</Badge>}
             </div>
             {activeRoom.type === "group" && (
               <span className="text-[10px] text-text-muted font-mono leading-none">
@@ -325,9 +331,14 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
             items={[
               { label: t("chatroom.modifyNickname"), onClick: handleModifyNick },
               {
-                label: activeRoom.type === "group" ? t("chatroom.leaveGroup") : activeRoom.isArchived ? t("chatroom.unblock") : t("chatroom.blockContact"),
+                label:
+                  activeRoom.type === "group"
+                    ? t("chatroom.leaveGroup")
+                    : activeRoom.isReadonly
+                      ? t("chatroom.unblock")
+                      : t("chatroom.blockContact"),
                 onClick: handleLeaveOrBlockAction,
-                variant: activeRoom.isArchived ? "default" : "danger",
+                variant: activeRoom.isReadonly ? "default" : "danger",
               },
             ]}
           />
@@ -470,7 +481,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
       })()}
 
       <div className="border-t border-border-primary bg-surface-card px-6 py-4 shrink-0">
-        {activeRoom.isArchived ? (
+        {isReadOnlyRoom ? (
           <div className="w-full text-center py-2.5 bg-surface-muted text-xs text-text-muted uppercase tracking-wider select-none border border-dashed border-border-secondary rounded-sm">
             {t("chatroom.readOnlyOrBlocked")}
           </div>
