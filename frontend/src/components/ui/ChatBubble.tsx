@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import { Avatar } from "./Avatar";
 import ProfilePopover from "../chat/ProfilePopover";
 import { downloadAttachment } from "@/lib/api";
+import { useChat } from "@/context/ChatContext";
 
 export interface Attachment {
   filename: string;
@@ -25,12 +26,15 @@ export interface ChatBubbleProps {
   attachments?: Attachment[];
   senderAvatar?: string;
   isRead?: boolean;
-  readByAvatars?: { name: string; avatarUrl: string }[];
+  readByAvatars?: { name: string; displayName?: string; avatarUrl: string }[];
   roomType?: "msg" | "group";
   onReply?: () => void;
   onRecall?: () => void;
   canRecall?: boolean;
   canEdit?: boolean;
+  senderId?: string;
+  messageId?: string;
+  avatarName?: string;
 }
 
 const renderMentionContent = (
@@ -71,12 +75,17 @@ export function ChatBubble({
   onRecall,
   canRecall = false,
   canEdit = false,
+  senderId,
+  messageId,
+  avatarName,
 }: ChatBubbleProps) {
   const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null>(null);
-  const [showPopover, setShowPopover] = useState(false);
   const [popoverStyle, setPopoverStyle] = useState<React.CSSProperties>({});
   const [downloadingUrl, setDownloadingUrl] = useState<string | null>(null);
   const [downloadError, setDownloadError] = useState("");
+
+  const { activeProfilePopover, setActiveProfilePopover } = useChat();
+  const showPopover = messageId ? activeProfilePopover?.instanceId === messageId : false;
 
   useEffect(() => {
     if (!menuPosition) return;
@@ -92,6 +101,11 @@ export function ChatBubble({
   }, [menuPosition]);
 
   const handleTogglePopover = (event: React.MouseEvent) => {
+    if (!senderId) {
+      console.warn("No senderId provided to ChatBubble, cannot open profile popover");
+      return;
+    }
+
     const rect = event.currentTarget.getBoundingClientRect();
     const scrollEl = event.currentTarget.closest(".overflow-y-auto");
 
@@ -117,7 +131,13 @@ export function ChatBubble({
       });
     }
 
-    setShowPopover((current) => !current);
+    if (messageId) {
+      if (activeProfilePopover?.instanceId === messageId) {
+        setActiveProfilePopover(null);
+      } else {
+        setActiveProfilePopover({ instanceId: messageId, userId: senderId });
+      }
+    }
   };
 
   const handleCopy = async () => {
@@ -157,13 +177,14 @@ export function ChatBubble({
           className="shrink-0 mt-1 relative cursor-pointer avatar-click-target"
           onClick={handleTogglePopover}
         >
-          <Avatar name={senderName} src={senderAvatar} size="sm" />
+          <Avatar name={avatarName || senderName} src={senderAvatar} size="sm" />
           {showPopover && (
             <ProfilePopover
+              userId={senderId || ""}
               username={senderName}
               onClose={(event) => {
                 event.stopPropagation();
-                setShowPopover(false);
+                setActiveProfilePopover(null);
               }}
               position="custom"
               className="absolute left-full ml-3"
@@ -354,7 +375,7 @@ export function ChatBubble({
               <div
                 key={idx}
                 className="h-4.5 w-4.5 border border-border-primary bg-surface-muted rounded-sm overflow-hidden select-none flex items-center justify-center"
-                title={reader.name}
+                title={reader.displayName || reader.name}
               >
                 {reader.avatarUrl ? (
                   <img src={resolveAssetUrl(reader.avatarUrl)} alt={reader.name} className="h-full w-full object-cover" />

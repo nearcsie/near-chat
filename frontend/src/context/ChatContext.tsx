@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import { resolveAssetUrl } from "@/lib/assets";
 import type {
   Attachment as ApiAttachment,
   EmergencyContactResponse,
@@ -106,6 +107,7 @@ export interface ChatRoom {
   unreadCount?: number;
   lastMessagePreview?: string;
   lastMessageAt?: string;
+  avatarUrl?: string;
 }
 
 export interface Message {
@@ -156,6 +158,7 @@ export interface Friend {
   email: string;
   status: "online" | "offline";
   isEmergencyContact?: boolean;
+  avatarUrl?: string;
 }
 
 export interface FriendRequest {
@@ -163,12 +166,14 @@ export interface FriendRequest {
   name: string;
   email: string;
   direction: "incoming" | "outgoing";
+  avatarUrl?: string;
 }
 
 export interface BlockedUser {
   id: string;
   name: string;
   email: string;
+  avatarUrl?: string;
 }
 
 export interface EmergencyContact {
@@ -199,7 +204,7 @@ export const getAvatarForUser = (
   currentUsername?: string,
 ) => {
   if (currentUsername && username === currentUsername) {
-    return currentUserAvatar || "";
+    return currentUserAvatar ? resolveAssetUrl(currentUserAvatar) : "";
   }
   return "";
 };
@@ -287,7 +292,7 @@ interface ChatContextType {
   kickGroupMember: (roomId: string, userId: string) => Promise<Member[] | undefined>;
   transferGroupOwner: (roomId: string, userId: string) => Promise<Member[] | undefined>;
   handleDeleteGroupRoom: (roomId: string) => Promise<string | null>;
-  getReadAvatarsForMessage: (room: ChatRoom, msg: Message) => { name: string; avatarUrl: string }[];
+  getReadAvatarsForMessage: (room: ChatRoom, msg: Message) => { name: string; displayName?: string; avatarUrl: string }[];
 
   searchUsersForInvite: (query: string) => Promise<PublicUser[]>;
   handleJoinByInviteCode: (inviteCode: string) => Promise<string>;
@@ -300,6 +305,9 @@ interface ChatContextType {
   saveEmergencySettings: (settings: EmergencySettings) => Promise<void>;
   triggerEmergencyAlertNow: (message?: string) => Promise<TriggerEmergencyAlertResult>;
   setUiLanguage: (language: UiLanguage) => void;
+  activeProfilePopover: { instanceId: string; userId: string } | null;
+  setActiveProfilePopover: React.Dispatch<React.SetStateAction<{ instanceId: string; userId: string } | null>>;
+  refreshSocialData: () => Promise<void>;
 }
 
 const ChatContext = createContext<ChatContextType | undefined>(undefined);
@@ -434,6 +442,7 @@ const mapRooms = (
     return {
       id: room.roomId,
       type: room.type === "group" ? "group" : "msg",
+      avatarUrl: room.avatarUrl,
       name:
         room.name ||
         (currentRoom?.name && !isPrivateRoomFallbackName(currentRoom.name, room.roomId)
@@ -481,6 +490,7 @@ const mapFriend = (item: FriendResponse, emergencyContactIds: Set<string>): Frie
   email: "",
   status: item.status || "offline",
   isEmergencyContact: emergencyContactIds.has(item.friend.userId),
+  avatarUrl: item.friend.avatarUrl,
 });
 
 const mapFriendRequest = (item: FriendRequestResponse, currentUserId: string): FriendRequest => {
@@ -490,6 +500,7 @@ const mapFriendRequest = (item: FriendRequestResponse, currentUserId: string): F
       name: item.addressee?.name ?? item.addresseeId,
       email: "",
       direction: "outgoing",
+      avatarUrl: item.addressee?.avatarUrl,
     };
   }
   return {
@@ -497,6 +508,7 @@ const mapFriendRequest = (item: FriendRequestResponse, currentUserId: string): F
     name: item.requester?.name ?? item.requesterId,
     email: "",
     direction: "incoming",
+    avatarUrl: item.requester?.avatarUrl,
   };
 };
 
@@ -522,7 +534,7 @@ const fetchRoomMembers = async (authToken: string, roomId: string): Promise<Memb
   const apiMembers = await listRoomMembers(authToken, roomId);
   const profiles = await Promise.all(
     apiMembers.map((member) =>
-      getUserProfile(authToken, member.userId).catch(() => undefined),
+      getUserProfile(member.userId, authToken).catch(() => undefined),
     ),
   );
 
@@ -601,6 +613,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const [selectedFriendForSidebar, setSelectedFriendForSidebar] = useState<Friend | null>(null);
   const [showRightPanel, setShowRightPanel] = useState<boolean>(true);
   const [typingUsers, setTypingUsers] = useState<Record<string, string[]>>({});
+  const [activeProfilePopover, setActiveProfilePopover] = useState<{ instanceId: string; userId: string } | null>(null);
   const typingTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   const activeRoomId = useMemo(() => {
@@ -679,7 +692,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
         setFriends(apiFriends.map((friend) => mapFriend(friend, emergencyContactIds)));
         setFriendRequests(apiRequests.map((req) => mapFriendRequest(req, effectiveUserId)));
-        setBlockedUsers(apiBlockedUsers.map(u => ({ id: u.userId, name: u.name, email: u.email })));
+        setBlockedUsers(apiBlockedUsers.map(u => ({ id: u.userId, name: u.name, email: u.email, avatarUrl: u.avatarUrl })));
         setEmergencySettings({
           warningEnabled: settings?.warningEnabled ?? user.warningEnabled ?? false,
           warningDays: settings?.warningDays ?? user.warningDays ?? 0,
@@ -1070,6 +1083,29 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
     localStorage.setItem("user", JSON.stringify(nextUser));
     setUser(nextUser);
+
+    if (nextUser.userId) {
+      setRooms((current) =>
+        current.map((room) => {
+          if (!room.members) return room;
+          const updatedMembers = room.members.map((m) => {
+            if (m.userId === nextUser.userId) {
+              return {
+                ...m,
+                name: nextUser.username,
+                avatarUrl: nextUser.avatar,
+              };
+            }
+            return m;
+          });
+          return {
+            ...room,
+            members: updatedMembers,
+          };
+        })
+      );
+    }
+
     return nextUser;
   };
 
@@ -1368,7 +1404,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     return remaining[0]?.id ?? null;
   };
 
-  const getReadAvatarsForMessage = (room: ChatRoom, msg: Message): { name: string; avatarUrl: string }[] => {
+  const getReadAvatarsForMessage = (room: ChatRoom, msg: Message): { name: string; displayName?: string; avatarUrl: string }[] => {
     if (room.type !== "group") return [];
 
     const roomReads = groupReadStates[room.id];
@@ -1378,7 +1414,11 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       .filter(([readerId, lastReadId]) => readerId !== currentUserId && lastReadId === msg.id)
       .map(([readerId]) => {
         const member = room.members?.find((m) => m.userId === readerId);
-        return { name: member?.nickname ?? member?.name ?? readerId, avatarUrl: member?.avatarUrl ?? "" };
+        return {
+          name: member?.name ?? readerId,
+          displayName: member?.nickname ?? member?.name ?? readerId,
+          avatarUrl: member?.avatarUrl ?? "",
+        };
       });
   };
 
@@ -1450,7 +1490,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     if (request?.direction === "incoming") {
       await respondFriendRequest(token, requestId, "rejected");
     }
-    setFriendRequests((prev) => prev.filter((item) => item.id !== requestId));
+    await refreshSocialData(token);
   };
 
   const removeFriend = async (friendId: string) => {
@@ -1465,18 +1505,14 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     if (!friend) return;
 
     await blockUserApi(token, friendId);
-    setBlockedUsers((prev) => {
-      if (prev.some((item) => item.id === friendId)) return prev;
-      return [...prev, { id: friend.id, name: friend.name, email: friend.email }];
-    });
     await refreshSocialData(token);
   };
 
   const unblockUser = async (blockedId: string) => {
     if (token) {
       await unblockUserApi(token, blockedId);
+      await refreshSocialData(token);
     }
-    setBlockedUsers((prev) => prev.filter((item) => item.id !== blockedId));
   };
 
   const saveEmergencySettings = async (settings: EmergencySettings) => {
@@ -1633,6 +1669,12 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     });
   }, [rooms, friends, currentUserId]);
 
+  const handleRefreshSocialData = async () => {
+    if (token) {
+      await refreshSocialData(token);
+    }
+  };
+
   return (
     <ChatContext.Provider
       value={{
@@ -1695,6 +1737,9 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         triggerEmergencyAlertNow,
         setUiLanguage,
         typingUsers,
+        activeProfilePopover,
+        setActiveProfilePopover,
+        refreshSocialData: handleRefreshSocialData,
       }}
     >
       {children}

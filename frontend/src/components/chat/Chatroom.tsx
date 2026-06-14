@@ -2,7 +2,8 @@
 
 import React, { useState, useEffect, useLayoutEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { useChat, getAvatarForUser, Message } from "@/context/ChatContext";
+import { useChat, getAvatarForUser, Message, ChatRoom } from "@/context/ChatContext";
+import { resolveAssetUrl } from "@/lib/assets";
 import { Button } from "@/components/ui/Button";
 import { Dropdown } from "@/components/ui/Dropdown";
 import { Avatar } from "@/components/ui/Avatar";
@@ -53,6 +54,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
     rooms,
     messages,
     user,
+    friends,
     activeRoomNicknames,
     handleSendMessage,
     handleTyping,
@@ -64,13 +66,14 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
     showRightPanel,
     setShowRightPanel,
     typingUsers,
+    activeProfilePopover,
+    setActiveProfilePopover,
   } = useChat();
 
   const [inputText, setInputText] = useState("");
   const [mentionDraft, setMentionDraft] = useState<MentionDraft | null>(null);
   const [selectedMentionIndex, setSelectedMentionIndex] = useState(0);
   const [replyTarget, setReplyTarget] = useState<Message | null>(null);
-  const [showHeaderPopover, setShowHeaderPopover] = useState(false);
   const [isModifyNickOpen, setIsModifyNickOpen] = useState(false);
   const [nickInputValue, setNickInputValue] = useState("");
   const [pendingAttachment, setPendingAttachment] = useState<File | null>(null);
@@ -260,19 +263,25 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
   return (
     <div className="flex-1 flex flex-col bg-background h-full overflow-hidden">
       <div className="h-14 border-b border-border-primary px-6 flex items-center justify-between select-none shrink-0 bg-surface-card z-10">
-        <div
-          className={`flex items-center gap-3 relative avatar-click-target ${
-            activeRoom.type === "msg" ? "cursor-pointer hover:opacity-85 transition-opacity" : ""
-          }`}
-          onClick={() => {
-            if (activeRoom.type === "msg") {
-              setShowHeaderPopover(!showHeaderPopover);
-            }
-          }}
-        >
+        <div className="flex items-center gap-3 relative">
           <Avatar
             name={activeRoom.name}
-            src={getAvatarForUser(activeRoom.name, user.avatar, user.username)}
+            src={(() => {
+              if (activeRoom.avatarUrl) {
+                return resolveAssetUrl(activeRoom.avatarUrl);
+              }
+              if (activeRoom.type === "msg") {
+                const otherMember = activeRoom.members?.find((m) => m.userId !== user.userId);
+                if (otherMember?.avatarUrl) {
+                  return resolveAssetUrl(otherMember.avatarUrl);
+                }
+                const friend = friends.find((f) => f.id === activeRoom.otherMemberId || f.name === activeRoom.name);
+                if (friend?.avatarUrl) {
+                  return resolveAssetUrl(friend.avatarUrl);
+                }
+              }
+              return getAvatarForUser(activeRoom.name, user.avatar, user.username);
+            })()}
             size="sm"
             isOnline={activeRoom.isOnline}
           />
@@ -289,17 +298,6 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
               </span>
             )}
           </div>
-
-          {showHeaderPopover && activeRoom.type === "msg" && (
-            <ProfilePopover
-              username={activeRoom.name}
-              onClose={(e) => {
-                e.stopPropagation();
-                setShowHeaderPopover(false);
-              }}
-              position="bottom"
-            />
-          )}
         </div>
 
         <div className="flex items-center gap-3">
@@ -368,13 +366,26 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
                   isRecalled={msg.isRecalled}
                   replyTo={msg.replyTo || undefined}
                   attachments={msg.attachments}
-                  senderAvatar={msg.isOutgoing ? user.avatar : getAvatarForUser(msg.senderName, user.avatar, user.username)}
+                  senderAvatar={
+                    msg.isOutgoing
+                      ? user.avatar
+                      : senderMember?.avatarUrl
+                      ? resolveAssetUrl(senderMember.avatarUrl)
+                      : undefined
+                  }
                   isRead={msg.isRead}
                   readByAvatars={getReadAvatarsForMessage(activeRoom, msg)}
                   roomType={activeRoom.type}
+                  senderId={msg.senderId || undefined}
+                  messageId={msg.id}
                   onReply={() => setReplyTarget(msg)}
                   onRecall={() => handleRecallMessage(msg.id)}
                   canRecall={Boolean(msg.isOutgoing) || canManageMembers}
+                  avatarName={
+                    msg.isOutgoing
+                      ? user.username
+                      : senderMember?.name || msg.senderName
+                  }
                 />
 
                 {!msg.isRecalled && (
