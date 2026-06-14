@@ -1,53 +1,57 @@
-<!-- Generated: 2026-05-22 | Updated: 2026-05-24 -->
+# Project Directory Orientation for AI Agents
 
-# 1142-ntnu-db-app
+<!-- Generated: 2026-06-14 | Updated: 2026-06-14 -->
 
 ## Purpose
-A real-time group chat application built as an NTNU database course project. The system provides user authentication, chat room management, and WebSocket-based messaging, backed by a PostgreSQL database. It is structured as a monorepo with a Node.js/Express backend and a Next.js frontend, orchestrated via Docker Compose.
+This is a real-time group chat application built as a database course project. It is structured as a monorepo containing a Next.js/React frontend, a Node.js/Express backend API utilizing raw PostgreSQL queries, and a PostgreSQL 18 database, orchestrated locally via Docker Compose.
 
-## Key Files
+## Key Files for Project Orientation
 
 | File | Description |
 |------|-------------|
-| `docker-compose.yml` | Defines the three-service stack: `db` (Postgres 18, host 5435 -> container 5432), `backend` (Express, host 4005 -> container 4000), `frontend` (Next.js, host 3005 -> container 3000) |
-| `.env.example` | Template for required environment variables — copy to `.env` before running locally |
-| `.gitignore` | Excludes `.env`, `node_modules`, build artifacts |
-| `LICENSE` | Project licence |
+| [docker-compose.yml](docker-compose.yml) | Defines the local three-service stack: `db` (PostgreSQL 18), `backend` (Express), and `frontend` (Next.js) |
+| [.env.example](.env.example) | Template for environment variables. Must be copied to `.env` in the root folder before local runs |
+| [issues.json](issues.json) | **CRITICAL TASK LIST**: Contains the active catalog of outstanding issues, bugs, refactorings, and features to implement with detailed tasks and acceptance criteria |
 
-## Subdirectories
+## Documentation Roadmap
 
-| Directory | Purpose |
-|-----------|---------|
-| `backend/` | Express + Socket.IO API server using raw SQL via `pg` (see `backend/AGENTS.md`) |
-| `frontend/` | Next.js 16 / React 19 client application (see `frontend/AGENTS.md`) |
-| `docs/` | Design documents: ER diagram and environment variable guide (see `docs/AGENTS.md`) |
-| `reference/` | Source reference materials: original ER diagram image and project report PDF |
+To get details on database schemas, REST APIs, or local setups, refer to the following files in the `docs/` directory:
 
-## For AI Agents
+| Topic | Document (English) | Document (繁體中文) |
+|-------|--------------------|-------------------|
+| **Database Schema & Constraints** | [docs/database-design.md](docs/database-design.md) | [docs/ZH-TW/database-design.md](docs/ZH-TW/database-design.md) |
+| **API Endpoints & Websocket Events** | [docs/api-documentation.md](docs/api-documentation.md) | [docs/ZH-TW/api-documentation.md](docs/ZH-TW/api-documentation.md) |
+| **Local Environment Setup & Tests** | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | [docs/ZH-TW/DEVELOPMENT.md](docs/ZH-TW/DEVELOPMENT.md) |
 
-### Working In This Directory
-- All services run via `docker compose up` from the project root; the `db` service must start before `backend`.
-- Copy `.env.example` to `.env` and fill in real values before starting any service locally.
-- In Docker Compose, `DATABASE_URL` should point at `db:5432`; from the host machine, connect to Postgres on `localhost:5435`.
-- The current git branch is `dev`.
+## Monorepo Subdirectories
 
-### Testing Requirements
-- Backend integration tests require a live PostgreSQL connection; run `docker compose up db` first.
-- Tests live in `backend/tests/` and use Vitest.
+| Directory | Purpose | Detail Orientation |
+|-----------|---------|--------------------|
+| [backend/](backend/) | Express + Socket.IO API server | See [backend/AGENTS.md](backend/AGENTS.md) |
+| [frontend/](frontend/) | Next.js 16 + React 19 Client Web App | See [frontend/AGENTS.md](frontend/AGENTS.md) |
+| [shared/](shared/) | Shared TypeScript models and interfaces | Mounts read-only into both services |
+| [docs/](docs/) | Design specifications and guidelines | See [docs/AGENTS.md](docs/AGENTS.md) |
+| [reference/](reference/) | Course materials (original ER diagram, project reports) | Reference only |
 
-### Common Patterns
-- Environment variables are injected via Docker Compose from the root `.env` file.
-- `NEXT_PUBLIC_*` prefix is required for any frontend env vars exposed to the browser.
+## AI Agent Guidelines
 
-## Dependencies
+### 1. Database Operations & Schema Integrity
+- Prisma has been **completely removed**. The database is accessed via raw SQL.
+- When modifying schemas, do not run arbitrary SQL manually on the DB. You must write migrations under [backend/migrations/](backend/migrations/) using `node-pg-migrate`.
+- Refer to [docs/database-design.md](docs/database-design.md) for actual column structures, default values, and foreign keys.
 
-### Internal
-- `backend/` depends on the `db` service defined in `docker-compose.yml`.
-- `frontend/` depends on `backend/` (set via `NEXT_PUBLIC_API_URL`; for browser use with Docker Compose, use `http://localhost:4005`).
+### 2. API Contract Verification
+- When modifying controllers, routes, or Socket.IO handlers, you must align precisely with the types and payload schemas described in [docs/api-documentation.md](docs/api-documentation.md).
+- Any discrepancy will break the frontend client integration.
 
-### External
-- Docker + Docker Compose — container orchestration
-- PostgreSQL 18 — primary datastore
-- Node.js — runtime for both services
+### 3. Local Development Workflows
+- Docker Compose handles container orchestration. Root `.env` values are automatically injected.
+- The `db` service must start before `backend`. Run `docker compose up -d` from the root folder.
+- Run database seeding via `docker compose exec backend pnpm run db:seed`. This wipes the database and creates reproducible testing profiles (such as `alice@test.com`, password: `password123`).
+- For more setup troubleshooting, refer to [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
+
+### 4. Git Workflows
+- The active branch is `dev`.
+- Code changes should be verified with TypeScript compiler checks (`pnpm exec tsc --noEmit` on both backend and frontend) and E2E/integration tests.
 
 <!-- MANUAL: Any manually added notes below this line are preserved on regeneration -->

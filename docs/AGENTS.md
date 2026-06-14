@@ -1,31 +1,35 @@
-<!-- Parent: ../AGENTS.md -->
-<!-- Generated: 2026-05-22 | Updated: 2026-05-22 -->
+# Documentation Directory Orientation for AI Agents
 
-# docs
+<!-- Parent: ../AGENTS.md -->
+<!-- Generated: 2026-06-14 | Updated: 2026-06-14 -->
 
 ## Purpose
-Project design documentation. Contains the ER diagram for the full intended database schema (including advanced entities like Folder, Attachment, RoomMember, social graph) and the environment variable management guide for development and production deployment.
+This directory contains the system architecture designs, database constraints, API route specifications, Socket.IO websocket event definitions, local environment setup instructions, and testing guidelines.
 
-## Key Files
+## Document Directory Map
 
-| File | Description |
-|------|-------------|
-| `er_diagram.md` | Full ER diagram in Mermaid (Chen's notation) plus detailed Chinese-language spec covering all entities, relationships, cardinalities, and architectural decisions (soft-delete, privacy uniqueness via `room_hash`, emergency contact automation) |
-| `DESIGN.md` | System design document — architecture decisions, API design, component structure |
-| `DEVELOPMENT.md` | Developer setup and workflow guide |
-| `db-chat-ui.md` | UI design notes for the database chat interface |
-| `report-1.md` | Course report 1 — project proposal and initial design |
-| `report-2.md` | Course report 2 — implementation progress and results |
-| `report-3.md` | Course report 3 — detailed feature description, flowcharts, UI wireframe specs, and raw pg database integration tech |
+| Document Name (English) | Document Name (繁體中文) | Purpose & Content |
+| :--- | :--- | :--- |
+| [DEVELOPMENT.md](DEVELOPMENT.md) | [ZH-TW/DEVELOPMENT.md](ZH-TW/DEVELOPMENT.md) | Setup instructions for Docker Compose, port allocations, environment variables, seeding, TypeScript validation checks, and running integration tests. |
+| [database-design.md](database-design.md) | [ZH-TW/database-design.md](ZH-TW/database-design.md) | Aligned PostgreSQL 18 table structures, UUID primary keys, foreign key constraints, default values, and index definitions. |
+| [api-documentation.md](api-documentation.md) | [ZH-TW/api-documentation.md](ZH-TW/api-documentation.md) | Comprehensive specification of all HTTP REST routes, request parameters, JSON request/response examples, and Socket.IO real-time client/server events. |
 
-## For AI Agents
+## Assets & Reports
 
-### Working In This Directory
-- The active database schema implements all tables described in the ER diagram and relational schema, including `users`, `chat_rooms`, `room_members`, `messages`, `attachments`, `friendships`, `blocks`, `folders`, `folder_rooms`, `emergency_contacts`, `message_mentions`, as well as system tables like `refresh_tokens` and `emergency_alert_logs`.
-- When extending the database schema, consult `er_diagram.md` and `relation-schema.md` for the entity relationships before writing migrations.
-- Environment variable documentation is documented in `.env.example` in the project root and `DEVELOPMENT.md` for setup instructions.
+- **ER Diagram Visuals**:
+  - [ER_Digram.png](ER_Digram.png): PNG image of the system ER diagram.
+  - [ER_Digram.drawio](ER_Digram.drawio): Editable source draw.io XML file.
+- **Historical Snapshots**:
+  - [reports/](reports/): Directory hosting historical course project reports (`report-1.md`, `report-2.md`, `report-3.md`). **Reference only, do not modify these**.
 
-### Common Patterns
-- Documentation is written in a mix of English (diagrams, code) and Traditional Chinese (explanatory prose).
+## Guidelines for AI Agents
+
+### 1. Document Sync Requirement
+- When updating database tables or schema constraints, you must write SQL migrations in `backend/migrations/` AND update both `database-design.md` and `ZH-TW/database-design.md` to keep documentation accurate.
+- When creating or modifying backend routes, controllers, or Socket.IO handlers, you must ensure that they conform exactly to `api-documentation.md` and `ZH-TW/api-documentation.md`.
+- **Note on Chinese API Docs**: For [ZH-TW/api-documentation.md](ZH-TW/api-documentation.md), all descriptions are in Traditional Chinese, but all JSON examples must remain in **pure English** (no Chinese characters inside JSON blocks).
+
+### 2. Setup Reference
+- If you run into database synchronization errors, connection timeouts, or package installer issues, always refer to the "Troubleshooting" section in [DEVELOPMENT.md](DEVELOPMENT.md).
 
 <!-- MANUAL: Any manually added notes below this line are preserved on regeneration -->

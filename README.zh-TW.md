@@ -128,4 +128,4 @@ docker compose exec backend pnpm run test:unit
 docker compose exec backend pnpm run test:db:up
 docker compose exec backend pnpm run test:integration
 ```
-詳細測試規範請參閱 [docs/TESTING.md](docs/TESTING.md)。
+詳細測試規範請參閱 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)。

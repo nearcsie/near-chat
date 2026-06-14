@@ -153,4 +153,4 @@ docker compose exec backend pnpm run test:unit
 docker compose exec backend pnpm run test:db:up
 docker compose exec backend pnpm run test:integration
 ```
-For more testing details, see [docs/TESTING.md](docs/TESTING.md).
+For more testing details, see [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
