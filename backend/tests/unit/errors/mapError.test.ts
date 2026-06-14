@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+import multer from 'multer';
 import { mapErrorToApiShape } from '../../../src/errors/mapError';
 import { AppError, ValidationError, ForbiddenError, NotFoundError, ConflictError } from '../../../src/errors/AppError';
 
@@ -68,5 +69,15 @@ describe('mapErrorToApiShape', () => {
       vi.unstubAllEnvs();
       consoleSpy.mockRestore();
     }
+  });
+
+  it('maps attachment size overflow to 413', () => {
+    const err = new multer.MulterError('LIMIT_FILE_SIZE');
+
+    expect(mapErrorToApiShape(err)).toEqual({
+      statusCode: 413,
+      message: 'Attachment file exceeds the configured size limit',
+      code: 'LIMIT_FILE_SIZE',
+    });
   });
 });
