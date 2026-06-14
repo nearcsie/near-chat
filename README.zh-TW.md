@@ -97,6 +97,31 @@ cp .env.example .env
 ```bash
 docker compose up -d
 ```
+
+### 附件上傳設定
+附件上傳預設為不限制檔案類型，但預設仍有 `10 MB` 的容量上限。
+
+如果你想啟用附件類型限制，請在 `.env` 中打開這個開關：
+
+```env
+ATTACHMENT_TYPE_RESTRICTION_ENABLED=true
+```
+
+當這個開關啟用後，後端會開始檢查 MIME type 白名單與副檔名白名單。專案在 `.env.example` 內提供了這組可直接參考的預設值：
+
+```env
+ATTACHMENT_ALLOWED_MIME_TYPES=image/jpeg,image/png,image/gif,application/pdf,application/zip,text/plain
+ATTACHMENT_ALLOWED_EXTENSIONS=.jpg,.jpeg,.png,.gif,.pdf,.zip,.txt
+ATTACHMENT_MAX_BYTES=10485760
+```
+
+你可以直接沿用這組設定，也可以依照自己的部署需求調整。當 `ATTACHMENT_TYPE_RESTRICTION_ENABLED=false` 時，這兩份白名單設定不會生效，附件仍會維持類型全開。
+
+如果你有修改附件上傳相關環境變數，請重新建置或重啟 backend 容器，讓新設定生效：
+
+```bash
+docker compose up -d --build backend
+```
 後端容器啟動時會自動執行所有待執行的資料庫遷移，無需手動操作。
 
 ### 3. 匯入 mock 測試資料
