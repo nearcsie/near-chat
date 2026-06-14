@@ -33,6 +33,7 @@ export default function Sidebar() {
     uiLanguage,
     selectedFriendForSidebar,
     setSelectedFriendForSidebar,
+    hasUnsavedChanges,
   } = useChat();
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -144,7 +145,16 @@ export default function Sidebar() {
   ];
 
   return (
-    <div className="w-[300px] shrink-0 border-r border-border-primary bg-surface-card flex flex-col h-full">
+    <div 
+      className="relative w-[300px] shrink-0 border-r border-border-primary bg-surface-card flex flex-col h-full"
+      onClickCapture={(e) => {
+        if (hasUnsavedChanges) {
+          e.stopPropagation();
+          e.preventDefault();
+          window.dispatchEvent(new CustomEvent("trigger-unsaved-alert"));
+        }
+      }}
+    >
       {isChatPage ? (
         <div className="h-14 border-b border-border-primary px-4 flex items-center justify-between select-none shrink-0 gap-2">
           {/* Search bar */}

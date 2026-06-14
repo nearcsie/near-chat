@@ -202,6 +202,17 @@ export const makeUserService = (
       }
 
       if (parsed.data.password !== undefined) {
+        if (!parsed.data.currentPassword) {
+          throw new ValidationError('Current password is required to change password');
+        }
+        const currentUser = await repo.findById(userId);
+        if (!currentUser) throw new NotFoundError('user', userId);
+
+        const isMatch = await bcrypt.compare(parsed.data.currentPassword, currentUser.passwordHash);
+        if (!isMatch) {
+          throw new ValidationError('Incorrect current password');
+        }
+
         const salt = await bcrypt.genSalt(10);
         updateData.passwordHash = await bcrypt.hash(parsed.data.password, salt);
       }

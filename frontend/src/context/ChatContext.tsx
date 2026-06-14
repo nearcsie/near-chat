@@ -217,6 +217,7 @@ export interface ProfileInput {
   avatar: string;
   avatarFile?: File | null;
   password?: string;
+  currentPassword?: string;
   bio?: string;
 }
 
@@ -230,9 +231,9 @@ export interface PreferencesInput {
 }
 
 interface GroupSettingsInput {
-  name: string;
-  requireApproval: boolean;
-  viewHistory: boolean;
+  name?: string;
+  requireApproval?: boolean;
+  viewHistory?: boolean;
   isArchived?: boolean;
   avatarFile?: File | null;
 }
@@ -257,6 +258,8 @@ interface ChatContextType {
   setSelectedFriendForSidebar: React.Dispatch<React.SetStateAction<Friend | null>>;
   showRightPanel: boolean;
   setShowRightPanel: React.Dispatch<React.SetStateAction<boolean>>;
+  hasUnsavedChanges: boolean;
+  setHasUnsavedChanges: (val: boolean) => void;
 
   setRooms: React.Dispatch<React.SetStateAction<ChatRoom[]>>;
   setFolders: React.Dispatch<React.SetStateAction<Folder[]>>;
@@ -615,6 +618,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     contacts: [],
   });
   const [selectedFriendForSidebar, setSelectedFriendForSidebar] = useState<Friend | null>(null);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [showRightPanel, setShowRightPanel] = useState<boolean>(true);
   const [typingUsers, setTypingUsers] = useState<Record<string, string[]>>({});
   const [activeProfilePopover, setActiveProfilePopover] = useState<{ instanceId: string; userId: string } | null>(null);
@@ -1056,6 +1060,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         avatarUrl?: string;
         bio?: string;
         password?: string;
+        currentPassword?: string;
       } = {};
 
       if (profile.username !== user.username) {
@@ -1072,6 +1077,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       }
       if (profile.password) {
         updatePayload.password = profile.password;
+        updatePayload.currentPassword = profile.currentPassword;
       }
 
       if (Object.keys(updatePayload).length > 0) {
@@ -1348,12 +1354,13 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const saveGroupSettings = async (roomId: string, settings: GroupSettingsInput) => {
     if (!token) return;
 
-    let updated = await updateRoom(token, roomId, {
-      name: settings.name,
-      requireApproval: settings.requireApproval,
-      viewHistory: settings.viewHistory,
-      ...(settings.isArchived !== undefined && { isArchived: settings.isArchived }),
-    });
+    const payload: any = {};
+    if (settings.name !== undefined) payload.name = settings.name;
+    if (settings.requireApproval !== undefined) payload.requireApproval = settings.requireApproval;
+    if (settings.viewHistory !== undefined) payload.viewHistory = settings.viewHistory;
+    if (settings.isArchived !== undefined) payload.isArchived = settings.isArchived;
+
+    let updated = await updateRoom(token, roomId, payload);
 
     if (settings.avatarFile) {
       updated = await uploadRoomAvatarApi(token, roomId, settings.avatarFile);
@@ -1364,12 +1371,12 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         room.id === roomId
           ? {
               ...room,
-              name: updated.name ?? settings.name,
-              inviteCode: updated.inviteCode,
-              requireApproval: updated.requireApproval,
-              viewHistory: updated.viewHistory,
-              isArchived: updated.isArchived,
-              avatarUrl: updated.avatarUrl,
+              name: updated.name ?? room.name,
+              inviteCode: updated.inviteCode ?? room.inviteCode,
+              requireApproval: updated.requireApproval !== undefined ? updated.requireApproval : room.requireApproval,
+              viewHistory: updated.viewHistory !== undefined ? updated.viewHistory : room.viewHistory,
+              isArchived: updated.isArchived !== undefined ? updated.isArchived : room.isArchived,
+              avatarUrl: updated.avatarUrl ?? room.avatarUrl,
             }
           : room,
       ),
@@ -1749,6 +1756,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         typingUsers,
         activeProfilePopover,
         setActiveProfilePopover,
+        hasUnsavedChanges,
+        setHasUnsavedChanges,
         refreshSocialData: handleRefreshSocialData,
       }}
     >

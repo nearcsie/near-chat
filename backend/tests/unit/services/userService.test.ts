@@ -220,6 +220,8 @@ describe('userService', () => {
     });
 
     it('updates email and password through my profile', async () => {
+      const passwordHash = await bcrypt.hash('oldpassword123', 10);
+      mockRepo.findById.mockResolvedValue({ ...baseUser(), passwordHash });
       const updatedUser = { ...baseUser(), email: 'new@example.com' };
       mockRepo.findByEmail.mockResolvedValue(null);
       mockRepo.update.mockResolvedValue(updatedUser);
@@ -227,8 +229,10 @@ describe('userService', () => {
       const result = await userService.updateMe('u1', {
         email: 'new@example.com',
         password: 'newpassword123',
+        currentPassword: 'oldpassword123',
       });
 
+      expect(mockRepo.findById).toHaveBeenCalledWith('u1');
       expect(mockRepo.findByEmail).toHaveBeenCalledWith('new@example.com');
       const updateCall = mockRepo.update.mock.calls[0][1];
       expect(updateCall.email).toBe('new@example.com');

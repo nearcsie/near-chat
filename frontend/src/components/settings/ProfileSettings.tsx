@@ -7,6 +7,9 @@ import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { Input } from "@/components/ui/Input";
+import { Textarea } from "@/components/ui/Textarea";
+import { Modal } from "@/components/ui/Modal";
+import { cn } from "@/lib/utils";
 import FeedbackMessage, { SettingsFeedback } from "@/components/settings/FeedbackMessage";
 import SectionTitle from "@/components/settings/SectionTitle";
 import { useTranslation } from "@/hooks/useTranslation";
@@ -16,7 +19,7 @@ const AVATAR_UPLOAD_MAX_BYTES = 2 * 1024 * 1024;
 
 export default function ProfileSettings() {
   const router = useRouter();
-  const { user, rooms, uiLanguage, handleUpdateProfile, handleUpdatePreferences, handleDeleteAccount } = useChat();
+  const { user, rooms, uiLanguage, handleUpdateProfile, handleUpdatePreferences, handleDeleteAccount, setHasUnsavedChanges } = useChat();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [personalUsername, setPersonalUsername] = useState("");
   const [personalEmail, setPersonalEmail] = useState("");
@@ -24,9 +27,15 @@ export default function ProfileSettings() {
   const [personalAvatarFile, setPersonalAvatarFile] = useState<File | null>(null);
   const [avatarPreviewUrl, setAvatarPreviewUrl] = useState<string | null>(null);
   const [personalBio, setPersonalBio] = useState("");
-  const [personalNewPassword, setPersonalNewPassword] = useState("");
-  const [personalConfirmPassword, setPersonalConfirmPassword] = useState("");
   const [profileFeedback, setProfileFeedback] = useState<SettingsFeedback | null>(null);
+
+  // Password change modal states
+  const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordModalFeedback, setPasswordModalFeedback] = useState<SettingsFeedback | null>(null);
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
 
   // localStorage is only available after mount, so this hydration must stay in
   // an effect; reading it during render would break SSR/hydration.
@@ -65,6 +74,64 @@ export default function ProfileSettings() {
   const handleBack = () => {
     router.push(rooms[0] ? `/chat/${rooms[0].id}` : "/");
   };
+
+  const hasUnsavedChanges = 
+    personalUsername !== user.username ||
+    personalEmail !== user.email ||
+    personalBio !== (user.bio || "") ||
+    personalAvatarFile !== null;
+
+  const handleBackAttempt = () => {
+    if (hasUnsavedChanges) {
+      const confirmLeave = window.confirm(t("profile.unsavedChangesConfirm") || "有變更尚未儲存，確定要離開嗎？");
+      if (!confirmLeave) return;
+    }
+    handleBack();
+  };
+
+  const handleCancel = () => {
+    setPersonalUsername(user.username);
+    setPersonalEmail(user.email);
+    setPersonalBio(user.bio || "");
+    setPersonalAvatarFile(null);
+    if (avatarPreviewUrl) {
+      URL.revokeObjectURL(avatarPreviewUrl);
+      setAvatarPreviewUrl(null);
+    }
+    setProfileFeedback(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (hasUnsavedChanges) {
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [hasUnsavedChanges]);
+
+  const [shouldAlertEffect, setShouldAlertEffect] = useState(false);
+
+  useEffect(() => {
+    setHasUnsavedChanges(hasUnsavedChanges);
+    return () => setHasUnsavedChanges(false);
+  }, [hasUnsavedChanges, setHasUnsavedChanges]);
+
+  useEffect(() => {
+    const handleAlert = () => {
+      setShouldAlertEffect(true);
+      setTimeout(() => {
+        setShouldAlertEffect(false);
+      }, 1600);
+    };
+    window.addEventListener("trigger-unsaved-alert", handleAlert);
+    return () => window.removeEventListener("trigger-unsaved-alert", handleAlert);
+  }, []);
 
   const currentTheme = user.theme || "light";
   const currentLanguage = user.language || uiLanguage;
@@ -118,28 +185,15 @@ export default function ProfileSettings() {
     event.preventDefault();
     setProfileFeedback(null);
 
-    if (personalNewPassword && personalNewPassword.length < 8) {
-      setProfileFeedback({ type: "error", text: t("profile.passwordTooShort") });
-      return;
-    }
-
-    if (personalNewPassword !== personalConfirmPassword) {
-      setProfileFeedback({ type: "error", text: t("profile.passwordMismatch") });
-      return;
-    }
-
     try {
       const updatedUser = await handleUpdateProfile({
         username: personalUsername,
         email: personalEmail,
         avatar: personalAvatar,
         avatarFile: personalAvatarFile,
-        password: personalNewPassword || undefined,
         bio: personalBio,
       });
       setPersonalAvatar(updatedUser.avatar);
-      setPersonalNewPassword("");
-      setPersonalConfirmPassword("");
       if (avatarPreviewUrl) {
         URL.revokeObjectURL(avatarPreviewUrl);
       }
@@ -155,6 +209,61 @@ export default function ProfileSettings() {
         type: "error",
         text: error instanceof Error ? error.message : "Failed to save profile.",
       });
+    }
+  };
+
+  const handlePasswordSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setPasswordModalFeedback(null);
+
+    if (!currentPassword) {
+      setPasswordModalFeedback({ type: "error", text: t("profile.currentPasswordPlaceholder") });
+      return;
+    }
+
+    if (newPassword.length < 8) {
+      setPasswordModalFeedback({ type: "error", text: t("profile.passwordTooShort") });
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setPasswordModalFeedback({ type: "error", text: t("profile.passwordMismatch") });
+      return;
+    }
+
+    setIsChangingPassword(true);
+    try {
+      await handleUpdateProfile({
+        username: personalUsername || user.username,
+        email: personalEmail || user.email,
+        avatar: personalAvatar || user.avatar,
+        bio: personalBio || user.bio || "",
+        password: newPassword,
+        currentPassword: currentPassword,
+      });
+      
+      setPasswordModalFeedback({ type: "success", text: t("profile.passwordChangedSuccess") });
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      
+      setTimeout(() => {
+        setIsPasswordModalOpen(false);
+        setPasswordModalFeedback(null);
+      }, 2000);
+    } catch (error) {
+      console.error(error);
+      const msg = error instanceof Error ? error.message : "";
+      const text =
+        msg === "Incorrect current password" || msg === "目前密碼驗證失敗，請重新輸入。"
+          ? t("profile.passwordChangedFailed")
+          : msg || t("profile.passwordChangedFailed");
+      setPasswordModalFeedback({
+        type: "error",
+        text,
+      });
+    } finally {
+      setIsChangingPassword(false);
     }
   };
 
@@ -183,20 +292,39 @@ export default function ProfileSettings() {
         <div className="flex flex-col gap-4">
           <Input label={t("profile.userId")} value={user.userId} readOnly disabled />
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Input label={t("profile.username")} value={personalUsername} onChange={(event) => setPersonalUsername(event.target.value)} required />
-            <Input label={t("profile.email")} type="email" value={personalEmail} onChange={(event) => setPersonalEmail(event.target.value)} required />
+            <Input 
+              label={t("profile.username")} 
+              value={personalUsername} 
+              onChange={(event) => setPersonalUsername(event.target.value)} 
+              onKeyDown={(e) => { if (e.key === "Enter") e.preventDefault(); }}
+              required 
+            />
+            <Input 
+              label={t("profile.email")} 
+              type="email" 
+              value={personalEmail} 
+              onChange={(event) => setPersonalEmail(event.target.value)} 
+              onKeyDown={(e) => { if (e.key === "Enter") e.preventDefault(); }}
+              required 
+            />
           </div>
-          <Input label={t("profile.bio")} value={personalBio} onChange={(event) => setPersonalBio(event.target.value)} />
+          <Textarea 
+            label={t("profile.bio")} 
+            value={personalBio} 
+            onChange={(event) => setPersonalBio(event.target.value)} 
+          />
         </div>
 
-        <SectionTitle title={t("profile.security")} />
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Input label={t("profile.newPassword")} type="password" value={personalNewPassword} onChange={(event) => setPersonalNewPassword(event.target.value)} />
-          <Input label={t("profile.confirmPassword")} type="password" value={personalConfirmPassword} onChange={(event) => setPersonalConfirmPassword(event.target.value)} />
-        </div>
-
-        <div className="border-t border-border-primary pt-6 flex items-center justify-end gap-3">
-          <Button type="button" variant="secondary" onClick={handleBack}>
+        <div className={cn(
+          "border-t border-border-primary py-3 flex items-center justify-end gap-3 transition-all duration-300",
+          shouldAlertEffect && "animate-red-flash"
+        )}>
+          {hasUnsavedChanges && (
+            <span className="text-xs text-amber-600 font-sans mr-2 select-none">
+              ⚠️ {t("profile.unsavedChangesTip")}
+            </span>
+          )}
+          <Button type="button" variant="secondary" onClick={handleCancel}>
             {t("profile.cancel")}
           </Button>
           <Button type="submit" variant="primary">
@@ -204,6 +332,18 @@ export default function ProfileSettings() {
           </Button>
         </div>
       </form>
+
+      <div className="max-w-4xl mt-10 pt-6 flex flex-col gap-4">
+        <SectionTitle title={t("profile.security")} />
+        <div className="flex flex-col gap-3 items-start">
+          <p className="text-xs text-text-muted font-sans select-none">
+            {t("profile.securityTip")}
+          </p>
+          <Button type="button" variant="secondary" onClick={() => setIsPasswordModalOpen(true)}>
+            {t("profile.changePasswordButton")}
+          </Button>
+        </div>
+      </div>
 
       <div className="flex flex-col gap-6 max-w-4xl mt-12">
         <SectionTitle title={t("profile.notifications")} />
@@ -277,6 +417,87 @@ export default function ProfileSettings() {
           {t("profile.deleteAccountButton")}
         </Button>
       </div>
+
+      <Modal
+        isOpen={isPasswordModalOpen}
+        onClose={() => {
+          if (!isChangingPassword) {
+            setIsPasswordModalOpen(false);
+            setCurrentPassword("");
+            setNewPassword("");
+            setConfirmPassword("");
+            setPasswordModalFeedback(null);
+          }
+        }}
+        title={t("profile.changePasswordButton")}
+      >
+        <form onSubmit={handlePasswordSubmit} className="flex flex-col gap-4">
+          <FeedbackMessage feedback={passwordModalFeedback} />
+          
+          <Input
+            label={t("profile.currentPassword")}
+            type="password"
+            placeholder={t("profile.currentPasswordPlaceholder")}
+            value={currentPassword}
+            onChange={(e) => {
+              setCurrentPassword(e.target.value);
+              setPasswordModalFeedback(null);
+            }}
+            required
+            disabled={isChangingPassword}
+          />
+          
+          <Input
+            label={t("profile.newPassword")}
+            type="password"
+            placeholder={t("profile.newPasswordPlaceholder")}
+            value={newPassword}
+            onChange={(e) => {
+              setNewPassword(e.target.value);
+              setPasswordModalFeedback(null);
+            }}
+            required
+            disabled={isChangingPassword}
+          />
+          
+          <Input
+            label={t("profile.confirmPassword")}
+            type="password"
+            placeholder={t("profile.confirmPasswordPlaceholder")}
+            value={confirmPassword}
+            onChange={(e) => {
+              setConfirmPassword(e.target.value);
+              setPasswordModalFeedback(null);
+            }}
+            required
+            disabled={isChangingPassword}
+          />
+          
+          <div className="flex justify-end gap-3 mt-4 pt-4 border-t border-border-primary">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                setIsPasswordModalOpen(false);
+                setCurrentPassword("");
+                setNewPassword("");
+                setConfirmPassword("");
+                setPasswordModalFeedback(null);
+              }}
+              disabled={isChangingPassword}
+            >
+              {t("profile.cancel")}
+            </Button>
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={isChangingPassword}
+            >
+              {isChangingPassword ? t("profile.changingPassword") : t("profile.changePasswordButton")}
+            </Button>
+          </div>
+        </form>
+      </Modal>
     </>
   );
 }

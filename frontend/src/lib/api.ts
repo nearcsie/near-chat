@@ -39,6 +39,7 @@ const API_PREFIX = '/api/v1';
 
 type UpdateMeRequest = Partial<Pick<MyProfile, 'name' | 'email' | 'bio' | 'avatarUrl'>> & {
   password?: string;
+  currentPassword?: string;
 };
 type UpdateMySettingsRequest = Partial<
   Pick<UserSettings, 'warningEnabled' | 'warningDays' | 'language' | 'theme' | 'notifyDesktop' | 'notifySound'>

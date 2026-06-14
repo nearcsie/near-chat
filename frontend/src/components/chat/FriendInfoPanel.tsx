@@ -195,7 +195,7 @@ export default function FriendInfoPanel({
               <span className="text-[10px] font-bold text-text-muted uppercase tracking-widest block mb-1">
                 {t("profileCard.bio")}
               </span>
-              <p className="text-text-muted leading-relaxed">
+              <p className="text-text-muted leading-relaxed whitespace-pre-wrap break-words">
                 {bio}
               </p>
             </div>

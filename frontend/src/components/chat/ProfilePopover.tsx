@@ -220,7 +220,7 @@ export default function ProfilePopover({
               <span className="text-[9px] font-bold text-text-muted uppercase tracking-widest block mb-0.5">
                 {t("profileCard.bio")}
               </span>
-              <p className="text-[11px] text-text-muted leading-relaxed truncate-3-lines">{bio}</p>
+              <p className="text-[11px] text-text-muted leading-relaxed truncate-3-lines whitespace-pre-wrap break-words">{bio}</p>
             </div>
 
             {friend && (

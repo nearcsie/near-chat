@@ -17,7 +17,7 @@ interface UserService {
   getMySettings(userId: string): Promise<UserSettings>;
   updateMySettings(userId: string, data: unknown): Promise<UserSettings>;
   deleteMe(userId: string): Promise<void>;
-  search(query: string, mode?: 'name' | 'userId' | 'email'): Promise<SearchUserResult[]>;
+  search(query: string, mode?: 'name' | 'userId' | 'email', currentUserId?: string): Promise<SearchUserResult[]>;
 
   getEmergencyContacts(userId: string): Promise<any>;
   upsertEmergencyContact(userId: string, contactId: string, message: string): Promise<{ contact: any, isUpdate: boolean }>;

@@ -16,6 +16,7 @@ export const updateMeSchema = z
     name: z.string().trim().min(1, 'Name cannot be empty').optional(),
     email: z.string().email('Invalid email format').optional(),
     password: z.string().min(8, 'Password must be at least 8 characters long').optional(),
+    currentPassword: z.string().optional(),
     bio: z.string().trim().optional(),
     avatarUrl: z.union([z.literal(''), z.string().url('Invalid avatar URL')]).optional(),
   })
