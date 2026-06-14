@@ -1426,7 +1426,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     if (!token) throw new Error("Not authenticated");
     const trimmed = query.trim();
     if (!trimmed) return [];
-    return searchUsers(token, { query: trimmed });
+    return searchUsers(token, { query: trimmed, friendsOnly: true });
   };
 
   const handleJoinByInviteCode = async (inviteCode: string): Promise<string> => {

@@ -394,6 +394,47 @@ describe('userService', () => {
 
       expect(results[0]).toMatchObject({ email: 'test@example.com' });
     });
+
+    it('searches user friends when currentUserId is provided', async () => {
+      const mockFriendRepo = {
+        getFriends: vi.fn().mockResolvedValue([
+          {
+            friend: {
+              userId: 'friend-1',
+              name: 'Alice Friend',
+              email: 'alice.friend@example.com',
+              avatarUrl: 'https://example.com/alice.png',
+            },
+            friendshipCreatedAt: new Date(),
+          },
+          {
+            friend: {
+              userId: 'friend-2',
+              name: 'Bob Friend',
+              email: 'bob.friend@example.com',
+              avatarUrl: 'https://example.com/bob.png',
+            },
+            friendshipCreatedAt: new Date(),
+          },
+        ]),
+      };
+
+      const userServiceWithFriends = makeUserService(
+        mockRepo,
+        emergencyContactRepo,
+        mockRefreshTokenRepo,
+        mockJwt,
+        notifyEmergencyContact,
+        mockFriendRepo,
+      );
+
+      const results = await userServiceWithFriends.search('Alice', 'name', 'user-id');
+      expect(results).toHaveLength(1);
+      expect(results[0].userId).toBe('friend-1');
+      expect(results[0].name).toBe('Alice Friend');
+      expect(mockFriendRepo.getFriends).toHaveBeenCalledWith('user-id');
+      expect(mockRepo.search).not.toHaveBeenCalled();
+    });
   });
 
   describe('schema sanity checks', () => {

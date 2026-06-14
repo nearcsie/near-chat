@@ -107,12 +107,12 @@ export const makeFriendRepository = (db: Pool) => {
 
     async getFriends(userId: string): Promise<any[]> {
       const res = await db.query(
-        `SELECT f.created_at as friendship_created_at, u.user_id, u.name, u.avatar_url
+        `SELECT f.created_at as friendship_created_at, u.user_id, u.name, u.email, u.avatar_url
          FROM friendships f
          JOIN users u ON u.user_id = f.addressee_id AND u.deleted_at IS NULL
          WHERE f.requester_id = $1 AND f.status = 'accepted'
          UNION ALL
-         SELECT f.created_at as friendship_created_at, u.user_id, u.name, u.avatar_url
+         SELECT f.created_at as friendship_created_at, u.user_id, u.name, u.email, u.avatar_url
          FROM friendships f
          JOIN users u ON u.user_id = f.requester_id AND u.deleted_at IS NULL
          WHERE f.addressee_id = $1 AND f.status = 'accepted'`,
@@ -122,6 +122,7 @@ export const makeFriendRepository = (db: Pool) => {
         friend: {
           userId: row.user_id,
           name: row.name,
+          email: row.email,
           avatarUrl: row.avatar_url ?? undefined
         },
         friendshipCreatedAt: row.friendship_created_at
