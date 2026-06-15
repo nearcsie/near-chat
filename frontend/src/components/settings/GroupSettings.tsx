@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { PublicUser } from "@shared/types";
-import { useChat, getAvatarForUser, Member } from "@/context/ChatContext";
+import { useChat, Member } from "@/context/ChatContext";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { Checkbox } from "@/components/ui/Checkbox";
@@ -823,7 +823,7 @@ function MemberRow({
       <div className="flex items-center gap-3 min-w-0">
         <Avatar
           name={member.name}
-          src={getAvatarForUser(member.name, currentUser.avatar, currentUser.username)}
+          src={member.avatarUrl ? resolveAssetUrl(member.avatarUrl) : undefined}
           size="sm"
         />
         <div className="min-w-0">
