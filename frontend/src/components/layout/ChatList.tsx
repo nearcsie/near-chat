@@ -46,16 +46,13 @@ export default function ChatList({ searchQuery }: ChatListProps) {
     y: number;
   } | null>(null);
 
-  // 刪除確認 Modal 狀態
   const [deleteConfirmOpen, setDeleteConfirmOpen] = React.useState(false);
   const [deleteTargetFolderId, setDeleteTargetFolderId] = React.useState<string | null>(null);
 
-  // 更名 Modal 狀態
   const [renameOpen, setRenameOpen] = React.useState(false);
   const [renameTargetFolderId, setRenameTargetFolderId] = React.useState<string | null>(null);
   const [renameValue, setRenameValue] = React.useState("");
 
-  // 通用錯誤警告 Alert Modal 狀態
   const [alertOpen, setAlertOpen] = React.useState(false);
   const [alertTitle, setAlertTitle] = React.useState("");
   const [alertMessage, setAlertMessage] = React.useState("");
@@ -77,14 +74,14 @@ export default function ChatList({ searchQuery }: ChatListProps) {
     if (!renameTargetFolderId) return;
     const trimmed = renameValue.trim();
     if (!trimmed) {
-      setAlertTitle("錯誤");
-      setAlertMessage("資料夾名稱不能為空");
+      setAlertTitle(t("folders.errorTitle"));
+      setAlertMessage(t("folders.nameCannotBeEmpty"));
       setAlertOpen(true);
       return;
     }
     if (trimmed.length > 50) {
-      setAlertTitle("錯誤");
-      setAlertMessage("資料夾名稱長度不能超過 50 個字元");
+      setAlertTitle(t("folders.errorTitle"));
+      setAlertMessage(t("folders.nameTooLong"));
       setAlertOpen(true);
       return;
     }
@@ -92,8 +89,8 @@ export default function ChatList({ searchQuery }: ChatListProps) {
       await handleRenameFolder(renameTargetFolderId, trimmed);
       setRenameOpen(false);
     } catch (error) {
-      setAlertTitle("錯誤");
-      setAlertMessage(error instanceof Error ? error.message : "修改資料夾名稱失敗");
+      setAlertTitle(t("folders.errorTitle"));
+      setAlertMessage(error instanceof Error ? error.message : (t("folders.renameFailed")));
       setAlertOpen(true);
     }
   };
@@ -179,8 +176,8 @@ export default function ChatList({ searchQuery }: ChatListProps) {
       setDeleteConfirmOpen(false);
     } catch (error) {
       console.error(error);
-      setAlertTitle("錯誤");
-      setAlertMessage(error instanceof Error ? error.message : "刪除資料夾失敗");
+      setAlertTitle(t("folders.errorTitle"));
+      setAlertMessage(error instanceof Error ? error.message : (t("folders.deleteFailed")));
       setAlertOpen(true);
     }
   };
@@ -236,7 +233,7 @@ export default function ChatList({ searchQuery }: ChatListProps) {
               onDragLeave={() => setIsRootDropActive(false)}
               onDrop={handleDropToRoot}
               className={`pl-4 border-l border-border-secondary/40 ml-5 transition-colors ${
-                isRootDropActive ? "bg-primary/5 outline outline-1 outline-primary/40 outline-offset-[-1px]" : ""
+                isRootDropActive ? "bg-primary/5 outline-1 outline-primary/40 outline-offset-1" : ""
               }`}
             >
               {rootRooms.map((room) => {
@@ -395,7 +392,7 @@ export default function ChatList({ searchQuery }: ChatListProps) {
             }}
             className="w-full text-left px-3 py-1.5 hover:bg-surface-muted text-foreground transition-colors font-normal text-xs block"
           >
-            修改資料夾名稱
+            {t("folders.rename")}
           </button>
           <button
             type="button"
@@ -405,7 +402,7 @@ export default function ChatList({ searchQuery }: ChatListProps) {
             }}
             className="w-full text-left px-3 py-1.5 hover:bg-surface-muted text-red-600 transition-colors font-normal text-xs block"
           >
-            刪除資料夾
+            {t("folders.delete")}
           </button>
         </div>
       )}
@@ -414,11 +411,11 @@ export default function ChatList({ searchQuery }: ChatListProps) {
         <Modal
           isOpen={deleteConfirmOpen}
           onClose={() => setDeleteConfirmOpen(false)}
-          title="確認刪除資料夾"
+          title={t("folders.confirmDelete")}
         >
           <div className="flex flex-col gap-4">
             <p className="text-sm text-text-muted">
-              確定要刪除此資料夾嗎？資料夾內的聊天室將會移回「未分類」。
+              {t("folders.deleteConfirmDesc")}
             </p>
             <div className="flex justify-end gap-2.5">
               <Button
@@ -426,7 +423,7 @@ export default function ChatList({ searchQuery }: ChatListProps) {
                 variant="secondary"
                 onClick={() => setDeleteConfirmOpen(false)}
               >
-                取消
+                {t("folders.cancel")}
               </Button>
               <Button
                 type="button"
@@ -434,7 +431,7 @@ export default function ChatList({ searchQuery }: ChatListProps) {
                 className="bg-red-600 hover:bg-red-700 active:bg-red-800 border-none"
                 onClick={handleDeleteConfirm}
               >
-                刪除
+                {t("folders.deleteAction")}
               </Button>
             </div>
           </div>
@@ -445,11 +442,11 @@ export default function ChatList({ searchQuery }: ChatListProps) {
         <Modal
           isOpen={renameOpen}
           onClose={() => setRenameOpen(false)}
-          title="修改資料夾名稱"
+          title={t("folders.rename")}
         >
           <form onSubmit={handleRenameSubmit} className="flex flex-col gap-4">
             <Input
-              label="資料夾名稱"
+              label={t("folders.nameLabel")}
               type="text"
               value={renameValue}
               onChange={(e) => setRenameValue(e.target.value)}
@@ -462,13 +459,13 @@ export default function ChatList({ searchQuery }: ChatListProps) {
                 variant="secondary"
                 onClick={() => setRenameOpen(false)}
               >
-                取消
+                {t("folders.cancel")}
               </Button>
               <Button
                 type="submit"
                 variant="primary"
               >
-                保存
+                {t("folders.save")}
               </Button>
             </div>
           </form>
@@ -489,7 +486,7 @@ export default function ChatList({ searchQuery }: ChatListProps) {
                 variant="primary"
                 onClick={() => setAlertOpen(false)}
               >
-                確定
+                {t("folders.confirmAction")}
               </Button>
             </div>
           </div>

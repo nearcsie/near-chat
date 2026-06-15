@@ -295,5 +295,21 @@
     "selected": "已選擇：{name}",
     "invalidType": "請選擇 PNG、JPG、GIF 或 WebP 圖片。",
     "tooLarge": "頭像圖片大小不可超過 2 MB。"
+  },
+  "folders": {
+    "rename": "修改資料夾名稱",
+    "delete": "刪除資料夾",
+    "confirmDelete": "確認刪除資料夾",
+    "deleteConfirmDesc": "確定要刪除此資料夾嗎？資料夾內的聊天室將會移回「未分類」。",
+    "nameLabel": "資料夾名稱",
+    "cancel": "取消",
+    "save": "保存",
+    "deleteAction": "刪除",
+    "errorTitle": "錯誤",
+    "nameCannotBeEmpty": "資料夾名稱不能為空",
+    "nameTooLong": "資料夾名稱長度不能超過 50 個字元",
+    "renameFailed": "修改資料夾名稱失敗",
+    "deleteFailed": "刪除資料夾失敗",
+    "confirmAction": "確定"
   }
 }

@@ -295,5 +295,21 @@
     "selected": "Selected: {name}",
     "invalidType": "Please choose a PNG, JPG, GIF, or WebP image.",
     "tooLarge": "Avatar image must be 2 MB or smaller."
+  },
+  "folders": {
+    "rename": "Rename Folder",
+    "delete": "Delete Folder",
+    "confirmDelete": "Confirm Delete Folder",
+    "deleteConfirmDesc": "Are you sure you want to delete this folder? Chats inside it will move back to Uncategorized.",
+    "nameLabel": "Folder Name",
+    "cancel": "Cancel",
+    "save": "Save",
+    "deleteAction": "Delete",
+    "errorTitle": "Error",
+    "nameCannotBeEmpty": "Folder name cannot be empty",
+    "nameTooLong": "Folder name cannot exceed 50 characters",
+    "renameFailed": "Failed to rename folder",
+    "deleteFailed": "Failed to delete folder",
+    "confirmAction": "Confirm"
   }
 }
