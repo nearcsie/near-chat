@@ -101,12 +101,10 @@ export default function ChatList({ searchQuery }: ChatListProps) {
   const handleRoomDropOnRoom = (sectionKey: string, draggedId: string, targetId: string, placement: "above" | "below") => {
     if (draggedId === targetId) return;
     const sectionRooms = sectionKey === "root"
-      ? rooms.filter((r) => !r.folderId)
-      : rooms.filter((r) => r.folderId === sectionKey);
+      ? rooms.filter((r) => !r.folderId && r.id !== draggedId)
+      : rooms.filter((r) => r.folderId === sectionKey && r.id !== draggedId);
     const ordered = applyRoomOrder(sectionRooms, sectionKey);
     const ids = ordered.map((r) => r.id);
-    const fromIdx = ids.indexOf(draggedId);
-    if (fromIdx !== -1) ids.splice(fromIdx, 1);
     
     let insertIdx = ids.indexOf(targetId);
     if (insertIdx !== -1) {
@@ -317,17 +315,16 @@ export default function ChatList({ searchQuery }: ChatListProps) {
                       setDropTargetRoomId(room.id);
                       setDropPlacement(placement);
                     }}
-                    onDrop={(event) => {
+                    onDrop={async (event) => {
                       event.preventDefault();
                       event.stopPropagation();
                       const drId = getDroppedRoomId(event);
                       if (!drId || drId === room.id) { resetDragState(); return; }
                       const draggedRoom = rooms.find((r) => r.id === drId);
-                      if (draggedRoom && !draggedRoom.folderId) {
-                        handleRoomDropOnRoom("root", drId, room.id, dropPlacement || "above");
-                      } else {
-                        handleCategorizeRoom(drId, null);
+                      if (draggedRoom && draggedRoom.folderId) {
+                        await handleCategorizeRoom(drId, null);
                       }
+                      handleRoomDropOnRoom("root", drId, room.id, dropPlacement || "above");
                       resetDragState();
                     }}
                     avatarSrc={(() => {
@@ -442,17 +439,16 @@ export default function ChatList({ searchQuery }: ChatListProps) {
                             setDropTargetRoomId(room.id);
                             setDropPlacement(placement);
                           }}
-                          onDrop={(event) => {
+                          onDrop={async (event) => {
                             event.preventDefault();
                             event.stopPropagation();
                             const drId = getDroppedRoomId(event);
                             if (!drId || drId === room.id) { resetDragState(); return; }
                             const draggedRoom = rooms.find((r) => r.id === drId);
-                            if (draggedRoom?.folderId === folder.id) {
-                              handleRoomDropOnRoom(folder.id, drId, room.id, dropPlacement || "above");
-                            } else {
-                              handleCategorizeRoom(drId, folder.id);
+                            if (draggedRoom && draggedRoom.folderId !== folder.id) {
+                              await handleCategorizeRoom(drId, folder.id);
                             }
+                            handleRoomDropOnRoom(folder.id, drId, room.id, dropPlacement || "above");
                             resetDragState();
                           }}
                           avatarSrc={(() => {
@@ -648,14 +644,15 @@ function RoomItem({
       onDrop={onDrop}
       className={`group relative flex w-full items-center gap-2.5 px-4 py-2.5 transition-all ${
         isActive ? "bg-surface-muted" : "hover:bg-surface-muted/70"
-      } ${
-        isDropTarget && dropPlacement === "above"
-          ? "border-t-2 border-primary bg-primary/5"
-          : isDropTarget && dropPlacement === "below"
-            ? "border-b-2 border-primary bg-primary/5"
-            : ""
-      }`}
+      } ${isDropTarget ? "bg-primary/5" : ""}`}
     >
+      {isDropTarget && dropPlacement && (
+        <div
+          className={`absolute left-0 right-0 h-[3px] bg-primary z-20 pointer-events-none ${
+            dropPlacement === "above" ? "top-0" : "bottom-0"
+          }`}
+        />
+      )}
       {isActive && <span className="absolute left-0 top-0 bottom-0 w-1 bg-primary" />}
       <button
         type="button"
