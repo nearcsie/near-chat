@@ -1,29 +1,107 @@
 # API Documentation
 
-本文件定義後端提供的 RESTful API 以及 Socket.io 即時通訊接口。
+This document defines the RESTful API and Socket.IO real-time communication interface provided by the backend.
 
 ---
 
-## 0. 通用規則 (General)
+## API Overview
+
+### RESTful API
+
+| Category | Method | Path | Auth Required | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| **Authentication & Profile** | `POST` | [`/auth/register`](#post-authregister) | No | Register a new account |
+| | `POST` | [`/auth/login`](#post-authlogin) | No | User login |
+| | `POST` | [`/auth/refresh`](#post-authrefresh) | No | Refresh access token |
+| | `POST` | [`/auth/logout`](#post-authlogout) | Yes | User logout |
+| | `GET` | [`/users/me`](#get-usersme) | Yes | Get profile of current user |
+| | `GET` | [`/users/:id`](#get-usersid) | Yes | Get public profile of specified user |
+| | `PATCH` | [`/users/me`](#patch-usersme) | Yes | Update profile of current user |
+| | `GET` | [`/users/me/settings`](#get-usersmesettings) | Yes | Get settings of current user |
+| | `PATCH` | [`/users/me/settings`](#patch-usersmesettings) | Yes | Update settings of current user |
+| | `DELETE` | [`/users/me`](#delete-usersme) | Yes | Delete account of current user (soft delete) |
+| | `GET` | [`/users`](#get-users) | Yes | Search users |
+| **Friends & Blocks** | `GET` | [`/friends`](#get-friends) | Yes | Get friends list |
+| | `DELETE` | [`/friends/:id`](#delete-friendsid) | Yes | Remove friend relationship |
+| | `GET` | [`/friend-requests`](#get-friend-requests) | Yes | Get pending friend requests |
+| | `POST` | [`/friend-requests`](#post-friend-requests) | Yes | Send friend request |
+| | `PATCH` | [`/friend-requests/:id`](#patch-friend-requestsid) | Yes | Respond to friend request |
+| | `POST` | [`/blocks`](#post-blocks) | Yes | Block user |
+| | `DELETE` | [`/blocks/:id`](#delete-blocksid) | Yes | Unblock user |
+| **Chat Rooms** | `GET` | [`/rooms`](#get-rooms) | Yes | Get rooms list and summaries |
+| | `POST` | [`/rooms`](#post-rooms) | Yes | Create room (private or group) |
+| | `GET` | [`/rooms/:id`](#get-roomsid) | Yes | Get specified room details |
+| | `PATCH` | [`/rooms/:id`](#patch-roomsid) | Yes | Update room settings or transfer ownership |
+| | `POST` | [`/rooms/:id/members`](#post-roomsidmembers) | Yes | Join room via invite code |
+| | `DELETE` | [`/rooms/:id/members/me`](#delete-roomsidmembersme) | Yes | Leave room |
+| | `DELETE` | [`/rooms/:id`](#delete-roomsid) | Yes | Archive room (Owner only) |
+| **Member Management** | `GET` | [`/rooms/:id/members`](#get-roomsidmembers) | Yes | Get room members list |
+| | `PATCH` | [`/rooms/:id/members/:userId`](#patch-roomsidmembersuserid) | Yes | Approve member join or update member role/nickname |
+| | `DELETE` | [`/rooms/:id/members/:userId`](#delete-roomsidmembersuserid) | Yes | Kick member (Owner or Admin only) |
+| **Messages & Attachments** | `GET` | [`/rooms/:roomId/messages`](#get-roomsroomidmessages) | Yes | Get room message history (paginated) |
+| | `POST` | [`/attachments`](#post-attachments) | Yes | Upload attachment file |
+| | `GET` | [`/attachments/:id`](#get-attachmentsid) | Yes | Download attachment file |
+| **Folders** | `GET` | [`/folders`](#get-folders) | Yes | Get folders list |
+| | `POST` | [`/folders`](#post-folders) | Yes | Create new folder |
+| | `DELETE` | [`/folders/:id`](#delete-foldersid) | Yes | Delete folder |
+| | `PUT` | [`/folders/:id/rooms`](#put-foldersidrooms) | Yes | Update rooms associated with folder |
+| **Emergency Contacts** | `GET` | [`/users/me/emergency-contacts`](#get-usersmeemergency-contacts) | Yes | Get emergency contacts list |
+| | `POST` | [`/users/me/emergency-contacts`](#post-usersmeemergency-contacts) | Yes | Add or update emergency contact |
+| | `DELETE` | [`/users/me/emergency-contacts/:contactId`](#delete-usersmeemergency-contactscontactid) | Yes | Delete emergency contact |
+| | `POST` | [`/users/me/emergency-alert`](#post-usersmeemergency-alert) | Yes | Trigger emergency alert immediately to contacts |
+| | `POST` | [`/users/me/emergency-alert/check-inactivity`](#post-usersmeemergency-alertcheck-inactivity) | Yes | Check inactivity to trigger alert automatically |
+
+### Socket.IO Real-Time Communication
+
+| Type | Event Name | Auth Required | Description |
+| :--- | :--- | :--- | :--- |
+| **Client-to-Server** | `join_room` | Yes (On connection) | Subscribe to message broadcasts of a chat room |
+| | `leave_room` | Yes (On connection) | Unsubscribe from message broadcasts of a chat room |
+| | `send_message` | Yes (On connection) | Send chat message (with attachments or replies) |
+| | `recall_message` | Yes (On connection) | Recall message (Sender only) |
+| | `typing` | Yes (On connection) | Broadcast typing state to other room members |
+| | `read_receipt` | Yes (On connection) | Update read receipt cursor to specified message |
+| **Server-to-Client** | `new_message` | Yes (On connection) | Receive new message notification (including mentions) |
+| | `message_recalled` | Yes (On connection) | Message has been recalled by the sender |
+| | `user_typing` | Yes (On connection) | Typing state changes of other members |
+| | `read_update` | Yes (On connection) | Read receipt updates of other members |
+| | `room_update` | Yes (On connection) | Room settings changes, member changes, or kick notifications |
+| | `friend_request` | Yes (On connection) | Receive new friend request notification |
+| | `emergency_alert` | Yes (On connection) | Receive emergency alert notification from contact |
+| | `error` | Yes (On connection) | Error report for failed event processing |
+
+---
+
+## 0. General Rules
+
+### Local Integration Environment
+
+Docker Compose exposes the following host ports:
+- **Frontend App**: `http://localhost:3005` (container port `3000`)
+- **Backend API / Socket Server**: `http://localhost:4005` (container port `4000`)
+- **PostgreSQL Database**: `localhost:5435` (container port `5432`)
+
+When connecting the frontend to the backend, configure the environment variable:
+```env
+NEXT_PUBLIC_API_URL=http://localhost:4005
+```
 
 ### Base URL
 
-所有 REST API 路徑以 `/api/v1` 開頭。
+All REST API paths start with `/api/v1`.
 
-### 認證方式 (Authentication)
+### Authentication
 
-除 `POST /auth/register` 與 `POST /auth/login` 外，所有端點均需驗證，提供以下任一方式：
+Except for `POST /auth/register`, `POST /auth/login`, and `POST /auth/refresh`, all endpoints require authentication:
 
-| 方式 | 說明 |
-| :--- | :--- |
-| **HttpOnly Cookie** | 登入後自動設置 `auth_token` Cookie，瀏覽器會自動帶上（推薦） |
-| **Bearer Token** | Request Header: `Authorization: Bearer <token>` |
+1. **Bearer Token**: The client must include `Authorization: Bearer <token>` in the Request Header (where `<token>` is the access token returned after successful registration, login, or refresh).
+2. **HttpOnly Cookie (Refresh Token)**: After successful login or registration, the server automatically sets a Cookie named `refresh_token` in the browser. When the access token expires, a new access token can be obtained by sending a `POST /auth/refresh` request, which automatically includes this Cookie.
 
-JWT 預設有效期為 `15m`，可透過環境變數 `JWT_EXPIRES_IN` 調整。Token 過期後需重新登入取得新 Token。
+Access tokens expire in `15m` by default (configurable via `JWT_EXPIRES_IN`). Refresh tokens expire in `7` days by default (configurable via `JWT_REFRESH_EXPIRES_IN_DAYS`).
 
-### 錯誤回應格式 (Error Response)
+### Error Response Format
 
-所有錯誤均回傳以下 JSON 結構：
+All errors return the following JSON structure:
 
 ```json
 {
@@ -33,692 +111,1273 @@ JWT 預設有效期為 `15m`，可透過環境變數 `JWT_EXPIRES_IN` 調整。T
 }
 ```
 
-| `code` | `statusCode` | 說明 |
+| `code` | `statusCode` | Description |
 | :--- | :---: | :--- |
-| _(無 code)_ | 401 | 未提供或無效的 Token |
-| `VALIDATION_ERROR` | 400 | 請求參數不合法 |
-| `NOT_FOUND` | 404 | 資源不存在 |
-| `FORBIDDEN` | 403 | 無操作權限 |
-| `CONFLICT` | 409 | 資源衝突（如重複的好友邀請） |
-| `INTERNAL_ERROR` | 500 | 伺服器內部錯誤 |
+| _(No code)_ | 401 | Missing or invalid token |
+| `VALIDATION_ERROR` | 400 | Invalid request parameters |
+| `NOT_FOUND` | 404 | Resource not found |
+| `FORBIDDEN` | 403 | Forbidden / insufficient permissions |
+| `CONFLICT` | 409 | Resource conflict (e.g., duplicate friend request) |
+| `INTERNAL_ERROR` | 500 | Internal server error |
 
 ---
 
-## 1. 共用型別 (Shared Types)
+## 1. Shared Types
 
-### PublicUser
-```json
-{
-  "userId": "string (UUID)",
-  "name": "string",
-  "avatarUrl": "string (URL) | null"
-}
-```
+#### PublicUser
+- **Field Details**:
+  | Field | Type | Description |
+  | :--- | :--- | :--- |
+  | `userId` | UUID | Unique user identifier |
+  | `name` | String | Username |
+  | `avatarUrl` | String \| null | User avatar URL |
+- **Example**:
+  ```json
+  {
+    "userId": "d3b07384-d113-4956-a5cc-4847841c2c31",
+    "name": "Alex",
+    "avatarUrl": "https://example.com/avatar.png"
+  }
+  ```
 
-### UserProfile
-```json
-{
-  "userId": "string (UUID)",
-  "name": "string",
-  "bio": "string | null",
-  "avatarUrl": "string (URL) | null"
-}
-```
+#### UserProfile
+- **Field Details**:
+  | Field | Type | Description |
+  | :--- | :--- | :--- |
+  | `userId` | UUID | Unique user identifier |
+  | `name` | String | Username |
+  | `bio` | String \| null | Biography |
+  | `avatarUrl` | String \| null | User avatar URL |
+- **Example**:
+  ```json
+  {
+    "userId": "d3b07384-d113-4956-a5cc-4847841c2c31",
+    "name": "Alex",
+    "bio": "Hello, this is my bio.",
+    "avatarUrl": "https://example.com/avatar.png"
+  }
+  ```
 
-### MyProfile
-```json
-{
-  "userId": "string (UUID)",
-  "name": "string",
-  "email": "string",
-  "bio": "string | null",
-  "avatarUrl": "string (URL) | null"
-}
-```
+#### MyProfile
+- **Field Details**:
+  | Field | Type | Description |
+  | :--- | :--- | :--- |
+  | `userId` | UUID | Unique user identifier |
+  | `name` | String | Username |
+  | `email` | String | Email address |
+  | `bio` | String \| null | Biography |
+  | `avatarUrl` | String \| null | User avatar URL |
+- **Example**:
+  ```json
+  {
+    "userId": "d3b07384-d113-4956-a5cc-4847841c2c31",
+    "name": "Alex",
+    "email": "alex@example.com",
+    "bio": "Hello, this is my bio.",
+    "avatarUrl": "https://example.com/avatar.png"
+  }
+  ```
 
-### UserSettings
-```json
-{
-  "warningEnabled": "boolean",
-  "warningDays": "number (integer, min 0)",
-  "language": "string (BCP 47 tag, e.g. zh-TW, en)",
-  "theme": "\"light\" | \"dark\"",
-  "notifyDesktop": "boolean",
-  "notifySound": "boolean"
-}
-```
+#### UserSettings
+- **Field Details**:
+  | Field | Type | Description |
+  | :--- | :--- | :--- |
+  | `warningEnabled` | Boolean | Whether emergency contact mode is enabled |
+  | `warningDays` | Integer | Days of inactivity before alert, minimum 0 |
+  | `language` | String | Language preference, e.g., 'zh-TW', 'en' |
+  | `theme` | String | UI theme, 'light' or 'dark' |
+  | `notifyDesktop` | Boolean | Whether desktop notifications are enabled |
+  | `notifySound` | Boolean | Whether sound notifications are enabled |
+- **Example**:
+  ```json
+  {
+    "warningEnabled": false,
+    "warningDays": 3,
+    "language": "zh-TW",
+    "theme": "dark",
+    "notifyDesktop": true,
+    "notifySound": true
+  }
+  ```
 
-### AuthResponse
-```json
-{
-  "token": "string (JWT)",
-  "user": "PublicUser"
-}
-```
+#### AuthResponse
+- **Field Details**:
+  | Field | Type | Description |
+  | :--- | :--- | :--- |
+  | `token` | String | Access token |
+  | `user` | Object | `PublicUser` object |
+- **Example**:
+  ```json
+  {
+    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "user": {
+      "userId": "d3b07384-d113-4956-a5cc-4847841c2c31",
+      "name": "Alex",
+      "avatarUrl": "https://example.com/avatar.png"
+    }
+  }
+  ```
 
-### Room
-```json
-{
-  "roomId": "string (UUID)",
-  "type": "\"group\" | \"private\"",
-  "name": "string | null  (group only)",
-  "avatarUrl": "string (URL) | null",
-  "inviteCode": "string | null  (group only)",
-  "requireApproval": "boolean",
-  "viewHistory": "boolean",
-  "isArchived": "boolean",
-  "createdAt": "string (ISO 8601)"
-}
-```
-> `isArchived = true` 表示聊天室已封存，封存後唯讀。
+#### Room
+- **Field Details**:
+  | Field | Type | Description |
+  | :--- | :--- | :--- |
+  | `roomId` | UUID | Unique chat room identifier |
+  | `type` | String | Room type, 'group' or 'private' |
+  | `name` | String \| null | Room name (group rooms only) |
+  | `avatarUrl` | String \| null | Room avatar URL |
+  | `inviteCode` | String \| null | Invite code (group rooms only) |
+  | `requireApproval` | Boolean | Whether joining requires approval |
+  | `viewHistory` | Boolean | Whether new members can view historical messages |
+  | `isArchived` | Boolean | Whether archived (becomes read-only) |
+  | `createdAt` | String | Creation timestamp |
+- **Example**:
+  ```json
+  {
+    "roomId": "8f8b8c8d-8e8f-8a8b-8c8d-8e8f8a8b8c8d",
+    "type": "group",
+    "name": "Project Discussion Group",
+    "avatarUrl": "https://example.com/room-avatar.png",
+    "inviteCode": "JOIN123",
+    "requireApproval": false,
+    "viewHistory": true,
+    "isArchived": false,
+    "createdAt": "2026-06-14T22:18:13Z"
+  }
+  ```
 
-### RoomSummary _(extends Room)_
-```json
-{
-  "...Room fields...",
-  "latestMessage": {
-    "messageId": "string (UUID)",
-    "senderId": "string (UUID) | null",
-    "content": "string",
-    "sentAt": "string (ISO 8601)"
-  },
-  "unreadCount": "number"
-}
-```
-> `latestMessage` 為 `null` 時表示無訊息紀錄。
+#### RoomSummary
+- **Field Details**:
+  | Field | Type | Description |
+  | :--- | :--- | :--- |
+  | `roomId` | UUID | Unique chat room identifier |
+  | `type` | String | Room type, 'group' or 'private' |
+  | `name` | String \| null | Room name |
+  | `avatarUrl` | String \| null | Room avatar URL |
+  | `inviteCode` | String \| null | Invite code |
+  | `requireApproval` | Boolean | Whether joining requires approval |
+  | `viewHistory` | Boolean | Whether new members can view history |
+  | `isArchived` | Boolean | Whether archived |
+  | `createdAt` | String | Creation timestamp |
+  | `latestMessage` | Object \| null | Summary of the latest message, null if none |
+  | `unreadCount` | Number | Number of unread messages |
+- **Example**:
+  ```json
+  {
+    "roomId": "8f8b8c8d-8e8f-8a8b-8c8d-8e8f8a8b8c8d",
+    "type": "group",
+    "name": "Project Discussion Group",
+    "avatarUrl": "https://example.com/room-avatar.png",
+    "inviteCode": "JOIN123",
+    "requireApproval": false,
+    "viewHistory": true,
+    "isArchived": false,
+    "createdAt": "2026-06-14T22:18:13Z",
+    "latestMessage": {
+      "messageId": "9f9a9b9c-9d9e-9f9a-9b9c-9d9e9f9a9b9c",
+      "senderId": "d3b07384-d113-4956-a5cc-4847841c2c31",
+      "content": "Good evening everyone",
+      "sentAt": "2026-06-14T22:15:00Z"
+    },
+    "unreadCount": 2
+  }
+  ```
 
-### RoomMember
-```json
-{
-  "roomId": "string (UUID)",
-  "userId": "string (UUID)",
-  "role": "\"owner\" | \"admin\" | \"member\" | \"pending\"",
-  "nickname": "string | null",
-  "isMuted": "boolean",
-  "lastReadId": "string (UUID) | null",
-  "joinTime": "string (ISO 8601)"
-}
-```
+#### RoomMember
+- **Field Details**:
+  | Field | Type | Description |
+  | :--- | :--- | :--- |
+  | `roomId` | UUID | Unique chat room identifier |
+  | `userId` | UUID | Unique member user identifier |
+  | `role` | String | Member role: 'owner', 'admin', 'member', or 'pending' |
+  | `nickname` | String \| null | Custom nickname in this room |
+  | `isMuted` | Boolean | Whether muted |
+  | `lastReadId` | UUID \| null | Last read message ID |
+  | `joinTime` | String | Join timestamp |
+- **Example**:
+  ```json
+  {
+    "roomId": "8f8b8c8d-8e8f-8a8b-8c8d-8e8f8a8b8c8d",
+    "userId": "d3b07384-d113-4956-a5cc-4847841c2c31",
+    "role": "admin",
+    "nickname": "AlexNickname",
+    "isMuted": false,
+    "lastReadId": "9f9a9b9c-9d9e-9f9a-9b9c-9d9e9f9a9b9c",
+    "joinTime": "2026-06-14T18:00:00Z"
+  }
+  ```
 
-### MessageWithSender
-```json
-{
-  "messageId": "string (UUID)",
-  "roomId": "string (UUID)",
-  "senderId": "string (UUID) | null",
-  "content": "string",
-  "replyToId": "string (UUID) | null",
-  "isRecalled": "boolean",
-  "sentAt": "string (ISO 8601)",
-  "attachments": ["Attachment"],
-  "sender": "PublicUser | null  (null 表示發送者帳號已刪除)",
-  "mentions": ["string (userId)"]
-}
-```
+#### MessageWithSender
+- **Field Details**:
+  | Field | Type | Description |
+  | :--- | :--- | :--- |
+  | `messageId` | UUID | Unique message identifier |
+  | `roomId` | UUID | Unique chat room identifier |
+  | `senderId` | UUID \| null | Sender ID, null if account is deleted |
+  | `content` | String | Message content |
+  | `replyToId` | UUID \| null | ID of the replied parent message |
+  | `isRecalled` | Boolean | Whether recalled |
+  | `sentAt` | String | Sent timestamp |
+  | `attachments` | Array | Array of `Attachment` objects |
+  | `sender` | Object \| null | Sender `PublicUser` data, null if deleted |
+  | `mentions` | Array | Array of mentioned user IDs |
+- **Example**:
+  ```json
+  {
+    "messageId": "9f9a9b9c-9d9e-9f9a-9b9c-9d9e9f9a9b9c",
+    "roomId": "8f8b8c8d-8e8f-8a8b-8c8d-8e8f8a8b8c8d",
+    "senderId": "d3b07384-d113-4956-a5cc-4847841c2c31",
+    "content": "Alex mentioned @Bob",
+    "replyToId": null,
+    "isRecalled": false,
+    "sentAt": "2026-06-14T22:15:00Z",
+    "attachments": [],
+    "sender": {
+      "userId": "d3b07384-d113-4956-a5cc-4847841c2c31",
+      "name": "Alex",
+      "avatarUrl": "https://example.com/avatar.png"
+    },
+    "mentions": ["e4c08495-e224-4a67-b6dd-5958952d3d42"]
+  }
+  ```
 
-### FriendRequestResponse
-```json
-{
-  "requesterId": "string (UUID)",
-  "addresseeId": "string (UUID)",
-  "status": "\"pending\" | \"accepted\"",
-  "createdAt": "string (ISO 8601)",
-  "requester": "PublicUser (optional)",
-  "addressee": "PublicUser (optional)"
-}
-```
+#### FriendRequestResponse
+- **Field Details**:
+  | Field | Type | Description |
+  | :--- | :--- | :--- |
+  | `requesterId` | UUID | Requester user ID |
+  | `addresseeId` | UUID | Addressee user ID |
+  | `status` | String | Status, 'pending' or 'accepted' |
+  | `createdAt` | String | Creation timestamp |
+  | `requester` | Object | Requester `PublicUser` data (optional) |
+  | `addressee` | Object | Addressee `PublicUser` data (optional) |
+- **Example**:
+  ```json
+  {
+    "requesterId": "d3b07384-d113-4956-a5cc-4847841c2c31",
+    "addresseeId": "e4c08495-e224-4a67-b6dd-5958952d3d42",
+    "status": "pending",
+    "createdAt": "2026-06-14T20:00:00Z",
+    "requester": {
+      "userId": "d3b07384-d113-4956-a5cc-4847841c2c31",
+      "name": "Alex",
+      "avatarUrl": null
+    }
+  }
+  ```
 
-### Attachment
-```json
-{
-  "attachmentId": "string (UUID)",
-  "messageId": "string (UUID) | null",
-  "fileUrl": "string (URL)",
-  "originalName": "string",
-  "fileType": "string (MIME type)",
-  "uploadedAt": "string (ISO 8601)"
-}
-```
+#### Attachment
+- **Field Details**:
+  | Field | Type | Description |
+  | :--- | :--- | :--- |
+  | `attachmentId` | UUID | Unique attachment identifier |
+  | `messageId` | UUID \| null | Associated message ID |
+  | `fileUrl` | String | File URL |
+  | `originalName` | String | Original filename |
+  | `fileType` | String | MIME type |
+  | `uploadedAt` | String | Uploaded timestamp |
+- **Example**:
+  ```json
+  {
+    "attachmentId": "f5f5f5f5-f5f5-f5f5-f5f5-f5f5f5f5f5f5",
+    "messageId": "9f9a9b9c-9d9e-9f9a-9b9c-9d9e9f9a9b9c",
+    "fileUrl": "http://localhost:4005/api/v1/attachments/f5f5f5f5-f5f5-f5f5-f5f5-f5f5f5f5f5f5",
+    "originalName": "report.pdf",
+    "fileType": "application/pdf",
+    "uploadedAt": "2026-06-14T22:15:00Z"
+  }
+  ```
 
-### FriendResponse
-```json
-{
-  "friend": "PublicUser",
-  "friendshipCreatedAt": "string (ISO 8601)"
-}
-```
+#### FriendResponse
+- **Field Details**:
+  | Field | Type | Description |
+  | :--- | :--- | :--- |
+  | `friend` | Object | Friend `PublicUser` data |
+  | `friendshipCreatedAt` | String | Friendship creation timestamp |
+- **Example**:
+  ```json
+  {
+    "friend": {
+      "userId": "e4c08495-e224-4a67-b6dd-5958952d3d42",
+      "name": "Bob",
+      "avatarUrl": "https://example.com/bob-avatar.png"
+    },
+    "friendshipCreatedAt": "2026-06-14T21:00:00Z"
+  }
+  ```
 
-### Folder
-```json
-{
-  "folderId": "string (UUID)",
-  "userId": "string (UUID)",
-  "name": "string",
-  "createdAt": "string (ISO 8601)",
-  "roomIds": ["string (UUID)"]
-}
-```
+#### Folder
+- **Field Details**:
+  | Field | Type | Description |
+  | :--- | :--- | :--- |
+  | `folderId` | UUID | Unique folder identifier |
+  | `userId` | UUID | Owner user ID |
+  | `name` | String | Folder name |
+  | `createdAt` | String | Creation timestamp |
+  | `roomIds` | Array | Array of chat room IDs inside the folder |
+- **Example**:
+  ```json
+  {
+    "folderId": "a1a1a1a1-a1a1-a1a1-a1a1-a1a1a1a1a1a1",
+    "userId": "d3b07384-d113-4956-a5cc-4847841c2c31",
+    "name": "Work Chats",
+    "createdAt": "2026-06-14T22:18:13Z",
+    "roomIds": ["8f8b8c8d-8e8f-8a8b-8c8d-8e8f8a8b8c8d"]
+  }
+  ```
 
-### ApiError _(Socket.IO error event payload)_
-```json
-{
-  "statusCode": "number",
-  "message": "string",
-  "code": "string (optional)"
-}
-```
+#### ApiError
+- **Field Details**:
+  | Field | Type | Description |
+  | :--- | :--- | :--- |
+  | `statusCode` | Number | HTTP status code |
+  | `message` | String | Error message |
+  | `code` | String \| null | Error code (optional) |
+- **Example**:
+  ```json
+  {
+    "statusCode": 400,
+    "message": "Invalid request parameters",
+    "code": "VALIDATION_ERROR"
+  }
+  ```
 
 ---
 
-## 2. RESTful API (HTTP)
+## 2. RESTful API
 
-### A. 認證與帳號 (Authentication & Profile)
+### A. Authentication & Profile
 
 #### `POST /auth/register`
-> 無需驗證
-
-**Request Body:**
-```json
-{
-  "email": "string (valid email, required)",
-  "name": "string (min 1 char, required)",
-  "password": "string (min 8 chars, required)"
-}
-```
-**Response `201`:** `AuthResponse` + 設置 `auth_token` HttpOnly Cookie
+- **Description**: Register a new account and log in automatically.
+- **Authentication & Authorization**: No authentication required.
+- **Request Body**:
+  | Field | Type | Required | Description |
+  | :--- | :--- | :---: | :--- |
+  | `email` | String | Yes | Email address (valid email format) |
+  | `name` | String | Yes | Username (minimum 1 character) |
+  | `password` | String | Yes | Password (minimum 8 characters) |
+- **Request Example**:
+  ```json
+  {
+    "email": "user@example.com",
+    "name": "user123",
+    "password": "securepassword123"
+  }
+  ```
+- **Response**:
+  - `201 Created`: Registration successful.
+- **Response Example**:
+  ```json
+  {
+    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "user": {
+      "userId": "d3b07384-d113-4956-a5cc-4847841c2c31",
+      "name": "user123",
+      "avatarUrl": null
+    }
+  }
+  ```
 
 ---
 
 #### `POST /auth/login`
-> 無需驗證
+- **Description**: Log in with email and password.
+- **Authentication & Authorization**: No authentication required.
+- **Request Body**:
+  | Field | Type | Required | Description |
+  | :--- | :--- | :---: | :--- |
+  | `email` | String | Yes | Email address |
+  | `password` | String | Yes | Password |
+- **Request Example**:
+  ```json
+  {
+    "email": "user@example.com",
+    "password": "securepassword123"
+  }
+  ```
+- **Response**:
+  - `200 OK`: Login successful.
+- **Response Example**:
+  ```json
+  {
+    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "user": {
+      "userId": "d3b07384-d113-4956-a5cc-4847841c2c31",
+      "name": "user123",
+      "avatarUrl": null
+    }
+  }
+  ```
 
-**Request Body:**
-```json
-{
-  "email": "string (valid email, required)",
-  "password": "string (required)"
-}
-```
-**Response `200`:** `AuthResponse` + 設置 `auth_token` HttpOnly Cookie
+---
+
+#### `POST /auth/refresh`
+- **Description**: Refresh access token.
+- **Authentication & Authorization**: No authentication required, but the browser must automatically include a valid `refresh_token` HttpOnly Cookie.
+- **Response**:
+  - `200 OK`: Token refreshed successfully.
+- **Response Example**:
+  ```json
+  {
+    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "user": {
+      "userId": "d3b07384-d113-4956-a5cc-4847841c2c31",
+      "name": "user123",
+      "avatarUrl": null
+    }
+  }
+  ```
 
 ---
 
 #### `POST /auth/logout`
-
-**Response `204`** (清除 `auth_token` Cookie)
+- **Description**: Log out, invalidating current access and refresh tokens.
+- **Authentication & Authorization**: Authentication required.
+- **Response**:
+  - `204 No Content`: Cookie cleared and token revoked in the database.
 
 ---
 
 #### `GET /users/me`
-
-取得目前登入者的個人資料檢視結果。
-
-**Response `200`:** `MyProfile`
+- **Description**: Get full profile of the currently logged-in user.
+- **Authentication & Authorization**: Authentication required.
+- **Response**:
+  - `200 OK`: Profile fetched successfully.
+- **Response Example**:
+  ```json
+  {
+    "userId": "d3b07384-d113-4956-a5cc-4847841c2c31",
+    "name": "user123",
+    "email": "user@example.com",
+    "bio": "I am a new user.",
+    "avatarUrl": null
+  }
+  ```
 
 ---
 
 #### `GET /users/:id`
-
-取得公開個人資料頁所需資訊。
-
-**Response `200`:** `UserProfile`
+- **Description**: Get public profile of the specified user.
+- **Authentication & Authorization**: Authentication required.
+- **Response**:
+  - `200 OK`: Profile fetched successfully.
+- **Response Example**:
+  ```json
+  {
+    "userId": "d3b07384-d113-4956-a5cc-4847841c2c31",
+    "name": "user123",
+    "bio": "I am a new user.",
+    "avatarUrl": null
+  }
+  ```
 
 ---
 
 #### `PATCH /users/me`
-
-更新目前登入者的個人資料欄位（不含偏好設定）。
-
-**Request Body:**
-```json
-{
-  "name": "string (min 1 char)  [optional]",
-  "email": "string (valid email)  [optional]",
-  "password": "string (min 8 chars)  [optional]",
-  "bio": "string  [optional]",
-  "avatarUrl": "string (valid URL)  [optional]"
-}
-```
-**Response `200`:** `MyProfile`
+- **Description**: Update profile fields of the currently logged-in user.
+- **Authentication & Authorization**: Authentication required.
+- **Request Body**:
+  | Field | Type | Required | Description |
+  | :--- | :--- | :---: | :--- |
+  | `name` | String | No | Username (minimum 1 character) |
+  | `email` | String | No | Email address |
+  | `password` | String | No | Password (minimum 8 characters) |
+  | `bio` | String | No | Biography |
+  | `avatarUrl` | String | No | Avatar URL |
+- **Request Example**:
+  ```json
+  {
+    "bio": "Updated bio details"
+  }
+  ```
+- **Response**:
+  - `200 OK`: Update successful.
+- **Response Example**:
+  ```json
+  {
+    "userId": "d3b07384-d113-4956-a5cc-4847841c2c31",
+    "name": "user123",
+    "email": "user@example.com",
+    "bio": "Updated bio details",
+    "avatarUrl": null
+  }
+  ```
 
 ---
 
 #### `GET /users/me/settings`
-
-取得目前登入者的設定頁資料。
-
-**Response `200`:** `UserSettings`
+- **Description**: Get preferences and emergency alert settings of the current user.
+- **Authentication & Authorization**: Authentication required.
+- **Response**:
+  - `200 OK`: Settings fetched successfully.
+- **Response Example**:
+  ```json
+  {
+    "warningEnabled": false,
+    "warningDays": 0,
+    "language": "en",
+    "theme": "light",
+    "notifyDesktop": true,
+    "notifySound": true
+  }
+  ```
 
 ---
 
 #### `PATCH /users/me/settings`
-
-更新目前登入者的設定頁欄位。
-
-**Request Body:**
-```json
-{
-  "warningEnabled": "boolean  [optional]",
-  "warningDays": "number (integer, min 0)  [optional]",
-  "language": "string (BCP 47 tag)  [optional]",
-  "theme": "\"light\" | \"dark\"  [optional]",
-  "notifyDesktop": "boolean  [optional]",
-  "notifySound": "boolean  [optional]"
-}
-```
-**Response `200`:** `UserSettings`
+- **Description**: Update preferences and alert settings of the current user.
+- **Authentication & Authorization**: Authentication required.
+- **Request Body**:
+  | Field | Type | Required | Description |
+  | :--- | :--- | :---: | :--- |
+  | `warningEnabled` | Boolean | No | Whether inactivity alert mode is enabled |
+  | `warningDays` | Number | No | Days of inactivity before alert, minimum 0 |
+  | `language` | String | No | Language preference |
+  | `theme` | String | No | UI theme: 'light' or 'dark' |
+  | `notifyDesktop` | Boolean | No | Whether desktop notifications are enabled |
+  | `notifySound` | Boolean | No | Whether sound notifications are enabled |
+- **Request Example**:
+  ```json
+  {
+    "theme": "dark",
+    "notifySound": false
+  }
+  ```
+- **Response**:
+  - `200 OK`: Update successful.
+- **Response Example**:
+  ```json
+  {
+    "warningEnabled": false,
+    "warningDays": 0,
+    "language": "en",
+    "theme": "dark",
+    "notifyDesktop": true,
+    "notifySound": false
+  }
+  ```
 
 ---
 
 #### `DELETE /users/me`
-
-**Response `204`** (軟刪除，標記帳號為已刪除)
-
----
-
-#### `GET /users?q=<query>`
-
-搜尋使用者。
-
-**Query Parameters:**
-
-| 參數 | 必填 | 說明 |
-| :--- | :---: | :--- |
-| `q` | ✅ | 搜尋字串 (min 1 char)，依名稱或 ID 過濾 |
-
-**Response `200`:** `PublicUser[]`
+- **Description**: Terminate/delete account of the currently logged-in user (soft delete).
+- **Authentication & Authorization**: Authentication required.
+- **Response**:
+  - `204 No Content`: Account successfully marked as deleted.
 
 ---
 
-### B. 好友與封鎖 (Friends & Blocks)
+#### `GET /users`
+- **Description**: Search for users in the system.
+- **Authentication & Authorization**: Authentication required.
+- **Query Parameters**:
+  | Parameter | Required | Description |
+  | :--- | :---: | :--- |
+  | `q` | Yes | Search query (minimum 1 character) to filter name or ID |
+- **Response**:
+  - `200 OK`: Search successful.
+- **Response Example**:
+  ```json
+  [
+    {
+      "userId": "d3b07384-d113-4956-a5cc-4847841c2c31",
+      "name": "user123",
+      "avatarUrl": null
+    }
+  ]
+  ```
+
+---
+
+### B. Friends & Blocks
 
 #### `GET /friends`
-
-**Response `200`:** `FriendResponse[]`
+- **Description**: Get friends list of the current user.
+- **Authentication & Authorization**: Authentication required.
+- **Response**:
+  - `200 OK`: Friends list fetched successfully.
+- **Response Example**:
+  ```json
+  [
+    {
+      "friend": {
+        "userId": "e4c08495-e224-4a67-b6dd-5958952d3d42",
+        "name": "Bob",
+        "avatarUrl": null
+      },
+      "friendshipCreatedAt": "2026-06-14T21:00:00Z"
+    }
+  ]
+  ```
 
 ---
 
 #### `DELETE /friends/:id`
-
-移除好友。`:id` 為對方的 `userId`。
-
-**Response `204`**
+- **Description**: Remove friend relationship with the specified user. `:id` is the friend's user ID.
+- **Authentication & Authorization**: Authentication required.
+- **Response**:
+  - `204 No Content`: Friend relationship removed successfully.
 
 ---
 
 #### `GET /friend-requests`
-
-取得所有待處理的好友邀請（含已發送與已接收）。
-
-**Response `200`:** `FriendRequestResponse[]`
+- **Description**: Get all pending friend requests of the current user (sent and received).
+- **Authentication & Authorization**: Authentication required.
+- **Response**:
+  - `200 OK`: Requests fetched successfully.
+- **Response Example**:
+  ```json
+  [
+    {
+      "requesterId": "d3b07384-d113-4956-a5cc-4847841c2c31",
+      "addresseeId": "e4c08495-e224-4a67-b6dd-5958952d3d42",
+      "status": "pending",
+      "createdAt": "2026-06-14T20:00:00Z",
+      "requester": {
+        "userId": "d3b07384-d113-4956-a5cc-4847841c2c31",
+        "name": "Alex",
+        "avatarUrl": null
+      }
+    }
+  ]
+  ```
 
 ---
 
 #### `POST /friend-requests`
-
-**Request Body:**
-```json
-{
-  "targetUserId": "string (UUID, required)"
-}
-```
-**Response `201`:** `FriendRequestResponse`
-> 若邀請已存在，回傳 `409 CONFLICT`
+- **Description**: Send a friend request to a specified user.
+- **Authentication & Authorization**: Authentication required.
+- **Request Body**:
+  | Field | Type | Required | Description |
+  | :--- | :--- | :---: | :--- |
+  | `targetUserId` | UUID | Yes | Target user UUID |
+- **Request Example**:
+  ```json
+  {
+    "targetUserId": "e4c08495-e224-4a67-b6dd-5958952d3d42"
+  }
+  ```
+- **Response**:
+  - `201 Created`: Request sent successfully.
+- **Response Example**:
+  ```json
+  {
+    "requesterId": "d3b07384-d113-4956-a5cc-4847841c2c31",
+    "addresseeId": "e4c08495-e224-4a67-b6dd-5958952d3d42",
+    "status": "pending",
+    "createdAt": "2026-06-14T22:18:13Z"
+  }
+  ```
 
 ---
 
 #### `PATCH /friend-requests/:id`
-
-回覆好友邀請。`:id` 為發出邀請者（requester）的 `userId`。
-
-**Request Body:**
-```json
-{
-  "status": "\"accepted\" | \"rejected\""
-}
-```
-**Response `200`:** `FriendRequestResponse`
+- **Description**: Respond to a received friend request. `:id` is the requester's user ID.
+- **Authentication & Authorization**: Authentication required.
+- **Request Body**:
+  | Field | Type | Required | Description |
+  | :--- | :--- | :---: | :--- |
+  | `status` | String | Yes | Response status, 'accepted' or 'rejected' |
+- **Request Example**:
+  ```json
+  {
+    "status": "accepted"
+  }
+  ```
+- **Response**:
+  - `200 OK`: Response updated successfully.
+- **Response Example**:
+  ```json
+  {
+    "requesterId": "d3b07384-d113-4956-a5cc-4847841c2c31",
+    "addresseeId": "e4c08495-e224-4a67-b6dd-5958952d3d42",
+    "status": "accepted",
+    "createdAt": "2026-06-14T20:00:00Z"
+  }
+  ```
 
 ---
 
 #### `POST /blocks`
-
-封鎖使用者。
-
-**Request Body:**
-```json
-{
-  "targetUserId": "string (UUID, required)"
-}
-```
-**Response `201`**
+- **Description**: Block a specified user.
+- **Authentication & Authorization**: Authentication required.
+- **Request Body**:
+  | Field | Type | Required | Description |
+  | :--- | :--- | :---: | :--- |
+  | `targetUserId` | UUID | Yes | Target user UUID |
+- **Request Example**:
+  ```json
+  {
+    "targetUserId": "e4c08495-e224-4a67-b6dd-5958952d3d42"
+  }
+  ```
+- **Response**:
+  - `201 Created`: User blocked successfully.
 
 ---
 
 #### `DELETE /blocks/:id`
-
-取消封鎖。`:id` 為被封鎖者的 `userId`。
-
-**Response `204`**
+- **Description**: Unblock a specified user. `:id` is the blocked user's ID.
+- **Authentication & Authorization**: Authentication required.
+- **Response**:
+  - `204 No Content`: User unblocked successfully.
 
 ---
 
-### C. 聊天室 (Chat Rooms)
+### C. Chat Rooms
 
 #### `GET /rooms`
-
-**Response `200`:** `RoomSummary[]`
+- **Description**: Get all chat rooms the current user has joined, including summaries and unread counts.
+- **Authentication & Authorization**: Authentication required.
+- **Response**:
+  - `200 OK`: Rooms list fetched successfully.
+- **Response Example**:
+  ```json
+  [
+    {
+      "roomId": "8f8b8c8d-8e8f-8a8b-8c8d-8e8f8a8b8c8d",
+      "type": "group",
+      "name": "Project Discussion Group",
+      "avatarUrl": null,
+      "inviteCode": "JOIN123",
+      "requireApproval": false,
+      "viewHistory": true,
+      "isArchived": false,
+      "createdAt": "2026-06-14T22:18:13Z",
+      "latestMessage": {
+        "messageId": "9f9a9b9c-9d9e-9f9a-9b9c-9d9e9f9a9b9c",
+        "senderId": "d3b07384-d113-4956-a5cc-4847841c2c31",
+        "content": "Hello",
+        "sentAt": "2026-06-14T22:15:00Z"
+      },
+      "unreadCount": 0
+    }
+  ]
+  ```
 
 ---
 
 #### `POST /rooms`
-
-建立聊天室。`type` 決定所需欄位。
-
-**Request Body — group:**
-```json
-{
-  "type": "\"group\"",
-  "name": "string (min 1 char, required)",
-  "avatarUrl": "string (valid URL)  [optional]",
-  "requireApproval": "boolean (default: false)  [optional]",
-  "viewHistory": "boolean (default: true)  [optional]"
-}
-```
-
-**Request Body — private:**
-```json
-{
-  "type": "\"private\"",
-  "targetUserId": "string (UUID, required)"
-}
-```
-
-**Response `201`:** `Room`（建立新的私聊）
-**Response `200`:** `Room`（已存在既有私聊時直接回傳該房間）
-
-> `private` 聊天室僅限一對一。若同一對好友已存在私聊，伺服器不得重複建立第二個 `private` 聊天室。
+- **Description**: Create a new chat room (private or group). Fields depend on the `type` parameter.
+- **Authentication & Authorization**: Authentication required.
+- **Request Body**:
+  | Field | Type | Required | Description |
+  | :--- | :--- | :---: | :--- |
+  | `type` | String | Yes | Creation type: 'group' or 'private' |
+  | `name` | String | No | Group name (required for group type, minimum 1 character) |
+  | `avatarUrl` | String | No | Group avatar URL (group only) |
+  | `requireApproval` | Boolean | No | Whether joining requires approval, default false (group only) |
+  | `viewHistory` | Boolean | No | Whether new members can view history, default true (group only) |
+  | `targetUserId` | UUID | No | Target user ID (required for private type) |
+- **Request Example — Group Room**:
+  ```json
+  {
+    "type": "group",
+    "name": "New Project Chat",
+    "requireApproval": true
+  }
+  ```
+- **Request Example — Private Room**:
+  ```json
+  {
+    "type": "private",
+    "targetUserId": "e4c08495-e224-4a67-b6dd-5958952d3d42"
+  }
+  ```
+- **Response**:
+  - `201 Created`: Chat room successfully created, returns room details.
+  - `200 OK`: If a private chat with this user already exists, returns the existing room details instead of creating a duplicate.
+- **Response Example**:
+  ```json
+  {
+    "roomId": "8f8b8c8d-8e8f-8a8b-8c8d-8e8f8a8b8c8d",
+    "type": "group",
+    "name": "New Project Chat",
+    "avatarUrl": null,
+    "inviteCode": "NEWGRP1",
+    "requireApproval": true,
+    "viewHistory": true,
+    "isArchived": false,
+    "createdAt": "2026-06-14T22:18:13Z"
+  }
+  ```
 
 ---
 
 #### `GET /rooms/:id`
-
-**Response `200`:** `Room`
+- **Description**: Get detailed info of a specific chat room.
+- **Authentication & Authorization**: Authentication required, and the caller must be a member of the room.
+- **Response**:
+  - `200 OK`: Room info fetched successfully.
+- **Response Example**:
+  ```json
+  {
+    "roomId": "8f8b8c8d-8e8f-8a8b-8c8d-8e8f8a8b8c8d",
+    "type": "group",
+    "name": "New Project Chat",
+    "avatarUrl": null,
+    "inviteCode": "NEWGRP1",
+    "requireApproval": true,
+    "viewHistory": true,
+    "isArchived": false,
+    "createdAt": "2026-06-14T22:18:13Z"
+  }
+  ```
 
 ---
 
 #### `PATCH /rooms/:id`
-
-此端點依 body 內容有兩種用途：
-
-**用途 1 — 轉讓擁有者**（body 含 `ownerId` 時）
-```json
-{
-  "ownerId": "string (UUID)"
-}
-```
-**Response `200`:** `{ "message": "Ownership transferred" }`
-
-**用途 2 — 更新群組設定**（其他情況，至少需一個欄位）
-```json
-{
-  "name": "string (min 1 char)  [optional]",
-  "avatarUrl": "string (valid URL)  [optional]",
-  "requireApproval": "boolean  [optional]",
-  "viewHistory": "boolean  [optional]",
-  "isArchived": "boolean  [optional]"
-}
-```
-**Response `200`:** `Room`
-
-> 需為 owner 或 admin 身份。
+- **Description**: Update group settings or transfer ownership.
+- **Authentication & Authorization**: Authentication required, and the user must be the owner or admin of the group.
+- **Request Body**:
+  | Field | Type | Required | Description |
+  | :--- | :--- | :---: | :--- |
+  | `ownerId` | UUID | No | New owner ID when transferring group ownership |
+  | `name` | String | No | New group name (minimum 1 character) |
+  | `avatarUrl` | String | No | New avatar URL |
+  | `requireApproval` | Boolean | No | Update whether joining requires approval |
+  | `viewHistory` | Boolean | No | Update whether new members can view history |
+  | `isArchived` | Boolean | No | Update whether room is archived |
+- **Request Example — Transfer Ownership**:
+  ```json
+  {
+    "ownerId": "e4c08495-e224-4a67-b6dd-5958952d3d42"
+  }
+  ```
+- **Request Example — Update Group Name**:
+  ```json
+  {
+    "name": "Updated Group Name"
+  }
+  ```
+- **Response**:
+  - `200 OK`: Update successful.
+- **Response Example**:
+  *When transferring ownership:*
+  ```json
+  {
+    "message": "Ownership transferred"
+  }
+  ```
+  *When updating settings:*
+  ```json
+  {
+    "roomId": "8f8b8c8d-8e8f-8a8b-8c8d-8e8f8a8b8c8d",
+    "type": "group",
+    "name": "Updated Group Name",
+    "avatarUrl": null,
+    "inviteCode": "NEWGRP1",
+    "requireApproval": true,
+    "viewHistory": true,
+    "isArchived": false,
+    "createdAt": "2026-06-14T22:18:13Z"
+  }
+  ```
 
 ---
 
 #### `POST /rooms/:id/members`
-
-透過邀請碼加入群組。
-
-**Request Body:**
-```json
-{
-  "inviteCode": "string (required)"
-}
-```
-**Response `200`:** `Room`
-
-> ⚠️ 目前伺服器以 `inviteCode` 解析目標房間，URL 中的 `:id` 暫時未被使用，可傳入任意佔位值（如 `0`）。
+- **Description**: Join a group chat using an invite code.
+- **Authentication & Authorization**: Authentication required.
+- **Request Body**:
+  | Field | Type | Required | Description |
+  | :--- | :--- | :---: | :--- |
+  | `inviteCode` | String | Yes | Invite code to join the group |
+- **Request Example**:
+  ```json
+  {
+    "inviteCode": "NEWGRP1"
+  }
+  ```
+- **Response**:
+  - `200 OK`: Join successful.
+- **Response Example**:
+  ```json
+  {
+    "roomId": "8f8b8c8d-8e8f-8a8b-8c8d-8e8f8a8b8c8d",
+    "type": "group",
+    "name": "New Project Chat",
+    "avatarUrl": null,
+    "inviteCode": "NEWGRP1",
+    "requireApproval": true,
+    "viewHistory": true,
+    "isArchived": false,
+    "createdAt": "2026-06-14T22:18:13Z"
+  }
+  ```
 
 ---
 
 #### `DELETE /rooms/:id/members/me`
-
-退出聊天室（自己離開）。
-
-**Response `204`**
+- **Description**: Voluntarily leave the specified chat room.
+- **Authentication & Authorization**: Authentication required, and the user must be a member.
+- **Response**:
+  - `204 No Content`: Room left successfully.
 
 ---
 
 #### `DELETE /rooms/:id`
-
-封存聊天室，需為 owner。封存後保留歷史資料，但聊天室進入唯讀狀態。
-
-**Response `204`**
+- **Description**: Archive the chat room. Archives preserve history but make the room read-only.
+- **Authentication & Authorization**: Authentication required, and the user must be the owner of the group.
+- **Response**:
+  - `204 No Content`: Room archived successfully.
 
 ---
 
-### D. 成員管理 (Member Management)
+### D. Member Management
 
 #### `GET /rooms/:id/members`
-
-**Response `200`:** `RoomMember[]`
+- **Description**: Get list of members in the specified room.
+- **Authentication & Authorization**: Authentication required, and the user must be a member.
+- **Response**:
+  - `200 OK`: Members list fetched successfully.
+- **Response Example**:
+  ```json
+  [
+    {
+      "roomId": "8f8b8c8d-8e8f-8a8b-8c8d-8e8f8a8b8c8d",
+      "userId": "d3b07384-d113-4956-a5cc-4847841c2c31",
+      "role": "owner",
+      "nickname": null,
+      "isMuted": false,
+      "lastReadId": null,
+      "joinTime": "2026-06-14T22:18:13Z"
+    }
+  ]
+  ```
 
 ---
 
 #### `PATCH /rooms/:id/members/:userId`
-
-此端點依 body 內容有兩種用途：
-
-**用途 1 — 審核成員**（body 含 `status: 'approved'` 時）
-```json
-{
-  "status": "\"approved\""
-}
-```
-**Response `200`:** `{ "message": "Member approved" }`
-
-**用途 2 — 修改成員權限 / 暱稱**（其他情況）
-```json
-{
-  "role": "\"admin\" | \"member\"  [optional]",
-  "nickname": "string  [optional]",
-  "isMuted": "boolean  [optional]"
-}
-```
-**Response `200`:** `{ "message": "Member updated" }`
-
-> 需為 owner 或 admin 身份。
+- **Description**: Approve joining members, or update a member's role and nickname.
+- **Authentication & Authorization**: Authentication required, and the user must be an owner or admin of the room.
+- **Request Body**:
+  | Field | Type | Required | Description |
+  | :--- | :--- | :---: | :--- |
+  | `status` | String | No | Approval status: must be 'approved' |
+  | `role` | String | No | Member role: 'admin' or 'member' |
+  | `nickname` | String | No | Custom nickname in this room |
+  | `isMuted` | Boolean | No | Whether to mute this member |
+- **Request Example — Approve Member**:
+  ```json
+  {
+    "status": "approved"
+  }
+  ```
+- **Request Example — Update Role & Mute**:
+  ```json
+  {
+    "role": "admin",
+    "isMuted": true
+  }
+  ```
+- **Response**:
+  - `200 OK`: Update or approval successful.
+- **Response Example**:
+  *When approving a member:*
+  ```json
+  {
+    "message": "Member approved"
+  }
+  ```
+  *When updating details:*
+  ```json
+  {
+    "message": "Member updated"
+  }
+  ```
 
 ---
 
 #### `DELETE /rooms/:id/members/:userId`
-
-踢出成員，需為 owner 或 admin。
-
-**Response `204`**
+- **Description**: Kick a member out of the group chat room.
+- **Authentication & Authorization**: Authentication required, and the user must be the owner or admin of the room.
+- **Response**:
+  - `204 No Content`: Member removed successfully.
 
 ---
 
-### E. 訊息與附件 (Messages & Attachments)
+### E. Messages & Attachments
 
 #### `GET /rooms/:roomId/messages`
-
-取得歷史訊息（cursor-based pagination，由新到舊）。
-
-**Query Parameters:**
-
-| 參數 | 必填 | 說明 |
-| :--- | :---: | :--- |
-| `before_id` | ❌ | 游標，取此 `messageId` 之前的訊息 |
-| `limit` | ❌ | 每頁筆數，1–100，預設 `50` |
-
-**Response `200`:** `MessageWithSender[]`
+- **Description**: Get message history for the room using cursor-based pagination.
+- **Authentication & Authorization**: Authentication required, and the user must be a member.
+- **Query Parameters**:
+  | Parameter | Required | Description |
+  | :--- | :---: | :--- |
+  | `before_id` | No | Cursor ID, fetches messages before this message ID |
+  | `limit` | No | Paginated limit, 1 to 100, default 50 |
+- **Response**:
+  - `200 OK`: Messages fetched successfully.
+- **Response Example**:
+  ```json
+  [
+    {
+      "messageId": "9f9a9b9c-9d9e-9f9a-9b9c-9d9e9f9a9b9c",
+      "roomId": "8f8b8c8d-8e8f-8a8b-8c8d-8e8f8a8b8c8d",
+      "senderId": "d3b07384-d113-4956-a5cc-4847841c2c31",
+      "content": "Hello",
+      "replyToId": null,
+      "isRecalled": false,
+      "sentAt": "2026-06-14T22:15:00Z",
+      "attachments": [],
+      "sender": {
+        "userId": "d3b07384-d113-4956-a5cc-4847841c2c31",
+        "name": "Alex",
+        "avatarUrl": null
+      },
+      "mentions": []
+    }
+  ]
+  ```
 
 ---
 
 #### `POST /attachments`
-
-上傳附件。
-
-**Request:** `multipart/form-data`
-
-| 欄位 | 型別 | 必填 | 說明 |
-| :--- | :--- | :---: | :--- |
-| `file` | binary | ✅ | 附件檔案 |
-| `messageId` | string (UUID) | ❌ | 若提供則立即綁定到指定訊息；若未提供則為待綁定附件 |
-
-**Response `201`:** `Attachment`
+- **Description**: Upload a file attachment.
+- **Authentication & Authorization**: Authentication required.
+- **Request Content Type**: `multipart/form-data`
+- **Request Parameters**:
+  | Parameter | Type | Required | Description |
+  | :--- | :--- | :---: | :--- |
+  | `file` | Binary | Yes | Binary file to upload |
+  | `messageId` | String | No | If provided, binds to the message ID immediately; otherwise remains unbound |
+- **Response**:
+  - `201 Created`: Upload successful.
+- **Response Example**:
+  ```json
+  {
+    "attachmentId": "f5f5f5f5-f5f5-f5f5-f5f5-f5f5f5f5f5f5",
+    "messageId": null,
+    "fileUrl": "http://localhost:4005/api/v1/attachments/f5f5f5f5-f5f5-f5f5-f5f5-f5f5f5f5f5f5",
+    "originalName": "avatar.png",
+    "fileType": "image/png",
+    "uploadedAt": "2026-06-14T22:18:13Z"
+  }
+  ```
 
 ---
 
 #### `GET /attachments/:id`
-
-下載附件。
-
-**Response `200`:** 檔案串流（`Content-Disposition: attachment`）
+- **Description**: Download or retrieve the specified attachment file.
+- **Authentication & Authorization**: Authentication required, and the user must have read access to the associated room.
+- **Response**:
+  - `200 OK`: Returns file stream with header `Content-Disposition: attachment`.
 
 ---
 
-### F. 資料夾分類 (Folders)
+### F. Folders
 
 #### `GET /folders`
-
-**Response `200`:** `Folder[]`
+- **Description**: Get all chat room classification folders created by the current user.
+- **Authentication & Authorization**: Authentication required.
+- **Response**:
+  - `200 OK`: Folders list fetched successfully.
+- **Response Example**:
+  ```json
+  [
+    {
+      "folderId": "a1a1a1a1-a1a1-a1a1-a1a1-a1a1a1a1a1a1",
+      "userId": "d3b07384-d113-4956-a5cc-4847841c2c31",
+      "name": "Project Folder",
+      "createdAt": "2026-06-14T22:18:13Z",
+      "roomIds": ["8f8b8c8d-8e8f-8a8b-8c8d-8e8f8a8b8c8d"]
+    }
+  ]
+  ```
 
 ---
 
 #### `POST /folders`
-
-**Request Body:**
-```json
-{
-  "name": "string (1–50 chars, required)"
-}
-```
-**Response `201`:** `Folder`
+- **Description**: Create a new chat room classification folder.
+- **Authentication & Authorization**: Authentication required.
+- **Request Body**:
+  | Field | Type | Required | Description |
+  | :--- | :--- | :---: | :--- |
+  | `name` | String | Yes | Folder name (1 to 50 characters) |
+- **Request Example**:
+  ```json
+  {
+    "name": "Study Folder"
+  }
+  ```
+- **Response**:
+  - `201 Created`: Folder created successfully.
+- **Response Example**:
+  ```json
+  {
+    "folderId": "a1a1a1a1-a1a1-a1a1-a1a1-a1a1a1a1a1a1",
+    "userId": "d3b07384-d113-4956-a5cc-4847841c2c31",
+    "name": "Study Folder",
+    "createdAt": "2026-06-14T22:18:13Z",
+    "roomIds": []
+  }
+  ```
 
 ---
 
 #### `DELETE /folders/:id`
-
-**Response `204`**
+- **Description**: Delete the specified classification folder.
+- **Authentication & Authorization**: Authentication required, and the user must be the owner.
+- **Response**:
+  - `204 No Content`: Folder deleted successfully.
 
 ---
 
 #### `PUT /folders/:id/rooms`
-
-整批更新資料夾內的房間列表（**全量覆蓋**，傳空陣列可清空）。
-
-**Request Body:**
-```json
-{
-  "roomIds": ["string (UUID)"]
-}
-```
-**Response `200`:** `{ "success": true }`
+- **Description**: Batch update the list of rooms inside a folder. This is a full overwrite update; passing an empty array clears all rooms.
+- **Authentication & Authorization**: Authentication required, and the user must be the owner.
+- **Request Body**:
+  | Field | Type | Required | Description |
+  | :--- | :--- | :---: | :--- |
+  | `roomIds` | Array | Yes | Array of room IDs inside this folder (empty array clears folder) |
+- **Request Example**:
+  ```json
+  {
+    "roomIds": ["8f8b8c8d-8e8f-8a8b-8c8d-8e8f8a8b8c8d"]
+  }
+  ```
+- **Response**:
+  - `200 OK`: Update successful.
+- **Response Example**:
+  ```json
+  {
+    "success": true
+  }
+  ```
 
 ---
 
-### G. 緊急聯絡 (Emergency Contacts)
-
-> 緊急聯絡人須為系統內已存在的使用者。`contactId` 為對方的 `userId`，`message` 為觸發緊急警報時預設發送給該聯絡人的訊息內容。
+### G. Emergency Contacts
 
 #### `GET /users/me/emergency-contacts`
-
-**Response `200`:** EmergencyContact[]
+- **Description**: Get all emergency contacts set up by the current user.
+- **Authentication & Authorization**: Authentication required.
+- **Response**:
+  - `200 OK`: Emergency contacts list fetched successfully.
+- **Response Example**:
+  ```json
+  [
+    {
+      "userId": "d3b07384-d113-4956-a5cc-4847841c2c31",
+      "contactId": "e4c08495-e224-4a67-b6dd-5958952d3d42",
+      "message": "The system has detected that I have been inactive for a long time. This is an auto-alert message.",
+      "createdAt": "2026-06-14T22:18:13Z"
+    }
+  ]
+  ```
 
 ---
 
 #### `POST /users/me/emergency-contacts`
-
-新增或更新緊急聯絡人（upsert）。
-
-**Request Body:**
-```json
-{
-  "contactId": "string (UUID, required)  — 對方的 userId",
-  "message": "string (min 1 char, required)  — 預設警報訊息"
-}
-```
-**Response `201`:** EmergencyContact（新增時）
-**Response `200`:** EmergencyContact（更新現有聯絡人時）
+- **Description**: Add or update an emergency contact (upsert). The contact must be an existing registered user.
+- **Authentication & Authorization**: Authentication required.
+- **Request Body**:
+  | Field | Type | Required | Description |
+  | :--- | :--- | :---: | :--- |
+  | `contactId` | UUID | Yes | User ID of the designated emergency contact |
+  | `message` | String | Yes | Default message sent when alert is triggered (minimum 1 character) |
+- **Request Example**:
+  ```json
+  {
+    "contactId": "e4c08495-e224-4a67-b6dd-5958952d3d42",
+    "message": "Auto-alert message"
+  }
+  ```
+- **Response**:
+  - `201 Created`: Emergency contact added successfully.
+  - `200 OK`: Emergency contact updated successfully.
+- **Response Example**:
+  ```json
+  {
+    "userId": "d3b07384-d113-4956-a5cc-4847841c2c31",
+    "contactId": "e4c08495-e224-4a67-b6dd-5958952d3d42",
+    "message": "Auto-alert message",
+    "createdAt": "2026-06-14T22:18:13Z"
+  }
+  ```
 
 ---
 
 #### `DELETE /users/me/emergency-contacts/:contactId`
-
-`:contactId` 為對方的 `userId`。
-
-**Response `200`:** `{ "success": true }`
+- **Description**: Delete the specified emergency contact. `:contactId` is the contact's user ID.
+- **Authentication & Authorization**: Authentication required.
+- **Response**:
+  - `200 OK`: Delete successful.
+- **Response Example**:
+  ```json
+  {
+    "success": true
+  }
+  ```
 
 ---
 
 #### `POST /users/me/emergency-alert`
-
-立即觸發緊急求救，向所有緊急聯絡人發送警報。
-
-**Request Body:**
-```json
-{
-  "message": "string (optional)  — 覆蓋預設警報訊息"
-}
-```
-**Response `202`**
+- **Description**: Instantly trigger an emergency alert and send a message to all emergency contacts.
+- **Authentication & Authorization**: Authentication required.
+- **Request Body**:
+  | Field | Type | Required | Description |
+  | :--- | :--- | :---: | :--- |
+  | `message` | String | No | Custom message to override the default template |
+- **Request Example**:
+  ```json
+  {
+    "message": "This is a manually triggered instant emergency alert!"
+  }
+  ```
+- **Response**:
+  - `202 Accepted`: Request accepted for processing in the background.
 
 ---
 
 #### `POST /users/me/emergency-alert/check-inactivity`
-
-檢查是否達到設定的不活躍門檻，符合條件則自動觸發警報。
-
-**Request Body:**
-```json
-{
-  "now": "string (ISO 8601, optional)  — 指定參考時間點，預設為伺服器當前時間"
-}
-```
-**Response `200`**
+- **Description**: Check if the current user has crossed the inactivity threshold. If met, an alert is automatically dispatched.
+- **Authentication & Authorization**: Authentication required.
+- **Request Body**:
+  | Field | Type | Required | Description |
+  | :--- | :--- | :---: | :--- |
+  | `now` | String | No | ISO 8601 timestamp reference, defaults to server time |
+- **Request Example**:
+  ```json
+  {
+    "now": "2026-06-14T22:18:13Z"
+  }
+  ```
+- **Response**:
+  - `200 OK`: Check completed.
 
 ---
 
-## 3. Socket.io 即時通訊
+## 3. Socket.IO Real-Time Communication
 
-### 連線
+### Connection
 
-- **URL**: 與 REST API 相同 host（預設 port `4000`）
-- **Namespace**: `/`（root）
-- **驗證**: 連線時需帶上 `auth_token` Cookie 或 `Authorization: Bearer <token>` Header
+- **URL**: Same host as REST API (default port `4000`)
+- **Namespace**: `/`
+- **Authentication**: Connection requires `auth_token` Cookie or `Authorization: Bearer <token>` Header
 
-### 客戶端發送事件 (Client-to-Server)
+### Client-to-Server Events
 
-| 事件名稱 | Payload | 說明 |
+| Event Name | Payload | Description |
 | :--- | :--- | :--- |
-| `join_room` | `{ roomId: string }` | 訂閱特定聊天室的訊息推播（需為成員） |
-| `leave_room` | `{ roomId: string }` | 取消訂閱 |
-| `send_message` | `{ roomId: string, content: string, replyTo?: string, attachmentIds?: string[] }` | 發送訊息；`replyTo` 為引用的 `messageId`；`attachmentIds` 為待綁定附件 ID 陣列 |
-| `recall_message` | `{ messageId: string }` | 收回訊息（僅限原發送者） |
-| `typing` | `{ roomId: string, isTyping: boolean }` | 廣播輸入中狀態 |
-| `read_receipt` | `{ roomId: string, messageId: string }` | 更新已讀游標至指定訊息 |
+| `join_room` | `{ roomId: string }` | Subscribe to message broadcasts of a chat room (must be a member) |
+| `leave_room` | `{ roomId: string }` | Unsubscribe |
+| `send_message` | `{ roomId: string, content: string, replyTo?: string, attachmentIds?: string[] }` | Send message; `replyTo` is the referenced message ID; `attachmentIds` is the array of attachment IDs |
+| `recall_message` | `{ messageId: string }` | Recall message (Sender only) |
+| `typing` | `{ roomId: string, isTyping: boolean }` | Broadcast typing state |
+| `read_receipt` | `{ roomId: string, messageId: string }` | Update read receipt cursor to specified message |
 
-### 伺服器發送事件 (Server-to-Client)
+### Server-to-Client Events
 
-| 事件名稱 | Payload 型別 | 說明 |
+| Event Name | Payload Type | Description |
 | :--- | :--- | :--- |
-| `new_message` | `MessageWithSender` | 收到新訊息（@mention 也透過此事件通知） |
-| `message_recalled` | `{ messageId: string }` | 訊息被收回 |
-| `user_typing` | `{ roomId: string, userId: string, isTyping: boolean }` | 其他成員的輸入狀態 |
-| `read_update` | `{ roomId: string, userId: string, messageId: string }` | 其他成員的已讀游標更新 |
-| `room_update` | `{ type: string, data: unknown }` | 房間設定變更、成員異動、被踢出通知 |
-| `friend_request` | `{ requesterId: string, addresseeId: string, status: string, createdAt: string }` | 收到新的好友邀請 |
-| `emergency_alert` | `{ userId: string, message: string }` | 收到緊急聯絡人的警報通知 |
-| `error` | `ApiError` | 事件處理失敗的錯誤回報 |
+| `new_message` | `MessageWithSender` | Receive new message (mentions also trigger this event) |
+| `message_recalled` | `{ messageId: string }` | Message has been recalled |
+| `user_typing` | `{ roomId: string, userId: string, isTyping: boolean }` | Typing status of other members |
+| `read_update` | `{ roomId: string, userId: string, messageId: string }` | Read receipt updates of other members |
+| `room_update` | `{ type: string, data: unknown }` | Room settings changes, member changes, or kick notifications |
+| `friend_request` | `{ requesterId: string, addresseeId: string, status: string, createdAt: string }` | Receive new friend request |
+| `emergency_alert` | `{ userId: string, message: string }` | Receive emergency alert from contact |
+| `error` | `ApiError` | Error report for failed event processing |

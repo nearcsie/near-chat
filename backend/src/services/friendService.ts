@@ -1,12 +1,14 @@
 import { AppError, ValidationError } from '../errors/AppError';
 import type { makeFriendRepository } from '../repositories/friendRepository';
+import { isUserOnline } from '../realtime/presence';
 
 export function makeFriendService(
   repo: ReturnType<typeof makeFriendRepository>,
   notifyUser?: (userId: string, eventName: string, payload: any) => void,
   privateRooms?: {
     markPrivateReadOnly(userA: string, userB: string): Promise<void>;
-    unarchivePrivateRoom?(userA: string, userB: string): Promise<void>;
+    createPrivate?(userA: string, userB: string): Promise<unknown>;
+    reopenPrivateRoom?(userA: string, userB: string): Promise<void>;
   }
 ) {
   return {
@@ -32,7 +34,11 @@ export function makeFriendService(
         if (notifyUser) {
           notifyUser(targetUserId, 'friend_request', accepted);
         }
-        await privateRooms?.reopenPrivateRoom?.(requesterId, targetUserId);
+        if (privateRooms?.createPrivate) {
+          await privateRooms.createPrivate(requesterId, targetUserId);
+        } else {
+          await privateRooms?.reopenPrivateRoom?.(requesterId, targetUserId);
+        }
         return accepted;
       }
 
@@ -58,7 +64,11 @@ export function makeFriendService(
         if (!accepted) {
           throw new AppError(404, 'Friend request not found', 'NOT_FOUND');
         }
-        await privateRooms?.reopenPrivateRoom?.(requesterId, userId);
+        if (privateRooms?.createPrivate) {
+          await privateRooms.createPrivate(requesterId, userId);
+        } else {
+          await privateRooms?.reopenPrivateRoom?.(requesterId, userId);
+        }
         return accepted;
       } else {
         const rejected = await repo.rejectFriendRequest(requesterId, userId);
@@ -70,7 +80,16 @@ export function makeFriendService(
     },
 
     async getFriends(userId: string) {
-      return repo.getFriends(userId);
+      const friends = await repo.getFriends(userId);
+      return friends.map((f) => {
+        if (f && f.friend) {
+          return {
+            ...f,
+            status: isUserOnline(f.friend.userId) ? 'online' : 'offline',
+          };
+        }
+        return f;
+      });
     },
 
     async removeFriend(userId: string, friendId: string) {
@@ -83,13 +102,15 @@ export function makeFriendService(
         throw new ValidationError('Cannot block yourself');
       }
       await repo.blockUser(userId, targetUserId);
-      await repo.deleteFriendship(userId, targetUserId);
       await privateRooms?.markPrivateReadOnly(userId, targetUserId);
       return { status: 'blocked' };
     },
 
     async unblockUser(userId: string, blockedId: string) {
-      return repo.unblockUser(userId, blockedId);
+      await repo.unblockUser(userId, blockedId);
+      if (await repo.areFriends(userId, blockedId)) {
+        await privateRooms?.reopenPrivateRoom?.(userId, blockedId);
+      }
     },
 
     async getBlockedUsers(userId: string) {

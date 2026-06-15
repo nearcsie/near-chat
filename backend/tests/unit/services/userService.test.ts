@@ -10,7 +10,8 @@ import type { User } from '../../../../shared/types';
 describe('userService', () => {
   let mockRepo: import('vitest').Mocked<IUserRepository>;
   let emergencyContactRepo: import('vitest').Mocked<IEmergencyContactRepository>;
-  let mockJwt: { signToken: import('vitest').Mock };
+  let mockRefreshTokenRepo: import('vitest').Mocked<any>;
+  let mockJwt: { signToken: import('vitest').Mock; generateRefreshToken: import('vitest').Mock; hashToken: import('vitest').Mock };
   let notifyEmergencyContact: import('vitest').Mock;
   let userService: ReturnType<typeof makeUserService>;
 
@@ -48,9 +49,46 @@ describe('userService', () => {
       delete: vi.fn(),
       recordAlertIfNew: vi.fn(),
     };
-    mockJwt = { signToken: vi.fn() };
+    mockRefreshTokenRepo = {
+      create: vi.fn(),
+      findByHash: vi.fn(),
+      revoke: vi.fn(),
+      revokeAllForUser: vi.fn(),
+      rotate: vi.fn(),
+    };
+    mockRefreshTokenRepo.create.mockResolvedValue({
+      tokenId: 'new-rt-id',
+      userId: 'u1',
+      tokenHash: 'hashed-fake-refresh-token',
+      expiresAt: new Date(Date.now() + 100000),
+      createdAt: new Date(),
+      revokedAt: null,
+      replacedBy: null,
+    });
+    mockRefreshTokenRepo.rotate.mockResolvedValue({
+      tokenId: 'new-rt-id',
+      userId: 'u1',
+      tokenHash: 'hashed-new-fake-refresh-token',
+      expiresAt: new Date(Date.now() + 100000),
+      createdAt: new Date(),
+      revokedAt: null,
+      replacedBy: null,
+    });
+    mockJwt = {
+      signToken: vi.fn(),
+      generateRefreshToken: vi.fn(),
+      hashToken: vi.fn(),
+    };
+    mockJwt.generateRefreshToken.mockReturnValue('fake-refresh-token');
+    mockJwt.hashToken.mockImplementation((t: string) => `hashed-${t}`);
     notifyEmergencyContact = vi.fn();
-    userService = makeUserService(mockRepo, emergencyContactRepo, mockJwt, notifyEmergencyContact);
+    userService = makeUserService(
+      mockRepo,
+      emergencyContactRepo,
+      mockRefreshTokenRepo,
+      mockJwt,
+      notifyEmergencyContact
+    );
   });
 
   describe('register', () => {
@@ -74,6 +112,7 @@ describe('userService', () => {
       expect(await bcrypt.compare('password123', createCall.passwordHash)).toBe(true);
       expect(result).toEqual({
         token: 'fake-jwt-token',
+        refreshToken: 'fake-refresh-token',
         user: {
           userId: 'u1',
           name: 'Test User',
@@ -108,6 +147,8 @@ describe('userService', () => {
       });
 
       expect(mockRepo.update).toHaveBeenCalledWith('u1', { lastActivity: expect.any(Date) });
+      expect(result.token).toBe('fake-jwt-token');
+      expect(result.refreshToken).toBe('fake-refresh-token');
       expect(result.user).toEqual({
         userId: 'u1',
         name: 'Test User',
@@ -179,6 +220,8 @@ describe('userService', () => {
     });
 
     it('updates email and password through my profile', async () => {
+      const passwordHash = await bcrypt.hash('oldpassword123', 10);
+      mockRepo.findById.mockResolvedValue({ ...baseUser(), passwordHash });
       const updatedUser = { ...baseUser(), email: 'new@example.com' };
       mockRepo.findByEmail.mockResolvedValue(null);
       mockRepo.update.mockResolvedValue(updatedUser);
@@ -186,8 +229,10 @@ describe('userService', () => {
       const result = await userService.updateMe('u1', {
         email: 'new@example.com',
         password: 'newpassword123',
+        currentPassword: 'oldpassword123',
       });
 
+      expect(mockRepo.findById).toHaveBeenCalledWith('u1');
       expect(mockRepo.findByEmail).toHaveBeenCalledWith('new@example.com');
       const updateCall = mockRepo.update.mock.calls[0][1];
       expect(updateCall.email).toBe('new@example.com');
@@ -289,6 +334,7 @@ describe('userService', () => {
         {
           userId: 'u1',
           name: 'Test User',
+          email: 'test@example.com',
           avatarUrl: 'https://example.com/avatar.png',
         },
       ]);
@@ -296,6 +342,102 @@ describe('userService', () => {
 
     it('rejects empty search queries', async () => {
       await expect(userService.search('')).rejects.toThrow(ValidationError);
+    });
+
+    it('passes mode=email to repo for exact email lookup', async () => {
+      mockRepo.search.mockResolvedValue([baseUser()]);
+
+      await userService.search('test@example.com', 'email');
+
+      expect(mockRepo.search).toHaveBeenCalledWith('test@example.com', 'email');
+    });
+
+    it('passes mode=userId to repo for exact userId lookup', async () => {
+      mockRepo.search.mockResolvedValue([baseUser()]);
+
+      await userService.search('u1', 'userId');
+
+      expect(mockRepo.search).toHaveBeenCalledWith('u1', 'userId');
+    });
+
+    it('passes mode=name to repo for fuzzy name search', async () => {
+      mockRepo.search.mockResolvedValue([baseUser()]);
+
+      await userService.search('Test', 'name');
+
+      expect(mockRepo.search).toHaveBeenCalledWith('Test', 'name');
+    });
+
+    it('omits email from results when mode=name to prevent email enumeration', async () => {
+      mockRepo.search.mockResolvedValue([baseUser()]);
+
+      const results = await userService.search('Test', 'name');
+
+      expect(results).toEqual([
+        {
+          userId: 'u1',
+          name: 'Test User',
+          avatarUrl: 'https://example.com/avatar.png',
+        },
+      ]);
+      expect(results[0]).not.toHaveProperty('email');
+    });
+
+    it('includes email in results when mode=email', async () => {
+      mockRepo.search.mockResolvedValue([baseUser()]);
+
+      const results = await userService.search('test@example.com', 'email');
+
+      expect(results[0]).toMatchObject({ email: 'test@example.com' });
+    });
+
+    it('includes email in results when mode=userId', async () => {
+      mockRepo.search.mockResolvedValue([baseUser()]);
+
+      const results = await userService.search('u1', 'userId');
+
+      expect(results[0]).toMatchObject({ email: 'test@example.com' });
+    });
+
+    it('searches user friends when currentUserId is provided', async () => {
+      const mockFriendRepo = {
+        getFriends: vi.fn().mockResolvedValue([
+          {
+            friend: {
+              userId: 'friend-1',
+              name: 'Alice Friend',
+              email: 'alice.friend@example.com',
+              avatarUrl: 'https://example.com/alice.png',
+            },
+            friendshipCreatedAt: new Date(),
+          },
+          {
+            friend: {
+              userId: 'friend-2',
+              name: 'Bob Friend',
+              email: 'bob.friend@example.com',
+              avatarUrl: 'https://example.com/bob.png',
+            },
+            friendshipCreatedAt: new Date(),
+          },
+        ]),
+      };
+
+      const userServiceWithFriends = makeUserService(
+        mockRepo,
+        emergencyContactRepo,
+        mockRefreshTokenRepo,
+        mockJwt,
+        notifyEmergencyContact,
+        mockFriendRepo,
+      );
+
+      const results = await userServiceWithFriends.search('Alice', 'name', 'user-id');
+      expect(results).toHaveLength(1);
+      expect(results[0].userId).toBe('friend-1');
+      expect(results[0].name).toBe('Alice Friend');
+      expect(mockFriendRepo.getFriends).toHaveBeenCalledWith('user-id');
+      expect(mockRepo.search).not.toHaveBeenCalled();
     });
   });
 
@@ -334,7 +476,7 @@ describe('userService', () => {
       expect(result).toEqual({ alerted: true, recipients: ['u2'] });
       expect(notifyEmergencyContact).toHaveBeenCalledWith('u2', {
         userId: 'u1',
-        message: 'please check on me',
+        message: '(測試) please check on me',
       });
     });
 
@@ -365,6 +507,139 @@ describe('userService', () => {
 
       expect(result).toEqual({ alerted: false, recipients: [], reason: 'BELOW_THRESHOLD' });
       expect(emergencyContactRepo.recordAlertIfNew).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('refresh and revokeToken', () => {
+    it('successfully refreshes token', async () => {
+      const mockRecord = {
+        tokenId: 'rt1',
+        userId: 'u1',
+        tokenHash: 'hashed-old-token',
+        expiresAt: new Date(Date.now() + 100000),
+        createdAt: new Date(),
+        revokedAt: null,
+        replacedBy: null,
+      };
+      mockRefreshTokenRepo.findByHash.mockResolvedValue(mockRecord);
+      mockRepo.findById.mockResolvedValue(baseUser());
+      mockJwt.signToken.mockReturnValue('new-fake-jwt-token');
+      mockJwt.generateRefreshToken.mockReturnValue('new-fake-refresh-token');
+
+      const result = await userService.refresh('old-token');
+
+      expect(mockRefreshTokenRepo.findByHash).toHaveBeenCalledWith('hashed-old-token');
+      expect(mockRefreshTokenRepo.rotate).toHaveBeenCalledWith('rt1', expect.objectContaining({
+        userId: 'u1',
+        tokenHash: 'hashed-new-fake-refresh-token',
+      }));
+      expect(result.token).toBe('new-fake-jwt-token');
+      expect(result.refreshToken).toBe('new-fake-refresh-token');
+    });
+
+    it('rejects invalid or non-existent refresh token', async () => {
+      mockRefreshTokenRepo.findByHash.mockResolvedValue(null);
+      await expect(userService.refresh('invalid-token')).rejects.toThrow(ValidationError);
+    });
+
+    it('detects token reuse and revokes all user tokens', async () => {
+      const mockRecord = {
+        tokenId: 'rt1',
+        userId: 'u1',
+        tokenHash: 'hashed-old-token',
+        expiresAt: new Date(Date.now() + 100000),
+        createdAt: new Date(),
+        revokedAt: new Date(),
+        replacedBy: 'rt2',
+      };
+      mockRefreshTokenRepo.findByHash.mockResolvedValue(mockRecord);
+
+      await expect(userService.refresh('old-token')).rejects.toThrow(ValidationError);
+      expect(mockRefreshTokenRepo.revokeAllForUser).toHaveBeenCalledWith('u1');
+    });
+
+    it('rejects a revoked token without revoking other tokens if it was not replaced (manual logout)', async () => {
+      const mockRecord = {
+        tokenId: 'rt1',
+        userId: 'u1',
+        tokenHash: 'hashed-old-token',
+        expiresAt: new Date(Date.now() + 100000),
+        createdAt: new Date(),
+        revokedAt: new Date(),
+        replacedBy: null,
+      };
+      mockRefreshTokenRepo.findByHash.mockResolvedValue(mockRecord);
+
+      await expect(userService.refresh('old-token')).rejects.toThrow(ValidationError);
+      expect(mockRefreshTokenRepo.revokeAllForUser).not.toHaveBeenCalled();
+    });
+
+    it('rejects expired refresh token', async () => {
+      const mockRecord = {
+        tokenId: 'rt1',
+        userId: 'u1',
+        tokenHash: 'hashed-old-token',
+        expiresAt: new Date(Date.now() - 100000),
+        createdAt: new Date(),
+        revokedAt: null,
+        replacedBy: null,
+      };
+      mockRefreshTokenRepo.findByHash.mockResolvedValue(mockRecord);
+
+      await expect(userService.refresh('old-token')).rejects.toThrow(ValidationError);
+    });
+
+    it('successfully revokes token on logout', async () => {
+      const mockRecord = {
+        tokenId: 'rt1',
+        userId: 'u1',
+        tokenHash: 'hashed-token',
+        expiresAt: new Date(),
+        createdAt: new Date(),
+        revokedAt: null,
+        replacedBy: null,
+      };
+      mockRefreshTokenRepo.findByHash.mockResolvedValue(mockRecord);
+
+      await userService.revokeToken('some-token');
+
+      expect(mockRefreshTokenRepo.revoke).toHaveBeenCalledWith('rt1');
+    });
+
+    it('sets new refresh token expiration according to JWT_REFRESH_EXPIRES_IN_DAYS (sliding window)', async () => {
+      const originalEnv = process.env.JWT_REFRESH_EXPIRES_IN_DAYS;
+      process.env.JWT_REFRESH_EXPIRES_IN_DAYS = '14';
+      try {
+        const mockRecord = {
+          tokenId: 'rt1',
+          userId: 'u1',
+          tokenHash: 'hashed-old-token',
+          expiresAt: new Date(Date.now() + 100000),
+          createdAt: new Date(),
+          revokedAt: null,
+          replacedBy: null,
+        };
+        mockRefreshTokenRepo.findByHash.mockResolvedValue(mockRecord);
+        mockRepo.findById.mockResolvedValue(baseUser());
+        mockJwt.signToken.mockReturnValue('new-fake-jwt-token');
+        mockJwt.generateRefreshToken.mockReturnValue('new-fake-refresh-token');
+
+        const now = Date.now();
+        await userService.refresh('old-token');
+
+        expect(mockRefreshTokenRepo.rotate).toHaveBeenCalledWith(
+          'rt1',
+          expect.objectContaining({
+            userId: 'u1',
+            expiresAt: expect.any(Date),
+          })
+        );
+        const rotateCall = mockRefreshTokenRepo.rotate.mock.calls[mockRefreshTokenRepo.rotate.mock.calls.length - 1][1];
+        const expectedTime = now + 14 * 24 * 60 * 60 * 1000;
+        expect(Math.abs(rotateCall.expiresAt.getTime() - expectedTime)).toBeLessThan(5000);
+      } finally {
+        process.env.JWT_REFRESH_EXPIRES_IN_DAYS = originalEnv;
+      }
     });
   });
 });

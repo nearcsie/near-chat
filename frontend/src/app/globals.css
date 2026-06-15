@@ -53,3 +53,30 @@ body {
   font-family: var(--font-sans), system-ui, -apple-system, sans-serif;
   margin: 0;
 }
+
+/* Hide scrollbar for Chrome, Safari and Opera */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+/* Hide scrollbar for IE, Edge and Firefox */
+.no-scrollbar {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+
+@keyframes red-flash {
+  0% {
+    background-color: rgba(239, 68, 68, 0.25);
+    border-color: #ef4444;
+  }
+  100% {
+    background-color: transparent;
+    border-color: var(--color-border-primary);
+  }
+}
+
+.animate-red-flash {
+  animation: red-flash 1.5s ease-out;
+}
+
+

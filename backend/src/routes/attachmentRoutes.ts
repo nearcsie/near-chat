@@ -1,26 +1,36 @@
 import { Router } from 'express';
 import multer from 'multer';
+import { ValidationError } from '../errors/AppError';
 import { authMiddleware } from '../middlewares/authMiddleware';
+import { attachmentUploadConfig } from '../lib/attachmentUploadConfig';
+import { ATTACHMENTS_UPLOAD_DIR, ensureUploadDirectories } from '../lib/uploads';
 
-const upload = multer({ 
-  dest: 'uploads/',
+ensureUploadDirectories();
+
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => {
+      cb(null, ATTACHMENTS_UPLOAD_DIR);
+    },
+  }),
   limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB limit
+    fileSize: attachmentUploadConfig.maxBytes,
   },
-  fileFilter: (req, file, cb) => {
-    console.log("FILE UPLOADED:", file);
-    const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'application/pdf', 'application/zip', 'text/plain', 'application/octet-stream'];
-    if (!allowedTypes.includes(file.mimetype)) {
-      console.log("REJECTED BY MIMETYPE", file.mimetype);
-      return cb(new Error('Invalid file type: ' + file.mimetype));
+  fileFilter: (_req, file, cb) => {
+    if (!attachmentUploadConfig.restrictionEnabled) {
+      return cb(null, true);
     }
-    
-    const allowedExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.pdf', '.zip', '.txt'];
+
+    const mimeType = file.mimetype.toLowerCase();
+    if (!attachmentUploadConfig.allowedMimeTypes.includes(mimeType)) {
+      return cb(new ValidationError(`Attachment MIME type is not allowed: ${file.mimetype}`));
+    }
+
     const extension = file.originalname.toLowerCase().match(/\.[^.]+$/)?.[0];
-    if (!extension || !allowedExtensions.includes(extension)) {
-      return cb(new Error('Invalid file extension'));
+    if (!extension || !attachmentUploadConfig.allowedExtensions.includes(extension)) {
+      return cb(new ValidationError(`Attachment file extension is not allowed: ${extension ?? 'unknown'}`));
     }
-    
+
     cb(null, true);
   }
 });

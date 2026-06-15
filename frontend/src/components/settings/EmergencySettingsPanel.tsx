@@ -12,20 +12,35 @@ import { useTranslation } from "@/hooks/useTranslation";
 
 export default function EmergencySettingsPanel() {
   const router = useRouter();
-  const { rooms, friends, emergencySettings, saveEmergencySettings } = useChat();
+  const {
+    rooms,
+    friends,
+    emergencySettings,
+    saveEmergencySettings,
+    triggerEmergencyAlertNow,
+  } = useChat();
   const [warningEnabled, setWarningEnabled] = useState(true);
   const [warningDays, setWarningDays] = useState(7);
   const [emergencyContacts, setEmergencyContacts] = useState<EmergencyContact[]>([]);
   const [defaultEmergencyMessage, setDefaultEmergencyMessage] = useState("");
   const [feedback, setFeedback] = useState<SettingsFeedback | null>(null);
-  const { t } = useTranslation();
+  const [isTriggeringAlert, setIsTriggeringAlert] = useState(false);
+  const { t, locale } = useTranslation();
 
-  useEffect(() => {
+
+  // Sync the form when emergency settings (or the locale) change
+  // (adjust state during render instead of a cascading effect).
+  const [prevSettingsSync, setPrevSettingsSync] = useState<{
+    settings: typeof emergencySettings;
+    locale: string;
+  } | null>(null);
+  if (!prevSettingsSync || prevSettingsSync.settings !== emergencySettings || prevSettingsSync.locale !== locale) {
+    setPrevSettingsSync({ settings: emergencySettings, locale });
     setWarningEnabled(emergencySettings.warningEnabled);
     setWarningDays(emergencySettings.warningDays);
     setEmergencyContacts(emergencySettings.contacts);
     setDefaultEmergencyMessage(emergencySettings.contacts[0]?.message || t("emergency.defaultMessage"));
-  }, [emergencySettings, t]);
+  }
 
   const availableEmergencyFriends = useMemo(
     () => friends.filter((friend) => !emergencyContacts.some((contact) => contact.contactId === friend.id)),
@@ -80,6 +95,41 @@ export default function EmergencySettingsPanel() {
     }
   };
 
+  const handleTriggerAlert = async () => {
+    setFeedback(null);
+    setIsTriggeringAlert(true);
+
+    try {
+      const result = await triggerEmergencyAlertNow(defaultEmergencyMessage);
+
+      if (result.alerted) {
+        setFeedback({
+          type: "success",
+          text: t("emergency.alertSent", { count: result.recipients.length }),
+        });
+        return;
+      }
+
+      if (result.reason === "NO_CONTACTS") {
+        setFeedback({ type: "error", text: t("emergency.noContactsForAlert") });
+        return;
+      }
+
+      setFeedback({
+        type: "error",
+        text: t("emergency.alertNotSent", { reason: result.reason ?? "UNKNOWN" }),
+      });
+    } catch (error) {
+      console.error(error);
+      setFeedback({
+        type: "error",
+        text: error instanceof Error ? error.message : t("emergency.alertFailed"),
+      });
+    } finally {
+      setIsTriggeringAlert(false);
+    }
+  };
+
   return (
     <>
       <FeedbackMessage feedback={feedback} />
@@ -106,6 +156,17 @@ export default function EmergencySettingsPanel() {
               onChange={(event) => setDefaultEmergencyMessage(event.target.value)}
             />
           </div>
+        </div>
+
+        <SectionTitle title={t("emergency.manualAlert")} />
+        <div className="border border-border-primary rounded-sm bg-surface-card p-4 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div className="max-w-2xl">
+            <p className="text-sm font-semibold text-foreground">{t("emergency.manualAlert")}</p>
+            <p className="mt-1 text-xs text-text-muted">{t("emergency.manualAlertDescription")}</p>
+          </div>
+          <Button type="button" variant="primary" disabled={isTriggeringAlert} onClick={() => void handleTriggerAlert()}>
+            {isTriggeringAlert ? t("emergency.sendingAlert") : t("emergency.sendAlertNow")}
+          </Button>
         </div>
 
         <SectionTitle title={t("emergency.emergencyContacts")} />

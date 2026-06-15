@@ -4,6 +4,12 @@ import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '.
 import type { IRoomRepository } from '../../../src/repositories/IRoomRepository';
 import type { IRoomMemberRepository } from '../../../src/repositories/IRoomMemberRepository';
 import type { Room, RoomMember } from '../../../../shared/types';
+import { saveAvatarUpload, removeManagedAvatar } from '../../../src/lib/avatarUpload';
+
+vi.mock('../../../src/lib/avatarUpload', () => ({
+  saveAvatarUpload: vi.fn(),
+  removeManagedAvatar: vi.fn(),
+}));
 
 describe('roomService', () => {
   let mockRepo: Mocked<IRoomRepository>;
@@ -105,14 +111,15 @@ describe('roomService', () => {
     await expect(roomService.update('missing-room', 'user-1', { name: 'Nope' })).rejects.toThrow(NotFoundError);
   });
 
-  it('archiveGroup sets isArchived to true for group owner', async () => {
+  it('deleteGroup deletes the group for the owner', async () => {
     mockRepo.findById.mockResolvedValueOnce(room);
     mockMemberRepo.findMember.mockResolvedValueOnce(ownerMember);
-    await expect(roomService.archiveGroup('room-1', 'user-1')).resolves.toBeUndefined();
-    expect(mockRepo.update).toHaveBeenCalledWith('room-1', { isArchived: true });
+    await expect(roomService.deleteGroup('room-1', 'user-1')).resolves.toBeUndefined();
+    expect(mockRepo.delete).toHaveBeenCalledWith('room-1');
+    expect(mockRepo.update).not.toHaveBeenCalled();
 
     mockRepo.findById.mockResolvedValueOnce(null);
-    await expect(roomService.archiveGroup('missing-room', 'user-1')).rejects.toThrow(NotFoundError);
+    await expect(roomService.deleteGroup('missing-room', 'user-1')).rejects.toThrow(NotFoundError);
   });
 
   it('createPrivate returns an existing private room for accepted friends', async () => {
@@ -246,6 +253,163 @@ describe('roomService', () => {
         return null;
       });
       await expect(roomService.kickMember('room-1', 'user-1', 'user-2')).rejects.toThrow(ForbiddenError);
+    });
+  });
+
+  describe('system messages on join/approve', () => {
+    let mockUserRepo: any;
+    let mockMessageRepo: any;
+    let mockEmit: any;
+
+    beforeEach(() => {
+      mockUserRepo = {
+        findById: vi.fn().mockResolvedValue({ userId: 'user-2', name: 'Bob' }),
+      };
+      mockMessageRepo = {
+        create: vi.fn().mockResolvedValue({ messageId: 'msg-sys', content: '[System] Bob已加入' }),
+      };
+      mockEmit = vi.fn();
+    });
+
+    it('creates system message on direct joinByCode', async () => {
+      const service = makeRoomService(
+        mockRepo,
+        mockMemberRepo,
+        mockEmit,
+        undefined,
+        mockUserRepo,
+        mockMessageRepo,
+      );
+
+      mockRepo.findByInviteCode.mockResolvedValue(room);
+      mockMemberRepo.findMember.mockResolvedValue(null);
+
+      await service.joinByCode('user-2', 'ABCDEF');
+
+      expect(mockUserRepo.findById).toHaveBeenCalledWith('user-2');
+      expect(mockMessageRepo.create).toHaveBeenCalledWith({
+        roomId: 'room-1',
+        senderId: null,
+        content: '[System] Bob已加入',
+      });
+      expect(mockEmit).toHaveBeenCalledWith('room-1', 'new_message', { messageId: 'msg-sys', content: '[System] Bob已加入' });
+    });
+
+    it('creates system message on approveMember', async () => {
+      const service = makeRoomService(
+        mockRepo,
+        mockMemberRepo,
+        mockEmit,
+        undefined,
+        mockUserRepo,
+        mockMessageRepo,
+      );
+
+      mockRepo.findById.mockResolvedValue(room);
+      mockMemberRepo.findMember.mockImplementation(async (roomId, userId) => {
+        if (userId === 'user-1') return ownerMember; // caller (owner)
+        if (userId === 'user-2') return { role: 'pending' } as RoomMember; // target
+        return null;
+      });
+
+      const approvedRoom = { ...room, requireApproval: true };
+      mockRepo.findById.mockResolvedValue(approvedRoom);
+
+      await service.approveMember('room-1', 'user-1', 'user-2');
+
+      expect(mockUserRepo.findById).toHaveBeenCalledWith('user-2');
+      expect(mockMessageRepo.create).toHaveBeenCalledWith({
+        roomId: 'room-1',
+        senderId: null,
+        content: '[System] Bob已加入',
+      });
+      expect(mockEmit).toHaveBeenCalledWith('room-1', 'new_message', { messageId: 'msg-sys', content: '[System] Bob已加入' });
+    });
+  });
+
+  describe('uploadAvatar', () => {
+    let mockFile: any;
+
+    beforeEach(() => {
+      mockFile = {
+        buffer: Buffer.from('mock-image-data'),
+        mimetype: 'image/png',
+        originalname: 'avatar.png',
+      } as any;
+
+      vi.mocked(saveAvatarUpload).mockReset();
+      vi.mocked(removeManagedAvatar).mockReset();
+      
+      vi.mocked(saveAvatarUpload).mockResolvedValue('/uploads/avatars/new-avatar.png');
+    });
+
+    it('updates room avatar successfully by owner', async () => {
+      mockRepo.findById.mockResolvedValue(room);
+      mockMemberRepo.findMember.mockResolvedValue(ownerMember);
+      
+      const updatedRoom = { ...room, avatarUrl: '/uploads/avatars/new-avatar.png' };
+      mockRepo.update.mockResolvedValue(updatedRoom);
+
+      const result = await roomService.uploadAvatar('room-1', 'user-1', mockFile);
+
+      expect(mockRepo.findById).toHaveBeenCalledWith('room-1');
+      expect(mockMemberRepo.findMember).toHaveBeenCalledWith('room-1', 'user-1');
+      expect(saveAvatarUpload).toHaveBeenCalledWith('room-1', mockFile);
+      expect(mockRepo.update).toHaveBeenCalledWith('room-1', { avatarUrl: '/uploads/avatars/new-avatar.png' });
+      expect(result.avatarUrl).toBe('/uploads/avatars/new-avatar.png');
+    });
+
+    it('updates room avatar successfully by admin', async () => {
+      mockRepo.findById.mockResolvedValue(room);
+      mockMemberRepo.findMember.mockResolvedValue({ role: 'admin' } as RoomMember);
+      
+      const updatedRoom = { ...room, avatarUrl: '/uploads/avatars/new-avatar.png' };
+      mockRepo.update.mockResolvedValue(updatedRoom);
+
+      const result = await roomService.uploadAvatar('room-1', 'user-1', mockFile);
+      expect(result.avatarUrl).toBe('/uploads/avatars/new-avatar.png');
+    });
+
+    it('throws ForbiddenError if caller is normal member', async () => {
+      mockRepo.findById.mockResolvedValue(room);
+      mockMemberRepo.findMember.mockResolvedValue({ role: 'member' } as RoomMember);
+
+      await expect(roomService.uploadAvatar('room-1', 'user-1', mockFile)).rejects.toThrow(ForbiddenError);
+    });
+
+    it('throws NotFoundError if room does not exist', async () => {
+      mockRepo.findById.mockResolvedValue(null);
+
+      await expect(roomService.uploadAvatar('room-1', 'user-1', mockFile)).rejects.toThrow(NotFoundError);
+    });
+
+    it('throws ValidationError if room is a private room', async () => {
+      const privateRoom = { ...room, type: 'private' as const };
+      mockRepo.findById.mockResolvedValue(privateRoom);
+
+      await expect(roomService.uploadAvatar('room-1', 'user-1', mockFile)).rejects.toThrow(ValidationError);
+    });
+
+    it('deletes newly uploaded avatar and throws error if db update fails', async () => {
+      mockRepo.findById.mockResolvedValue(room);
+      mockMemberRepo.findMember.mockResolvedValue(ownerMember);
+      mockRepo.update.mockRejectedValue(new Error('DB failure'));
+
+      await expect(roomService.uploadAvatar('room-1', 'user-1', mockFile)).rejects.toThrow('DB failure');
+      expect(removeManagedAvatar).toHaveBeenCalledWith('/uploads/avatars/new-avatar.png');
+    });
+
+    it('deletes old avatar after successful update', async () => {
+      const roomWithOldAvatar = { ...room, avatarUrl: '/uploads/avatars/old-avatar.png' };
+      mockRepo.findById.mockResolvedValue(roomWithOldAvatar);
+      mockMemberRepo.findMember.mockResolvedValue(ownerMember);
+      
+      const updatedRoom = { ...room, avatarUrl: '/uploads/avatars/new-avatar.png' };
+      mockRepo.update.mockResolvedValue(updatedRoom);
+
+      await roomService.uploadAvatar('room-1', 'user-1', mockFile);
+      
+      expect(removeManagedAvatar).toHaveBeenCalledWith('/uploads/avatars/old-avatar.png');
     });
   });
 });

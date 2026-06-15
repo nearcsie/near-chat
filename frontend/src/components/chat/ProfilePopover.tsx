@@ -1,25 +1,61 @@
 "use client";
 
-import React, { useRef, useEffect } from "react";
-import { useChat, getAvatarForUser } from "@/context/ChatContext";
+import React, { useRef, useEffect, useState } from "react";
+import { useChat } from "@/context/ChatContext";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { useRouter } from "next/navigation";
 import { useTranslation } from "@/hooks/useTranslation";
+import { getUserProfile } from "@/lib/api";
+import type { UserProfile } from "@shared/types";
+import { resolveAssetUrl } from "@/lib/assets";
 
 interface ProfilePopoverProps {
+  userId: string;
   username: string;
+  nickname?: string;
   onClose: (e: React.MouseEvent) => void;
   position?: "left" | "right" | "bottom" | "custom";
   style?: React.CSSProperties;
   className?: string;
 }
 
-export default function ProfilePopover({ username, onClose, position = "right", style, className }: ProfilePopoverProps) {
-  const { user, friends, rooms, handleOpenPrivateRoom, emergencySettings, saveEmergencySettings } = useChat();
+export default function ProfilePopover({
+  userId,
+  username,
+  nickname,
+  onClose,
+  position = "right",
+  style,
+  className,
+}: ProfilePopoverProps) {
+  const {
+    user,
+    friends,
+    rooms,
+    handleOpenPrivateRoom,
+    emergencySettings,
+    saveEmergencySettings,
+  } = useChat();
   const router = useRouter();
   const popoverRef = useRef<HTMLDivElement>(null);
   const { t } = useTranslation();
+
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [copied, setCopied] = useState(false);
+
+  const handleCopyUid = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(userId)
+      .then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      })
+      .catch((err) => {
+        console.error("Failed to copy UID:", err);
+      });
+  };
 
   // Close popover if clicked outside
   useEffect(() => {
@@ -38,21 +74,41 @@ export default function ProfilePopover({ username, onClose, position = "right", 
     };
   }, [onClose]);
 
-  const isSelf = username === user.username;
-  const friend = friends.find((f) => f.name === username);
+  // Fetch user profile on mount / userId change
+  useEffect(() => {
+    if (userId === user.userId) {
+      setProfile({
+        userId: user.userId || "",
+        name: user.username,
+        bio: user.bio || "",
+        avatarUrl: user.avatar || "",
+      });
+      setLoading(false);
+      return;
+    }
 
-  const email = isSelf
-    ? user.email
-    : friend
-    ? friend.email
-    : `${username.toLowerCase().replace(/\s+/g, "")}@example.com`;
+    setLoading(true);
+    getUserProfile(userId)
+      .then((res) => {
+        setProfile(res);
+      })
+      .catch((err) => {
+        console.error("Failed to load user profile:", err);
+      })
+      .finally(() => {
+        setLoading(false);
+      });
+  }, [userId, user.userId]);
 
-  const avatar = isSelf
-    ? user.avatar
-    : getAvatarForUser(username, user.avatar, user.username);
+  const isSelf = userId === user.userId;
+  const friend = friends.find((f) => f.id === userId);
 
+  const displayName = profile?.name ?? username;
+  const displayAvatar = profile?.avatarUrl ? resolveAssetUrl(profile.avatarUrl) : undefined;
   const status = isSelf ? "online" : friend ? friend.status : "offline";
-  const bio = isSelf ? user.bio || t("profileCard.defaultBio") : t("profileCard.defaultBio");
+  const bio = isSelf
+    ? user.bio || t("profileCard.defaultBio")
+    : profile?.bio || t("profileCard.defaultBio");
 
   const isEmergency = friend ? emergencySettings.contacts.some((c) => c.contactId === friend.id) : false;
 
@@ -75,7 +131,7 @@ export default function ProfilePopover({ username, onClose, position = "right", 
             contactId: friend.id,
             name: friend.name,
             email: friend.email,
-            message: t("profileCard.emergencyMessage"),
+            message: t("emergency.defaultMessage"),
           },
         ],
       }).catch(console.error);
@@ -84,13 +140,17 @@ export default function ProfilePopover({ username, onClose, position = "right", 
 
   const handleSendMessage = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (isSelf || !friend) return;
+    if (isSelf) return;
 
-    const existingRoom = rooms.find((r) => r.type === "msg" && r.name === username);
+    const existingRoom = rooms.find(
+      (r) => r.type === "msg" && (r.members?.some((m) => m.userId === userId) || r.name === username)
+    );
+
     if (existingRoom && !existingRoom.isArchived) {
       router.push(`/chat/${existingRoom.id}`);
     } else {
-      const newId = await handleOpenPrivateRoom(friend.id);
+      const targetId = friend?.id ?? userId;
+      const newId = await handleOpenPrivateRoom(targetId);
       router.push(`/chat/${newId}`);
     }
     onClose(e);
@@ -114,67 +174,81 @@ export default function ProfilePopover({ username, onClose, position = "right", 
         <span className="text-[9px] font-bold text-text-muted uppercase tracking-widest">
           {isSelf ? t("profileCard.myInfo") : friend ? t("profileCard.friendInfo") : t("profileCard.memberInfo")}
         </span>
-        <button
-          onClick={onClose}
-          type="button"
-          className="text-text-muted hover:text-foreground cursor-pointer p-0.5 hover:bg-surface-muted rounded-sm transition-colors"
-        >
-          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
       </div>
 
-      <div className="flex flex-col items-center text-center gap-2 py-2">
-        <Avatar name={username} src={avatar} size="md" isOnline={status === "online"} />
-        <div className="min-w-0 w-full">
-          <h4 className="text-xs font-bold text-foreground truncate">{username}</h4>
-          <p className="text-[9px] text-text-muted font-mono truncate mt-0.5">{email}</p>
+      {loading ? (
+        <div className="flex items-center justify-center py-6 text-xs text-text-muted">
+          Loading...
         </div>
-      </div>
-
-      <div className="space-y-3 pt-2 border-t border-border-secondary/40 text-xs">
-        <div>
-          <span className="text-[9px] font-bold text-text-muted uppercase tracking-widest block mb-0.5">
-            {t("profileCard.status")}
-          </span>
-          <div className="flex items-center gap-1.5 mt-0.5">
-            <span className={`h-2.5 w-2.5 border border-border-primary ${status === "online" ? "bg-green-500" : "bg-zinc-500"}`} />
-            <span className="text-[11px] text-foreground leading-none">{t(`common.${status}`)}</span>
+      ) : (
+        <>
+          <div className="flex flex-col items-center text-center gap-2 py-2">
+            <Avatar name={displayName} src={displayAvatar} size="md" isOnline={status === "online"} />
+            <div className="min-w-0 w-full">
+              <h4 className="text-xs font-bold text-foreground truncate">
+                {nickname && nickname !== displayName ? `${displayName} (${nickname})` : displayName}
+              </h4>
+              <div className="relative inline-block mt-0.5 max-w-full">
+                <p
+                  onClick={handleCopyUid}
+                  title="Click to copy UID"
+                  className="text-[9px] text-text-muted font-mono truncate cursor-pointer hover:text-foreground hover:underline transition-colors"
+                >
+                  {userId}
+                </p>
+                {copied && (
+                  <span className="absolute left-1/2 bottom-full -translate-x-1/2 mb-1 z-[110] px-1.5 py-0.5 text-[8px] font-bold text-white bg-zinc-800 border border-zinc-700 rounded shadow-md whitespace-nowrap">
+                    Copied!
+                  </span>
+                )}
+              </div>
+            </div>
           </div>
-        </div>
 
-        <div>
-          <span className="text-[9px] font-bold text-text-muted uppercase tracking-widest block mb-0.5">
-            {t("profileCard.bio")}
-          </span>
-          <p className="text-[11px] text-text-muted leading-relaxed truncate-3-lines">{bio}</p>
-        </div>
+          <div className="space-y-3 pt-2 border-t border-border-secondary/40 text-xs">
+            <div>
+              <span className="text-[9px] font-bold text-text-muted uppercase tracking-widest block mb-0.5">
+                {t("profileCard.status")}
+              </span>
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <span className={`h-2.5 w-2.5 border border-border-primary ${status === "online" ? "bg-green-500" : "bg-zinc-500"}`} />
+                <span className="text-[11px] text-foreground leading-none">{t(`common.${status}`)}</span>
+              </div>
+            </div>
 
-        {friend && (
-          <div className="flex items-center justify-between border-t border-border-secondary/40 pt-2.5 mt-1">
-            <span className="text-[11px] font-semibold text-foreground">{t("profileCard.setEmergency")}</span>
-            <button
-              onClick={handleToggleEmergency}
-              type="button"
-              className={`relative inline-flex h-4 w-8 shrink-0 cursor-pointer rounded-full border border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                isEmergency ? "bg-primary" : "bg-zinc-600"
-              }`}
-            >
-              <span
-                className={`pointer-events-none inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                  isEmergency ? "translate-x-3.5" : "translate-x-0"
-                }`}
-              />
-            </button>
+            <div>
+              <span className="text-[9px] font-bold text-text-muted uppercase tracking-widest block mb-0.5">
+                {t("profileCard.bio")}
+              </span>
+              <p className="text-[11px] text-text-muted leading-relaxed truncate-3-lines whitespace-pre-wrap break-words">{bio}</p>
+            </div>
+
+            {friend && (
+              <div className="flex items-center justify-between border-t border-border-secondary/40 pt-2.5 mt-1">
+                <span className="text-[11px] font-semibold text-foreground">{t("profileCard.setEmergency")}</span>
+                <button
+                  onClick={handleToggleEmergency}
+                  type="button"
+                  className={`relative inline-flex h-4 w-8 shrink-0 cursor-pointer rounded-full border border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                    isEmergency ? "bg-primary" : "bg-zinc-600"
+                  }`}
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                      isEmergency ? "translate-x-3.5" : "translate-x-0"
+                    }`}
+                  />
+                </button>
+              </div>
+            )}
           </div>
-        )}
-      </div>
 
-      {!isSelf && (
-        <Button onClick={handleSendMessage} variant="primary" className="w-full mt-3 text-[11px] py-1.5 font-bold">
-          {t("profileCard.sendMessage")}
-        </Button>
+          {!isSelf && (
+            <Button onClick={handleSendMessage} variant="primary" className="w-full mt-3 text-[11px] py-1.5 font-bold">
+              {t("profileCard.sendMessage")}
+            </Button>
+          )}
+        </>
       )}
     </div>
   );

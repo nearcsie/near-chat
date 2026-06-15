@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useParams } from "next/navigation";
 import { useChat } from "@/context/ChatContext";
 import Chatroom from "@/components/chat/Chatroom";
@@ -10,15 +10,18 @@ import FriendInfoPanel from "@/components/chat/FriendInfoPanel";
 
 export default function ChatroomPageContent() {
   const params = useParams();
-  const { rooms, showRightPanel } = useChat();
+  const { rooms, showRightPanel, user } = useChat();
   const [showSettings, setShowSettings] = useState(false);
 
   const chatId = params?.chatId as string;
   const activeRoom = rooms.find((room) => room.id === chatId);
 
-  useEffect(() => {
+  // Reset the settings view when switching rooms (adjust state during render).
+  const [prevChatId, setPrevChatId] = useState(chatId);
+  if (prevChatId !== chatId) {
+    setPrevChatId(chatId);
     setShowSettings(false);
-  }, [chatId]);
+  }
 
   if (!activeRoom) {
     return (
@@ -27,6 +30,11 @@ export default function ChatroomPageContent() {
       </div>
     );
   }
+
+  // Find the other member in a private (msg) chatroom
+  const otherMember = activeRoom.type === "msg"
+    ? activeRoom.members?.find((m) => m.userId !== user.userId)
+    : undefined;
 
   return (
     <div className="flex-1 flex h-full overflow-hidden">
@@ -44,7 +52,7 @@ export default function ChatroomPageContent() {
           <RoomMembersPanel room={activeRoom} members={activeRoom.members} />
         ) : activeRoom.type === "msg" ? (
           <div className="w-[240px] shrink-0 border-l border-border-primary bg-surface-card h-full">
-            <FriendInfoPanel friendName={activeRoom.name} />
+            <FriendInfoPanel userId={otherMember?.userId} friendName={activeRoom.name} />
           </div>
         ) : null
       )}

@@ -35,7 +35,6 @@ export default function RegisterPage() {
     setError("");
     try {
       const result = await register({ name: username, email, password });
-      localStorage.setItem("token", result.token);
       localStorage.setItem(
         "user",
         JSON.stringify({
@@ -45,6 +44,7 @@ export default function RegisterPage() {
           avatar: result.user.avatarUrl ?? "",
         }),
       );
+      localStorage.setItem("just_registered", "true");
       router.push("/");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Registration failed.");

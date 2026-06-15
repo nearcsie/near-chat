@@ -1,16 +1,28 @@
 import rateLimit, { type Options } from 'express-rate-limit';
 import helmet from 'helmet';
+import type { RequestHandler } from 'express';
 import { parsePositiveInt } from '../utils/parsePositiveInt';
 
 const rateLimitDisabled = (): boolean =>
   process.env.NODE_ENV === 'test' || process.env.RATE_LIMIT_DISABLED === 'true';
 
-export const securityHeaders = helmet();
+const defaultSecurityHeaders = helmet();
+const avatarSecurityHeaders = helmet({
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+});
+
+export const securityHeaders: RequestHandler = (req, res, next) => {
+  if (req.path === '/uploads/avatars' || req.path.startsWith('/uploads/avatars/')) {
+    avatarSecurityHeaders(req, res, next);
+    return;
+  }
+  defaultSecurityHeaders(req, res, next);
+};
 
 export const makeGlobalRateLimiter = (overrides: Partial<Options> = {}) =>
   rateLimit({
     windowMs: parsePositiveInt(process.env.RATE_LIMIT_WINDOW_MS, 15 * 60 * 1000),
-    limit: parsePositiveInt(process.env.RATE_LIMIT_MAX, 100),
+    limit: parsePositiveInt(process.env.RATE_LIMIT_MAX, 1000),
     standardHeaders: 'draft-8',
     legacyHeaders: false,
     skip: () => rateLimitDisabled(),

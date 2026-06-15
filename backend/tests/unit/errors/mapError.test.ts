@@ -1,4 +1,5 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+import multer from 'multer';
 import { mapErrorToApiShape } from '../../../src/errors/mapError';
 import { AppError, ValidationError, ForbiddenError, NotFoundError, ConflictError } from '../../../src/errors/AppError';
 
@@ -54,6 +55,29 @@ describe('mapErrorToApiShape', () => {
       statusCode: 500,
       message: 'Internal Server Error',
       code: 'INTERNAL_ERROR',
+    });
+  });
+
+  it('logs unknown errors outside the test environment', () => {
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.stubEnv('NODE_ENV', 'development');
+    try {
+      const err = new Error('unexpected');
+      expect(mapErrorToApiShape(err).statusCode).toBe(500);
+      expect(consoleSpy).toHaveBeenCalledWith('APP ERROR:', err);
+    } finally {
+      vi.unstubAllEnvs();
+      consoleSpy.mockRestore();
+    }
+  });
+
+  it('maps attachment size overflow to 413', () => {
+    const err = new multer.MulterError('LIMIT_FILE_SIZE');
+
+    expect(mapErrorToApiShape(err)).toEqual({
+      statusCode: 413,
+      message: 'Attachment file exceeds the configured size limit',
+      code: 'LIMIT_FILE_SIZE',
     });
   });
 });

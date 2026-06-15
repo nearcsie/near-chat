@@ -104,14 +104,15 @@ describe('Friendships & Blocks E2E', () => {
       expect(listRes.body.length).toBe(1);
       expect(listRes.body[0].friend.userId).toBe(userA.userId);
 
+      // accepting the request now auto-creates the private room
       const roomsBeforeOpen = await request(app).get('/api/v1/rooms').set('Authorization', `Bearer ${tokenA}`);
-      expect(roomsBeforeOpen.body.some((room: { type: string }) => room.type === 'private')).toBe(false);
+      expect(roomsBeforeOpen.body.some((room: { type: string }) => room.type === 'private')).toBe(true);
 
       const openRoom = await request(app)
         .post('/api/v1/rooms')
         .set('Authorization', `Bearer ${tokenA}`)
         .send({ type: 'private', targetUserId: userB.userId });
-      expect(openRoom.status).toBe(201);
+      expect(openRoom.status).toBe(200); // room already exists, returns existing
 
       const roomsB = await request(app).get('/api/v1/rooms').set('Authorization', `Bearer ${tokenB}`);
       const privateRoomB = roomsB.body.find((room: { type: string }) => room.type === 'private');
@@ -132,7 +133,7 @@ describe('Friendships & Blocks E2E', () => {
         .post('/api/v1/rooms')
         .set('Authorization', `Bearer ${tokenA}`)
         .send({ type: 'private', targetUserId: userB.userId });
-      expect(privateRoom.status).toBe(201);
+      expect(privateRoom.status).toBe(200); // auto-created on accept, returns existing
 
       const deleteRes = await request(app)
         .delete(`/api/v1/friends/${userB.userId}`)
@@ -221,7 +222,7 @@ describe('Friendships & Blocks E2E', () => {
         .post('/api/v1/rooms')
         .set('Authorization', `Bearer ${tokenA}`)
         .send({ type: 'private', targetUserId: userB.userId });
-      expect(privateRoom.status).toBe(201);
+      expect(privateRoom.status).toBe(200); // auto-created on accept, returns existing
 
       const blockRes = await request(app)
         .post('/api/v1/blocks')
@@ -231,6 +232,50 @@ describe('Friendships & Blocks E2E', () => {
       expect(blockRes.status).toBe(201);
       const row = await testPool.query('SELECT is_readonly FROM chat_rooms WHERE room_id = $1', [privateRoom.body.roomId]);
       expect(row.rows[0].is_readonly).toBe(true);
+    });
+
+    it('should restore the friendship after unblocking a blocked friend', async () => {
+      await request(app)
+        .post('/api/v1/friend-requests')
+        .set('Authorization', `Bearer ${tokenA}`)
+        .send({ target_user_id: userB.userId });
+      await request(app)
+        .patch(`/api/v1/friend-requests/${userA.userId}`)
+        .set('Authorization', `Bearer ${tokenB}`)
+        .send({ status: 'accepted' });
+
+      const privateRoom = await request(app)
+        .post('/api/v1/rooms')
+        .set('Authorization', `Bearer ${tokenA}`)
+        .send({ type: 'private', targetUserId: userB.userId });
+      expect(privateRoom.status).toBe(200);
+
+      const blockRes = await request(app)
+        .post('/api/v1/blocks')
+        .set('Authorization', `Bearer ${tokenA}`)
+        .send({ target_user_id: userB.userId });
+      expect(blockRes.status).toBe(201);
+
+      const blockedFriends = await request(app)
+        .get('/api/v1/friends')
+        .set('Authorization', `Bearer ${tokenA}`);
+      expect(blockedFriends.status).toBe(200);
+      expect(blockedFriends.body).toEqual([]);
+
+      const unblockRes = await request(app)
+        .delete(`/api/v1/blocks/${userB.userId}`)
+        .set('Authorization', `Bearer ${tokenA}`);
+      expect(unblockRes.status).toBe(204);
+
+      const restoredFriends = await request(app)
+        .get('/api/v1/friends')
+        .set('Authorization', `Bearer ${tokenA}`);
+      expect(restoredFriends.status).toBe(200);
+      expect(restoredFriends.body).toHaveLength(1);
+      expect(restoredFriends.body[0].friend.userId).toBe(userB.userId);
+
+      const row = await testPool.query('SELECT is_readonly FROM chat_rooms WHERE room_id = $1', [privateRoom.body.roomId]);
+      expect(row.rows[0].is_readonly).toBe(false);
     });
 
     it('should list blocked users', async () => {

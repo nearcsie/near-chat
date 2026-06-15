@@ -3,6 +3,7 @@ import { AppError, ForbiddenError, NotFoundError, ValidationError } from '../err
 import type { IMessageRepository } from '../repositories/IMessageRepository';
 import type { IRoomMemberRepository } from '../repositories/IRoomMemberRepository';
 import type { ChatServer } from './authSocket';
+import { trackUserConnection, trackUserDisconnection } from './presence';
 
 interface MessageService {
   sendMessage(
@@ -18,6 +19,7 @@ interface SocketDeps {
   messageService: MessageService;
   messageRepository: Pick<IMessageRepository, 'findById'>;
   roomMemberRepository: Pick<IRoomMemberRepository, 'update' | 'findMember'>;
+  friendRepository?: { getFriends(userId: string): Promise<any[]> };
 }
 
 import { mapErrorToApiShape } from '../errors/mapError';
@@ -27,6 +29,20 @@ export const attachSockets = (io: ChatServer, deps: SocketDeps): void => {
     const userId = socket.data.user.userId;
 
     socket.join(`user_${userId}`);
+
+    if (deps.friendRepository) {
+      trackUserConnection(io, userId, socket.id, deps.friendRepository).catch((err) => {
+        console.error('trackUserConnection error:', err);
+      });
+    }
+
+    socket.on('disconnect', () => {
+      if (deps.friendRepository) {
+        trackUserDisconnection(io, userId, socket.id, deps.friendRepository).catch((err) => {
+          console.error('trackUserDisconnection error:', err);
+        });
+      }
+    });
 
     socket.on('join_room', async ({ roomId }) => {
       try {

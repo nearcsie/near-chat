@@ -1,7 +1,8 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { resolveAssetUrl } from "@/lib/assets";
 import type {
   Attachment as ApiAttachment,
   EmergencyContactResponse,
@@ -27,8 +28,12 @@ import {
   createPrivateRoom,
   deleteEmergencyContact,
   deleteFriend,
+  deleteFolder as deleteFolderApi,
+  deleteMe as deleteMeApi,
+  deleteRoom as deleteRoomApi,
   getBlockedUsers,
   getMe,
+  joinRoomByCode,
   getMySettings,
   getUserProfile,
   kickRoomMember,
@@ -44,6 +49,7 @@ import {
   respondFriendRequest,
   searchUsers,
   sendFriendRequest as sendFriendRequestApi,
+  triggerEmergencyAlert as triggerEmergencyAlertApi,
   unblockUser as unblockUserApi,
   updateFolderRooms,
   updateMe,
@@ -53,15 +59,22 @@ import {
   transferRoomOwner,
   upsertEmergencyContact,
   uploadAttachment,
+  uploadAvatar as uploadAvatarApi,
+  uploadRoomAvatar as uploadRoomAvatarApi,
+  getActiveAccessToken,
+  setActiveAccessToken,
+  refreshTokens,
 } from "@/lib/api";
 import {
   createChatSocket,
   joinRoom,
+  onEmergencyAlert,
   onFriendRequest,
   onMessageRecalled,
   onNewMessage,
   onReadUpdate,
   onSocketError,
+  onUserStatus,
   onUserTyping,
   recallMessage,
   sendMessage,
@@ -76,6 +89,8 @@ export interface Member {
   role: RoomMemberRole;
   nickname?: string;
   isMuted?: boolean;
+  lastReadId?: string | null;
+  avatarUrl?: string;
 }
 
 export interface ChatRoom {
@@ -83,23 +98,30 @@ export interface ChatRoom {
   type: "msg" | "group";
   name: string;
   isOnline?: boolean;
+  otherMemberId?: string;
   folderId?: string | null;
   inviteCode?: string;
   requireApproval?: boolean;
   viewHistory?: boolean;
   members?: Member[];
   isArchived?: boolean;
+  isReadonly?: boolean;
   unreadCount?: number;
   lastMessagePreview?: string;
   lastMessageAt?: string;
+  avatarUrl?: string;
+  lastReadId?: string | null;
 }
 
 export interface Message {
   id: string;
   roomId: string;
+  senderId: string | null;
   senderName: string;
   content: string;
+  sentAt: string;
   timestamp: string;
+  replyToId?: string;
   isOutgoing?: boolean;
   isRecalled?: boolean;
   replyTo?: {
@@ -107,6 +129,7 @@ export interface Message {
     content: string;
   } | null;
   attachments?: { filename: string; filetype: string; url?: string }[];
+  mentions?: string[];
   isRead?: boolean;
 }
 
@@ -138,6 +161,7 @@ export interface Friend {
   email: string;
   status: "online" | "offline";
   isEmergencyContact?: boolean;
+  avatarUrl?: string;
 }
 
 export interface FriendRequest {
@@ -145,12 +169,14 @@ export interface FriendRequest {
   name: string;
   email: string;
   direction: "incoming" | "outgoing";
+  avatarUrl?: string;
 }
 
 export interface BlockedUser {
   id: string;
   name: string;
   email: string;
+  avatarUrl?: string;
 }
 
 export interface EmergencyContact {
@@ -167,6 +193,12 @@ export interface EmergencySettings {
   contacts: EmergencyContact[];
 }
 
+interface TriggerEmergencyAlertResult {
+  alerted: boolean;
+  recipients: string[];
+  reason?: string;
+}
+
 export type UiLanguage = "zh-TW" | "en";
 
 export const getAvatarForUser = (
@@ -175,34 +207,43 @@ export const getAvatarForUser = (
   currentUsername?: string,
 ) => {
   if (currentUsername && username === currentUsername) {
-    return currentUserAvatar || "";
+    return currentUserAvatar ? resolveAssetUrl(currentUserAvatar) : "";
   }
   return "";
 };
 
-interface PersonalSettingsInput {
+export interface ProfileInput {
   username: string;
   email: string;
   avatar: string;
+  avatarFile?: File | null;
+  password?: string;
+  currentPassword?: string;
+  bio?: string;
+}
+
+export interface PreferencesInput {
   theme: string;
   language: UiLanguage;
   notifyDesktop: boolean;
   notifySound: boolean;
-  password?: string;
   warningEnabled?: boolean;
   warningDays?: number;
 }
 
 interface GroupSettingsInput {
-  name: string;
-  requireApproval: boolean;
-  viewHistory: boolean;
+  name?: string;
+  requireApproval?: boolean;
+  viewHistory?: boolean;
+  isArchived?: boolean;
+  avatarFile?: File | null;
 }
 
 interface ChatContextType {
   rooms: ChatRoom[];
   folders: Folder[];
   messages: Message[];
+  typingUsers: Record<string, string[]>;
   groupReadStates: Record<string, Record<string, string>>;
   user: User;
   activeRoomNicknames: Record<string, string>;
@@ -213,10 +254,13 @@ interface ChatContextType {
   uiLanguage: UiLanguage;
   isAuthenticated: boolean;
   isMounted: boolean;
+  roomsInitialized: boolean;
   selectedFriendForSidebar: Friend | null;
   setSelectedFriendForSidebar: React.Dispatch<React.SetStateAction<Friend | null>>;
   showRightPanel: boolean;
   setShowRightPanel: React.Dispatch<React.SetStateAction<boolean>>;
+  hasUnsavedChanges: boolean;
+  setHasUnsavedChanges: (val: boolean) => void;
 
   setRooms: React.Dispatch<React.SetStateAction<ChatRoom[]>>;
   setFolders: React.Dispatch<React.SetStateAction<Folder[]>>;
@@ -228,28 +272,37 @@ interface ChatContextType {
   handleLogout: () => void;
   handleSendMessage: (roomId: string, content: string, replyTarget: Message | null) => void;
   handleTyping: (roomId: string, isTyping: boolean) => void;
-  handleUploadAttachment: (roomId: string, file: File) => Promise<void>;
+  handleUploadAttachment: (
+    roomId: string,
+    file: File,
+    options?: { content?: string; replyTarget?: Message | null },
+  ) => Promise<void>;
   handleRecallMessage: (msgId: string) => void;
+  handleUpdateProfile: (profile: ProfileInput) => Promise<User>;
+  handleUpdatePreferences: (preferences: PreferencesInput) => Promise<void>;
   handleCreateRoom: (name: string, type: "msg" | "group", folderId: string) => Promise<string>;
   handleOpenPrivateRoom: (targetUserId: string) => Promise<string>;
   handleCreateFolder: (name: string) => Promise<void>;
+  handleDeleteFolder: (folderId: string) => Promise<void>;
   handleCategorizeRoom: (roomId: string, folderId: string | null) => Promise<void>;
-  handleModifyNickname: (roomId: string, nickname: string) => void;
+  handleModifyNickname: (roomId: string, nickname: string) => Promise<void>;
   handleLeaveOrBlock: (roomId: string) => Promise<{ isDeleted: boolean; newActiveId?: string }>;
-  handleSavePersonalSettings: (settings: PersonalSettingsInput) => Promise<void>;
+  handleDeleteAccount: () => Promise<void>;
   loadGroupMembers: (roomId: string) => Promise<Member[]>;
   saveGroupSettings: (roomId: string, settings: GroupSettingsInput) => Promise<void>;
-  approveGroupMember: (roomId: string, userId: string) => Promise<void>;
+  approveGroupMember: (roomId: string, userId: string) => Promise<Member[] | undefined>;
   updateGroupMember: (
     roomId: string,
     userId: string,
     data: { role?: "admin" | "member"; nickname?: string; isMuted?: boolean },
-  ) => Promise<void>;
-  kickGroupMember: (roomId: string, userId: string) => Promise<void>;
-  transferGroupOwner: (roomId: string, userId: string) => Promise<void>;
+  ) => Promise<Member[] | undefined>;
+  kickGroupMember: (roomId: string, userId: string) => Promise<Member[] | undefined>;
+  transferGroupOwner: (roomId: string, userId: string) => Promise<Member[] | undefined>;
   handleDeleteGroupRoom: (roomId: string) => Promise<string | null>;
-  getReadAvatarsForMessage: (room: ChatRoom, msg: Message) => string[];
+  getReadAvatarsForMessage: (room: ChatRoom, msg: Message) => { name: string; displayName?: string; avatarUrl: string }[];
 
+  searchUsersForInvite: (query: string) => Promise<PublicUser[]>;
+  handleJoinByInviteCode: (inviteCode: string) => Promise<string>;
   sendFriendRequest: (query: string) => Promise<void>;
   acceptFriendRequest: (requestId: string) => Promise<void>;
   rejectFriendRequest: (requestId: string) => Promise<void>;
@@ -257,7 +310,11 @@ interface ChatContextType {
   blockFriend: (friendId: string) => Promise<void>;
   unblockUser: (blockedId: string) => Promise<void>;
   saveEmergencySettings: (settings: EmergencySettings) => Promise<void>;
+  triggerEmergencyAlertNow: (message?: string) => Promise<TriggerEmergencyAlertResult>;
   setUiLanguage: (language: UiLanguage) => void;
+  activeProfilePopover: { instanceId: string; userId: string } | null;
+  setActiveProfilePopover: React.Dispatch<React.SetStateAction<{ instanceId: string; userId: string } | null>>;
+  refreshSocialData: () => Promise<void>;
 }
 
 const ChatContext = createContext<ChatContextType | undefined>(undefined);
@@ -294,24 +351,108 @@ const mapAttachment = (attachment: ApiAttachment) => {
   };
 };
 
+const summarizeMessagePreview = (message: {
+  content: string;
+  attachments?: { filename: string }[];
+  isRecalled?: boolean;
+}) => {
+  if (message.isRecalled) return "";
+  if (message.content.trim()) return message.content.trim();
+  if (message.attachments?.length) return message.attachments[0].filename;
+  return "";
+};
+
+const isPrivateRoomFallbackName = (roomName: string | undefined, roomId: string) =>
+  roomName === `Private ${roomId.slice(0, 8)}`;
+
+const getPrivateRoomName = (
+  room: Pick<ChatRoom, "id" | "name" | "members" | "otherMemberId">,
+  currentUserId?: string,
+) => {
+  const otherMember =
+    room.members?.find((member) =>
+      currentUserId
+        ? member.userId !== currentUserId
+        : room.otherMemberId
+          ? member.userId === room.otherMemberId
+          : true,
+    ) ?? null;
+
+  if (otherMember?.name) {
+    return otherMember.name;
+  }
+
+  if (room.name && !isPrivateRoomFallbackName(room.name, room.id)) {
+    return room.name;
+  }
+
+  return "";
+};
+
 const mapMessage = (message: MessageWithSender, currentUserId?: string): Message => ({
   id: message.messageId,
   roomId: message.roomId,
+  senderId: message.senderId,
   senderName: message.sender?.name ?? "Deleted User",
   content: message.content,
+  sentAt: new Date(message.sentAt).toISOString(),
   timestamp: formatMessageTime(message.sentAt),
+  replyToId: message.replyToId,
   isOutgoing: Boolean(currentUserId && message.senderId === currentUserId),
   isRecalled: message.isRecalled,
   replyTo: null,
   attachments: message.attachments?.map(mapAttachment) ?? [],
+  mentions: message.mentions ?? [],
 });
+
+const hydrateReplyTargets = (items: Message[]): Message[] => {
+  const messageByRoom = new Map<string, Map<string, Message>>();
+
+  for (const item of items) {
+    let roomMessages = messageByRoom.get(item.roomId);
+    if (!roomMessages) {
+      roomMessages = new Map<string, Message>();
+      messageByRoom.set(item.roomId, roomMessages);
+    }
+    roomMessages.set(item.id, item);
+  }
+
+  return items.map((item) => {
+    if (!item.replyToId) {
+      return item.replyTo ? { ...item, replyTo: null } : item;
+    }
+
+    const replyTarget = messageByRoom.get(item.roomId)?.get(item.replyToId);
+    if (!replyTarget) {
+      return item;
+    }
+
+    const nextReplyTo = {
+      senderName: replyTarget.senderName,
+      content: replyTarget.isRecalled ? "" : replyTarget.content,
+    };
+
+    if (
+      item.replyTo?.senderName === nextReplyTo.senderName &&
+      item.replyTo?.content === nextReplyTo.content
+    ) {
+      return item;
+    }
+
+    return {
+      ...item,
+      replyTo: nextReplyTo,
+    };
+  });
+};
 
 const mapRooms = (
   apiRooms: RoomSummary[],
   apiFolders: ApiFolder[],
   currentRooms: ChatRoom[],
+  currentUserId?: string,
 ): ChatRoom[] => {
-  const collapsedById = new Map(currentRooms.map((room) => [room.id, room.folderId]));
+  const currentRoomById = new Map(currentRooms.map((room) => [room.id, room]));
   const folderByRoom = new Map<string, string>();
   for (const folder of apiFolders) {
     for (const roomId of folder.roomIds) {
@@ -319,17 +460,55 @@ const mapRooms = (
     }
   }
 
-  return apiRooms.map((room) => ({
-    id: room.roomId,
-    type: room.type === "group" ? "group" : "msg",
-    name: room.name || `Private ${room.roomId.slice(0, 8)}`,
-    folderId: folderByRoom.get(room.roomId) ?? collapsedById.get(room.roomId) ?? null,
-    inviteCode: room.inviteCode,
-    requireApproval: room.requireApproval,
-    viewHistory: room.viewHistory,
-    isArchived: room.isArchived,
-    members: room.type === "group" ? [] : undefined,
-  }));
+  return apiRooms.map((room) => {
+    const currentRoom = currentRoomById.get(room.roomId);
+    const latestMessage =
+      room.latestMessage
+        ? {
+            content: room.latestMessage.content,
+            attachments: [],
+            isRecalled: false,
+          }
+        : null;
+
+    return {
+      id: room.roomId,
+      type: room.type === "group" ? "group" : "msg",
+      avatarUrl: room.avatarUrl,
+      name:
+        room.name ||
+        (room.type === "group"
+          ? (currentRoom?.name && !isPrivateRoomFallbackName(currentRoom.name, room.roomId)
+              ? currentRoom.name
+              : `Group ${room.roomId.slice(0, 8)}`)
+          : getPrivateRoomName(
+              {
+                id: room.roomId,
+                name: currentRoom?.name ?? "",
+                members: currentRoom?.members,
+                otherMemberId: room.otherMemberId ?? currentRoom?.otherMemberId,
+              },
+              currentUserId,
+            )),
+      folderId: folderByRoom.get(room.roomId) ?? currentRoom?.folderId ?? null,
+      inviteCode: room.inviteCode,
+      requireApproval: room.requireApproval,
+      viewHistory: room.viewHistory,
+      isArchived: room.isArchived,
+      isReadonly: room.isReadonly,
+      isOnline: room.isOnline ?? currentRoom?.isOnline,
+      otherMemberId: room.otherMemberId ?? currentRoom?.otherMemberId,
+      members: currentRoom?.members ?? (room.type === "group" ? [] : undefined),
+      unreadCount: room.unreadCount ?? currentRoom?.unreadCount ?? 0,
+      lastReadId: room.lastReadId ?? currentRoom?.lastReadId ?? null,
+      lastMessagePreview: latestMessage
+        ? summarizeMessagePreview(latestMessage)
+        : currentRoom?.lastMessagePreview,
+      lastMessageAt: room.latestMessage
+        ? formatMessageTime(room.latestMessage.sentAt)
+        : currentRoom?.lastMessageAt,
+    };
+  });
 };
 
 const mapFolders = (apiFolders: ApiFolder[], currentFolders: Folder[]): Folder[] => {
@@ -344,21 +523,34 @@ const mapFolders = (apiFolders: ApiFolder[], currentFolders: Folder[]): Folder[]
 const normalizeLanguage = (language?: string): UiLanguage =>
   language === "zh-TW" || language === "en" ? language : "en";
 
+const formatUploadedAttachmentMessage = (language: UiLanguage, fileName: string) =>
+  language === "zh-TW" ? `已上傳附件：${fileName}` : `Shared attachment: ${fileName}`;
+
 const mapFriend = (item: FriendResponse, emergencyContactIds: Set<string>): Friend => ({
   id: item.friend.userId,
   name: item.friend.name,
   email: "",
-  status: "offline",
+  status: item.status || "offline",
   isEmergencyContact: emergencyContactIds.has(item.friend.userId),
+  avatarUrl: item.friend.avatarUrl,
 });
 
-const mapFriendRequest = (item: FriendRequestResponse): FriendRequest => {
-  const requester = item.requester;
+const mapFriendRequest = (item: FriendRequestResponse, currentUserId: string): FriendRequest => {
+  if (item.requesterId === currentUserId) {
+    return {
+      id: item.addresseeId,
+      name: item.addressee?.name ?? item.addresseeId,
+      email: "",
+      direction: "outgoing",
+      avatarUrl: item.addressee?.avatarUrl,
+    };
+  }
   return {
     id: item.requesterId,
-    name: requester?.name ?? item.requesterId,
+    name: item.requester?.name ?? item.requesterId,
     email: "",
     direction: "incoming",
+    avatarUrl: item.requester?.avatarUrl,
   };
 };
 
@@ -372,17 +564,19 @@ const mapEmergencyContact = (item: EmergencyContactResponse): EmergencyContact =
 
 const mapRoomMember = (member: ApiRoomMember, profile?: UserProfile): Member => ({
   userId: member.userId,
-  name: member.nickname || profile?.name || member.userId,
+  name: profile?.name || member.userId,
   role: member.role,
   nickname: member.nickname,
   isMuted: member.isMuted,
+  lastReadId: member.lastReadId ?? null,
+  avatarUrl: profile?.avatarUrl,
 });
 
 const fetchRoomMembers = async (authToken: string, roomId: string): Promise<Member[]> => {
   const apiMembers = await listRoomMembers(authToken, roomId);
   const profiles = await Promise.all(
     apiMembers.map((member) =>
-      getUserProfile(authToken, member.userId).catch(() => undefined),
+      getUserProfile(member.userId, authToken).catch(() => undefined),
     ),
   );
 
@@ -404,18 +598,43 @@ const findRequestedUser = (
 };
 
 const sortMessages = (items: Message[]) =>
-  [...items].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+  [...items].sort((a, b) => {
+    const sentAtCompare = new Date(a.sentAt).getTime() - new Date(b.sentAt).getTime();
+    if (sentAtCompare !== 0) return sentAtCompare;
+    return a.id.localeCompare(b.id);
+  });
+
+const computeUnreadCount = (
+  roomMessages: Message[],
+  currentUserId?: string,
+  lastReadId?: string | null,
+) => {
+  if (!roomMessages.length) return 0;
+
+  const firstUnreadIndex = lastReadId
+    ? roomMessages.findIndex((message) => message.id === lastReadId) + 1
+    : 0;
+
+  return roomMessages
+    .slice(Math.max(firstUnreadIndex, 0))
+    .filter((message) => message.senderId !== currentUserId)
+    .length;
+};
 
 export function ChatProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
+  const pathname = usePathname();
   const socketRef = useRef<ChatSocket | null>(null);
   const roomsRef = useRef<ChatRoom[]>([]);
+  const roomMembersRequestRef = useRef<Map<string, Promise<Member[]>>>(new Map());
   const socialDataRefreshTimerRef = useRef<NodeJS.Timeout | null>(null);
   const socialDataRefreshPromiseRef = useRef<Promise<void> | null>(null);
   const socialDataRefreshResolversRef = useRef<Array<() => void>>([]);
+  const tokenRef = useRef<string | null>(null);
 
   const [isMounted, setIsMounted] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [roomsInitialized, setRoomsInitialized] = useState(false);
   const [token, setToken] = useState<string | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | undefined>(undefined);
   const [user, setUser] = useState<User>({ username: "", email: "", avatar: "" });
@@ -434,14 +653,27 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     contacts: [],
   });
   const [selectedFriendForSidebar, setSelectedFriendForSidebar] = useState<Friend | null>(null);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [showRightPanel, setShowRightPanel] = useState<boolean>(true);
+  const [typingUsers, setTypingUsers] = useState<Record<string, string[]>>({});
+  const [activeProfilePopover, setActiveProfilePopover] = useState<{ instanceId: string; userId: string } | null>(null);
+  const typingTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+
+  const activeRoomId = useMemo(() => {
+    const match = pathname.match(/^\/chat\/([^/]+)$/);
+    return match?.[1] ?? null;
+  }, [pathname]);
 
   const clearSession = () => {
-    localStorage.removeItem("token");
     localStorage.removeItem("user");
+    setActiveAccessToken(null);
     setToken(null);
     setCurrentUserId(undefined);
     setIsAuthenticated(false);
+    setRoomsInitialized(false);
+    setRooms([]);
+    setFolders([]);
+    setMessages([]);
     socketRef.current?.disconnect();
     socketRef.current = null;
   };
@@ -453,53 +685,35 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         return rows.reverse().map((message) => mapMessage(message, userId));
       }),
     );
-    setMessages(roomMessages.flat());
-  };
-
-  const refreshGroupMembersForRooms = async (authToken: string, nextRooms: ChatRoom[]) => {
-    const entries = await Promise.all(
-      nextRooms.map(async (room) => [room.id, await fetchRoomMembers(authToken, room.id)] as const),
-    );
-    const membersByRoomId = new Map(entries);
-
-    setRooms((current) =>
-      current.map((room) =>
-        membersByRoomId.has(room.id)
-          ? { ...room, members: membersByRoomId.get(room.id) }
-          : room,
-      ),
-    );
+    setMessages(hydrateReplyTargets(roomMessages.flat()));
   };
 
   const refreshRoomsAndFolders = async (authToken: string, userId = currentUserId) => {
     const [apiRooms, apiFolders] = await Promise.all([listRooms(authToken), listFolders(authToken)]);
-    const nextRooms = mapRooms(apiRooms, apiFolders, roomsRef.current);
+    const nextRooms = mapRooms(apiRooms, apiFolders, roomsRef.current, userId);
 
     setFolders((current) => mapFolders(apiFolders, current));
     setRooms(nextRooms);
     void loadMessagesForRooms(authToken, nextRooms, userId);
-    void refreshGroupMembersForRooms(authToken, nextRooms);
+    setRoomsInitialized(true);
   };
 
-  const refreshSocialData = async (authToken: string, settings?: UserSettings) => {
+  const refreshSocialData = async (authToken: string, settings?: UserSettings, userId = currentUserId) => {
+    const effectiveUserId = userId ?? user.userId;
+    if (!effectiveUserId) return;
+
     if (socialDataRefreshTimerRef.current) {
       clearTimeout(socialDataRefreshTimerRef.current);
     }
 
+    // All concurrent callers share one debounced promise; the timeout below
+    // resolves it once the batched fetch settles.
     if (!socialDataRefreshPromiseRef.current) {
       let resolveFn: () => void;
       socialDataRefreshPromiseRef.current = new Promise<void>((resolve) => {
         resolveFn = resolve;
       });
       socialDataRefreshResolversRef.current = [resolveFn!];
-    } else {
-      let resolveFn: () => void;
-      const p = new Promise<void>((resolve) => { resolveFn = resolve; });
-      socialDataRefreshResolversRef.current.push(resolveFn!);
-      // We still return the single promise that represents the batch,
-      // but wait, if we push a new resolver, we should make sure we return a promise 
-      // that resolves when THIS specific call resolves. 
-      // It's easier to just return the shared promise:
     }
     const currentPromise = socialDataRefreshPromiseRef.current;
 
@@ -520,13 +734,13 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         const emergencyContactIds = new Set(contacts.map((contact) => contact.contactId));
 
         setFriends(apiFriends.map((friend) => mapFriend(friend, emergencyContactIds)));
-        setFriendRequests(apiRequests.map(mapFriendRequest));
-        setBlockedUsers(apiBlockedUsers.map(u => ({ id: u.userId, name: u.name, email: u.email })));
-        setEmergencySettings(prev => ({
+        setFriendRequests(apiRequests.map((req) => mapFriendRequest(req, effectiveUserId)));
+        setBlockedUsers(apiBlockedUsers.map(u => ({ id: u.userId, name: u.name, email: u.email, avatarUrl: u.avatarUrl })));
+        setEmergencySettings({
           warningEnabled: settings?.warningEnabled ?? user.warningEnabled ?? false,
           warningDays: settings?.warningDays ?? user.warningDays ?? 0,
           contacts,
-        }));
+        });
       } catch (error) {
         console.error("Error refreshing social data:", error);
       } finally {
@@ -538,17 +752,45 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   };
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- canonical SSR mounted flag; must flip after hydration
     setIsMounted(true);
   }, []);
 
   useEffect(() => {
+    const handleExpired = () => {
+      clearSession();
+    };
+    const handleRefreshed = (e: Event) => {
+      const customEvent = e as CustomEvent<{ token: string; user: unknown }>;
+      setToken(customEvent.detail.token);
+    };
+    window.addEventListener('auth:token-expired', handleExpired);
+    window.addEventListener('auth:token-refreshed', handleRefreshed);
+    return () => {
+      window.removeEventListener('auth:token-expired', handleExpired);
+      window.removeEventListener('auth:token-refreshed', handleRefreshed);
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    tokenRef.current = token;
+    if (token && socketRef.current) {
+      socketRef.current.auth = { token };
+    }
+  }, [token]);
+
+  // Session bootstrap: localStorage is only readable after mount, so this
+  // hydration must stay in an effect (reading it during render breaks SSR).
+  useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect -- post-mount localStorage session hydration */
     if (!isMounted) return;
 
-    const savedToken = localStorage.getItem("token");
     const savedUser = localStorage.getItem("user");
     const savedTheme = localStorage.getItem("theme");
+    const systemPrefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    const initialTheme = savedTheme ?? (systemPrefersDark ? "dark" : "light");
 
-    if (savedTheme === "dark") {
+    if (initialTheme === "dark") {
       document.documentElement.classList.add("dark");
     } else {
       document.documentElement.classList.remove("dark");
@@ -557,11 +799,6 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     const savedLanguage = localStorage.getItem("language");
     if (savedLanguage === "zh-TW" || savedLanguage === "en") {
       setUiLanguageState(savedLanguage);
-    }
-
-    if (!savedToken) {
-      window.location.replace("/login");
-      return;
     }
 
     if (savedUser) {
@@ -577,12 +814,35 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     let cancelled = false;
     void (async () => {
       try {
+        setRoomsInitialized(false);
+        let currentToken = getActiveAccessToken();
+        if (!currentToken) {
+          const refreshResult = await refreshTokens();
+          if (cancelled) return;
+          currentToken = refreshResult.token;
+        }
+
         const [profile, settings] = await Promise.all([
-          getMe(savedToken),
-          getMySettings(savedToken),
+          getMe(currentToken),
+          getMySettings(currentToken),
         ]);
         if (cancelled) return;
-        const stored = toStoredUser(profile, settings);
+
+        let finalTheme = settings?.theme;
+        const isJustRegistered = localStorage.getItem("just_registered") === "true";
+        if (isJustRegistered) {
+          const systemPrefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+          const systemTheme = systemPrefersDark ? "dark" : "light";
+          try {
+            await updateMySettings(currentToken, { theme: systemTheme });
+            finalTheme = systemTheme;
+          } catch (err) {
+            console.error("Failed to initialize backend theme on registration:", err);
+          }
+          localStorage.removeItem("just_registered");
+        }
+
+        const stored = toStoredUser(profile, { ...settings, theme: finalTheme || settings?.theme });
         localStorage.setItem("user", JSON.stringify(stored));
         localStorage.setItem("theme", stored.theme ?? "light");
         localStorage.setItem("notify-desktop", String(stored.notifyDesktop ?? true));
@@ -591,11 +851,11 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         setUser(stored);
         setCurrentUserId(profile.userId);
         setUiLanguageState(stored.language ?? "en");
-        setToken(savedToken);
+        setToken(currentToken);
         setIsAuthenticated(true);
         await Promise.all([
-          refreshRoomsAndFolders(savedToken, profile.userId),
-          refreshSocialData(savedToken, settings),
+          refreshRoomsAndFolders(currentToken, profile.userId),
+          refreshSocialData(currentToken, settings, profile.userId),
         ]);
       } catch (error) {
         console.error(error);
@@ -606,6 +866,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       }
     })();
 
+    /* eslint-enable react-hooks/set-state-in-effect */
     return () => {
       cancelled = true;
     };
@@ -619,7 +880,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   }, [rooms]);
 
   useEffect(() => {
-    if (!token) return;
+    if (!token || !currentUserId) return;
 
     const socket = createChatSocket(token);
     socketRef.current = socket;
@@ -632,13 +893,26 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       const incoming = mapMessage(payload, currentUserId);
       setMessages((current) => {
         const withoutDuplicate = current.filter((message) => message.id !== incoming.id);
-        return sortMessages([...withoutDuplicate, incoming]);
+        return hydrateReplyTargets(sortMessages([...withoutDuplicate, incoming]));
       });
+      setRooms((current) =>
+        current.map((room) =>
+          room.id === incoming.roomId
+            ? {
+                ...room,
+                lastMessagePreview: summarizeMessagePreview(incoming),
+                lastMessageAt: incoming.timestamp,
+              }
+            : room,
+        ),
+      );
     });
     const cleanupRecall = onMessageRecalled(socket, ({ messageId }) => {
       setMessages((current) =>
-        current.map((message) =>
-          message.id === messageId ? { ...message, isRecalled: true, content: "" } : message,
+        hydrateReplyTargets(
+          current.map((message) =>
+            message.id === messageId ? { ...message, isRecalled: true, content: "" } : message,
+          ),
         ),
       );
     });
@@ -650,15 +924,69 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           [userId]: messageId,
         },
       }));
+      setRooms((current) =>
+        current.map((room) => {
+          if (room.id !== roomId || !room.members) return room;
+
+          let memberChanged = false;
+          const nextMembers = room.members.map((member) => {
+            if (member.userId !== userId || member.lastReadId === messageId) {
+              return member;
+            }
+
+            memberChanged = true;
+            return { ...member, lastReadId: messageId };
+          });
+
+          return memberChanged ? { ...room, members: nextMembers } : room;
+        }),
+      );
     });
     const cleanupTyping = onUserTyping(socket, ({ roomId, userId, isTyping }) => {
-      console.debug("typing", { roomId, userId, isTyping });
+      const typingRoom = roomsRef.current.find(r => r.id === roomId);
+      const typingMember = typingRoom?.members?.find(m => m.userId === userId);
+      const displayName = typingMember?.nickname ?? typingMember?.name ?? userId;
+      const timerKey = `${roomId}:${userId}`;
+      if (typingTimersRef.current[timerKey]) {
+        clearTimeout(typingTimersRef.current[timerKey]);
+      }
+      if (isTyping) {
+        setTypingUsers(prev => {
+          const current = prev[roomId] ?? [];
+          if (current.includes(displayName)) return prev;
+          return { ...prev, [roomId]: [...current, displayName] };
+        });
+        typingTimersRef.current[timerKey] = setTimeout(() => {
+          setTypingUsers(prev => ({
+            ...prev,
+            [roomId]: (prev[roomId] ?? []).filter(n => n !== displayName),
+          }));
+        }, 3000);
+      } else {
+        setTypingUsers(prev => ({
+          ...prev,
+          [roomId]: (prev[roomId] ?? []).filter(n => n !== displayName),
+        }));
+      }
     });
     const cleanupError = onSocketError(socket, (error) => {
       console.error("Socket error", error);
     });
     const cleanupFriendRequest = onFriendRequest(socket, () => {
-      void refreshSocialData(token);
+      const activeTok = tokenRef.current;
+      if (activeTok) {
+        void refreshSocialData(activeTok, undefined, currentUserId);
+      }
+    });
+    const cleanupEmergencyAlert = onEmergencyAlert(socket, (payload) => {
+      window.alert(`[EMERGENCY ALERT]\nFrom User: ${payload.userId}\nMessage: ${payload.message}`);
+    });
+    const cleanupUserStatus = onUserStatus(socket, ({ userId, status }) => {
+      setFriends((prev) =>
+        prev.map((friend) =>
+          friend.id === userId ? { ...friend, status } : friend,
+        ),
+      );
     });
 
     socket.on("connect", joinKnownRooms);
@@ -671,16 +999,15 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       cleanupTyping();
       cleanupError();
       cleanupFriendRequest();
+      cleanupEmergencyAlert();
+      cleanupUserStatus();
       socket.off("connect", joinKnownRooms);
       socket.disconnect();
       if (socketRef.current === socket) {
         socketRef.current = null;
       }
     };
-  }, [token, currentUserId]);
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const roomById = useMemo(() => new Map(rooms.map((room) => [room.id, room])), [rooms]);
+  }, [currentUserId, token]);
 
   const toggleFolder = (folderId: string) => {
     setFolders((current) =>
@@ -714,12 +1041,21 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     sendTyping(socketRef.current, { roomId, isTyping });
   };
 
-  const handleUploadAttachment = async (roomId: string, file: File) => {
+  const handleUploadAttachment = async (
+    roomId: string,
+    file: File,
+    options?: { content?: string; replyTarget?: Message | null },
+  ) => {
     if (!token || !socketRef.current) return;
     const uploaded = await uploadAttachment(token, file);
+    const content = options?.content?.trim()
+      ? options.content.trim()
+      : formatUploadedAttachmentMessage(uiLanguage, file.name);
+
     sendMessage(socketRef.current, {
       roomId,
-      content: `Uploaded ${file.name}`,
+      content,
+      replyTo: options?.replyTarget?.id,
       attachmentIds: [uploaded.attachmentId],
     });
   };
@@ -727,6 +1063,144 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const handleRecallMessage = (msgId: string) => {
     if (!socketRef.current) return;
     recallMessage(socketRef.current, msgId);
+  };
+
+  const handleUpdateProfile = async (profile: ProfileInput) => {
+    let nextUser: StoredUser = {
+      ...user,
+      username: profile.username,
+      email: profile.email,
+      avatar: profile.avatar,
+      bio: profile.bio ?? user.bio ?? "",
+    };
+
+    if (token) {
+      const mergeStoredProfile = (updatedProfile: MyProfile) => {
+        nextUser = {
+          ...nextUser,
+          ...toStoredUser(updatedProfile, {
+            language: user.language ?? uiLanguage,
+            theme: user.theme ?? "light",
+            notifyDesktop: user.notifyDesktop ?? true,
+            notifySound: user.notifySound ?? true,
+            warningEnabled: user.warningEnabled ?? false,
+            warningDays: user.warningDays ?? 14,
+          }),
+        };
+      };
+
+      const updatePayload: {
+        name?: string;
+        email?: string;
+        avatarUrl?: string;
+        bio?: string;
+        password?: string;
+        currentPassword?: string;
+      } = {};
+
+      if (profile.username !== user.username) {
+        updatePayload.name = profile.username;
+      }
+      if (profile.email !== user.email) {
+        updatePayload.email = profile.email;
+      }
+      if ((profile.bio ?? "") !== (user.bio ?? "")) {
+        updatePayload.bio = profile.bio ?? "";
+      }
+      if (!profile.avatarFile && profile.avatar !== user.avatar) {
+        updatePayload.avatarUrl = profile.avatar;
+      }
+      if (profile.password) {
+        updatePayload.password = profile.password;
+        updatePayload.currentPassword = profile.currentPassword;
+      }
+
+      if (Object.keys(updatePayload).length > 0) {
+        const updatedProfile = await updateMe(token, updatePayload);
+        mergeStoredProfile(updatedProfile);
+      }
+
+      if (profile.avatarFile) {
+        const uploadedProfile = await uploadAvatarApi(token, profile.avatarFile);
+        mergeStoredProfile(uploadedProfile);
+      }
+    }
+
+    localStorage.setItem("user", JSON.stringify(nextUser));
+    setUser(nextUser);
+
+    if (nextUser.userId) {
+      setRooms((current) =>
+        current.map((room) => {
+          if (!room.members) return room;
+          const updatedMembers = room.members.map((m) => {
+            if (m.userId === nextUser.userId) {
+              return {
+                ...m,
+                name: nextUser.username,
+                avatarUrl: nextUser.avatar,
+              };
+            }
+            return m;
+          });
+          return {
+            ...room,
+            members: updatedMembers,
+          };
+        })
+      );
+    }
+
+    return nextUser;
+  };
+
+  const handleUpdatePreferences = async (preferences: PreferencesInput) => {
+    const nextWarningEnabled = preferences.warningEnabled ?? user.warningEnabled ?? false;
+    const nextWarningDays = preferences.warningDays ?? user.warningDays ?? 0;
+    
+    let nextUser: StoredUser = {
+      ...user,
+      language: preferences.language,
+      theme: preferences.theme === "dark" ? "dark" : "light",
+      notifyDesktop: preferences.notifyDesktop,
+      notifySound: preferences.notifySound,
+      warningEnabled: nextWarningEnabled,
+      warningDays: nextWarningDays,
+    };
+
+    if (token) {
+      const updatedSettings = await updateMySettings(token, {
+        language: preferences.language,
+        theme: preferences.theme === "dark" ? "dark" : "light",
+        notifyDesktop: preferences.notifyDesktop,
+        notifySound: preferences.notifySound,
+        ...(preferences.warningEnabled !== undefined ? { warningEnabled: nextWarningEnabled } : {}),
+        ...(preferences.warningDays !== undefined ? { warningDays: nextWarningDays } : {}),
+      });
+      nextUser = { 
+        ...nextUser, 
+        language: updatedSettings.language as UiLanguage, 
+        theme: updatedSettings.theme as "light" | "dark", 
+        notifyDesktop: updatedSettings.notifyDesktop, 
+        notifySound: updatedSettings.notifySound, 
+        warningEnabled: updatedSettings.warningEnabled, 
+        warningDays: updatedSettings.warningDays 
+      };
+    }
+
+    localStorage.setItem("user", JSON.stringify(nextUser));
+    localStorage.setItem("theme", preferences.theme);
+    localStorage.setItem("language", preferences.language);
+    localStorage.setItem("notify-desktop", String(preferences.notifyDesktop));
+    localStorage.setItem("notify-sound", String(preferences.notifySound));
+    document.documentElement.classList.toggle("dark", preferences.theme === "dark");
+    setUser(nextUser);
+    setUiLanguageState(preferences.language);
+    setEmergencySettings((current) => ({
+      ...current,
+      warningEnabled: nextWarningEnabled,
+      warningDays: nextWarningDays,
+    }));
   };
 
   const handleCreateRoom = async (name: string, type: "msg" | "group", folderId: string) => {
@@ -764,6 +1238,18 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     setFolders((current) => [...current, { id: folder.folderId, name: folder.name, collapsed: false }]);
   };
 
+  const handleDeleteFolder = async (folderId: string) => {
+    if (!token) return;
+
+    await deleteFolderApi(token, folderId);
+    setFolders((current) => current.filter((folder) => folder.id !== folderId));
+    setRooms((current) =>
+      current.map((room) =>
+        room.folderId === folderId ? { ...room, folderId: null } : room,
+      ),
+    );
+  };
+
   const handleCategorizeRoom = async (roomId: string, folderId: string | null) => {
     if (!token) return;
 
@@ -786,11 +1272,11 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     );
   };
 
-  const handleModifyNickname = (roomId: string, nickname: string) => {
-    setActiveRoomNicknames((current) => ({
-      ...current,
-      [roomId]: nickname || user.username,
-    }));
+  const handleModifyNickname = async (roomId: string, nickname: string) => {
+    if (!token || !user.userId) return;
+    const finalNick = nickname.trim();
+    await updateRoomMember(token, roomId, user.userId, { nickname: finalNick || user.username });
+    await loadGroupMembers(roomId);
   };
 
   const handleLeaveOrBlock = async (roomId: string) => {
@@ -805,110 +1291,122 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       return { isDeleted: true, newActiveId: remaining[0]?.id };
     }
 
-    const newArchived = !room.isArchived;
-    if (token) {
-      await updateRoom(token, roomId, { isArchived: newArchived });
-      const targetUserId = room.members?.find((m) => m.userId !== currentUserId)?.userId;
-      if (targetUserId) {
-        if (newArchived) {
-          await blockUserApi(token, targetUserId).catch(console.error);
-        } else {
-          await unblockUserApi(token, targetUserId).catch(console.error);
-        }
-        await refreshSocialData(token).catch(console.error);
-      }
+    const targetUserId =
+      room.otherMemberId ?? room.members?.find((member) => member.userId !== currentUserId)?.userId;
+    if (!targetUserId) return { isDeleted: false };
+
+    if (room.isReadonly) {
+      await unblockUserApi(token, targetUserId).catch(console.error);
+    } else {
+      await blockUserApi(token, targetUserId).catch(console.error);
     }
 
-    setRooms((current) =>
-      current.map((item) =>
-        item.id === roomId ? { ...item, isArchived: newArchived } : item,
-      ),
-    );
+    await Promise.all([
+      refreshRoomsAndFolders(token, currentUserId).catch(console.error),
+      refreshSocialData(token).catch(console.error),
+    ]);
     return { isDeleted: false };
   };
 
-  const handleSavePersonalSettings = async (settings: PersonalSettingsInput) => {
-    const nextWarningEnabled = settings.warningEnabled ?? user.warningEnabled ?? false;
-    const nextWarningDays = settings.warningDays ?? user.warningDays ?? 0;
-    let nextUser: StoredUser = {
-      userId: currentUserId,
-      username: settings.username,
-      email: settings.email,
-      avatar: settings.avatar,
-      bio: user.bio ?? "",
-      language: settings.language,
-      theme: settings.theme === "dark" ? "dark" : "light",
-      notifyDesktop: settings.notifyDesktop,
-      notifySound: settings.notifySound,
-      warningEnabled: nextWarningEnabled,
-      warningDays: nextWarningDays,
-    };
-
-    if (token) {
-      const [updatedProfile, updatedSettings] = await Promise.all([
-        updateMe(token, {
-          name: settings.username,
-          email: settings.email,
-          avatarUrl: settings.avatar,
-          ...(settings.password ? { password: settings.password } : {}),
-        }),
-        updateMySettings(token, {
-          language: settings.language,
-          theme: settings.theme === "dark" ? "dark" : "light",
-          notifyDesktop: settings.notifyDesktop,
-          notifySound: settings.notifySound,
-          ...(settings.warningEnabled !== undefined ? { warningEnabled: nextWarningEnabled } : {}),
-          ...(settings.warningDays !== undefined ? { warningDays: nextWarningDays } : {}),
-        }),
-      ]);
-      nextUser = toStoredUser(updatedProfile, updatedSettings);
-    }
-
-    localStorage.setItem("user", JSON.stringify(nextUser));
-    localStorage.setItem("theme", settings.theme);
-    localStorage.setItem("language", settings.language);
-    localStorage.setItem("notify-desktop", String(settings.notifyDesktop));
-    localStorage.setItem("notify-sound", String(settings.notifySound));
-    document.documentElement.classList.toggle("dark", settings.theme === "dark");
-    setUser(nextUser);
-    setUiLanguageState(settings.language);
-    setEmergencySettings((current) => ({
-      ...current,
-      warningEnabled: nextUser.warningEnabled ?? false,
-      warningDays: nextUser.warningDays ?? 0,
-    }));
+  const handleDeleteAccount = async () => {
+    if (!token) throw new Error("Not authenticated");
+    await deleteMeApi(token);
+    handleLogout();
   };
 
   const loadGroupMembers = async (roomId: string): Promise<Member[]> => {
     if (!token) return [];
-    const members = await fetchRoomMembers(token, roomId);
-    setRooms((current) =>
-      current.map((room) =>
-        room.id === roomId ? { ...room, members } : room,
-      ),
-    );
-    return members;
+    const existingRequest = roomMembersRequestRef.current.get(roomId);
+    if (existingRequest) {
+      return existingRequest;
+    }
+
+    // Deduplicate concurrent member loads for the same room.
+    const request = fetchRoomMembers(token, roomId)
+      .then((members) => {
+        setRooms((current) =>
+          current.map((room) =>
+            room.id === roomId ? { ...room, members } : room,
+          ),
+        );
+
+        const myMember = members.find((m) => m.userId === currentUserId || m.name === user.username);
+        setActiveRoomNicknames((current) => {
+          const next = { ...current };
+          if (myMember?.nickname) {
+            next[roomId] = myMember.nickname;
+          } else {
+            delete next[roomId];
+          }
+          return next;
+        });
+
+        const roomReads = members.reduce<Record<string, string>>((reads, member) => {
+          if (member.lastReadId) {
+            reads[member.userId] = member.lastReadId;
+          }
+          return reads;
+        }, {});
+
+        setGroupReadStates((current) =>
+          Object.keys(roomReads).length === 0
+            ? current
+            : {
+                ...current,
+                [roomId]: {
+                  ...(current[roomId] ?? {}),
+                  ...roomReads,
+                },
+              },
+        );
+
+        return members;
+      })
+      .finally(() => {
+        roomMembersRequestRef.current.delete(roomId);
+      });
+
+    roomMembersRequestRef.current.set(roomId, request);
+    return request;
   };
+
+  // Lazy-load members for the active room (placed after loadGroupMembers so the
+  // effect references it after declaration).
+  useEffect(() => {
+    if (!token || !activeRoomId) return;
+
+    const activeRoom = rooms.find((room) => room.id === activeRoomId);
+    if (!activeRoom || activeRoom.members?.length) return;
+
+    void loadGroupMembers(activeRoomId).catch(console.error);
+  }, [activeRoomId, rooms, token]);
 
   const saveGroupSettings = async (roomId: string, settings: GroupSettingsInput) => {
     if (!token) return;
 
-    const updated = await updateRoom(token, roomId, {
-      name: settings.name,
-      requireApproval: settings.requireApproval,
-      viewHistory: settings.viewHistory,
-    });
+    const payload: any = {};
+    if (settings.name !== undefined) payload.name = settings.name;
+    if (settings.requireApproval !== undefined) payload.requireApproval = settings.requireApproval;
+    if (settings.viewHistory !== undefined) payload.viewHistory = settings.viewHistory;
+    if (settings.isArchived !== undefined) payload.isArchived = settings.isArchived;
+
+    let updated = await updateRoom(token, roomId, payload);
+
+    if (settings.avatarFile) {
+      updated = await uploadRoomAvatarApi(token, roomId, settings.avatarFile);
+    }
 
     setRooms((current) =>
       current.map((room) =>
         room.id === roomId
           ? {
               ...room,
-              name: updated.name ?? settings.name,
-              inviteCode: updated.inviteCode,
-              requireApproval: updated.requireApproval,
-              viewHistory: updated.viewHistory,
-              isArchived: updated.isArchived,
+              name: updated.name ?? room.name,
+              inviteCode: updated.inviteCode ?? room.inviteCode,
+              requireApproval: updated.requireApproval !== undefined ? updated.requireApproval : room.requireApproval,
+              viewHistory: updated.viewHistory !== undefined ? updated.viewHistory : room.viewHistory,
+              isArchived: updated.isArchived !== undefined ? updated.isArchived : room.isArchived,
+              avatarUrl: updated.avatarUrl ?? room.avatarUrl,
             }
           : room,
       ),
@@ -918,7 +1416,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const approveGroupMember = async (roomId: string, userId: string) => {
     if (!token) return;
     await approveRoomMember(token, roomId, userId);
-    await loadGroupMembers(roomId);
+    return loadGroupMembers(roomId);
   };
 
   const updateGroupMember = async (
@@ -928,39 +1426,60 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   ) => {
     if (!token) return;
     await updateRoomMember(token, roomId, userId, data);
-    await loadGroupMembers(roomId);
+    return loadGroupMembers(roomId);
   };
 
   const kickGroupMember = async (roomId: string, userId: string) => {
     if (!token) return;
     await kickRoomMember(token, roomId, userId);
-    await loadGroupMembers(roomId);
+    return loadGroupMembers(roomId);
   };
 
   const transferGroupOwner = async (roomId: string, userId: string) => {
     if (!token) return;
     await transferRoomOwner(token, roomId, userId);
-    await loadGroupMembers(roomId);
+    return loadGroupMembers(roomId);
   };
 
   const handleDeleteGroupRoom = async (roomId: string) => {
     if (token) {
-      await updateRoom(token, roomId, { isArchived: true });
+      await deleteRoomApi(token, roomId);
     }
     const remaining = rooms.filter((room) => room.id !== roomId);
     setRooms(remaining);
     return remaining[0]?.id ?? null;
   };
 
-  const getReadAvatarsForMessage = (room: ChatRoom, msg: Message): string[] => {
-    if (room.type !== "group") return [];
+  const getReadAvatarsForMessage = (room: ChatRoom, msg: Message): { name: string; displayName?: string; avatarUrl: string }[] => {
+    if (room.type !== "group" && room.type !== "msg") return [];
 
     const roomReads = groupReadStates[room.id];
     if (!roomReads) return [];
 
     return Object.entries(roomReads)
       .filter(([readerId, lastReadId]) => readerId !== currentUserId && lastReadId === msg.id)
-      .map(() => "");
+      .map(([readerId]) => {
+        const member = room.members?.find((m) => m.userId === readerId);
+        return {
+          name: member?.name ?? readerId,
+          displayName: member?.nickname ?? member?.name ?? readerId,
+          avatarUrl: member?.avatarUrl ?? "",
+        };
+      });
+  };
+
+  const searchUsersForInvite = async (query: string): Promise<PublicUser[]> => {
+    if (!token) throw new Error("Not authenticated");
+    const trimmed = query.trim();
+    if (!trimmed) return [];
+    return searchUsers(token, { query: trimmed, friendsOnly: true });
+  };
+
+  const handleJoinByInviteCode = async (inviteCode: string): Promise<string> => {
+    if (!token) throw new Error("Not authenticated");
+    const room = await joinRoomByCode(token, inviteCode.trim());
+    await refreshRoomsAndFolders(token);
+    return room.roomId;
   };
 
   const sendFriendRequest = async (query: string) => {
@@ -988,8 +1507,27 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
   const acceptFriendRequest = async (requestId: string) => {
     if (!token) return;
+    const request = friendRequests.find(
+      (item) => item.id === requestId && item.direction === "incoming",
+    );
+
     await respondFriendRequest(token, requestId, "accepted");
-    await refreshSocialData(token);
+    if (request) {
+      setFriendRequests((prev) => prev.filter((item) => item.id !== requestId));
+      setFriends((prev) => {
+        if (prev.some((item) => item.id === request.id)) return prev;
+        return [
+          ...prev,
+          {
+            id: request.id,
+            name: request.name,
+            email: request.email,
+            status: "offline",
+          },
+        ];
+      });
+    }
+    await refreshSocialData(token, undefined, currentUserId);
   };
 
   const rejectFriendRequest = async (requestId: string) => {
@@ -998,13 +1536,16 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     if (request?.direction === "incoming") {
       await respondFriendRequest(token, requestId, "rejected");
     }
-    setFriendRequests((prev) => prev.filter((item) => item.id !== requestId));
+    await refreshSocialData(token);
   };
 
   const removeFriend = async (friendId: string) => {
     if (!token) return;
     await deleteFriend(token, friendId);
-    await refreshSocialData(token);
+    await Promise.all([
+      refreshRoomsAndFolders(token, currentUserId),
+      refreshSocialData(token),
+    ]);
   };
 
   const blockFriend = async (friendId: string) => {
@@ -1013,18 +1554,20 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     if (!friend) return;
 
     await blockUserApi(token, friendId);
-    setBlockedUsers((prev) => {
-      if (prev.some((item) => item.id === friendId)) return prev;
-      return [...prev, { id: friend.id, name: friend.name, email: friend.email }];
-    });
-    await refreshSocialData(token);
+    await Promise.all([
+      refreshRoomsAndFolders(token, currentUserId),
+      refreshSocialData(token),
+    ]);
   };
 
   const unblockUser = async (blockedId: string) => {
     if (token) {
       await unblockUserApi(token, blockedId);
+      await Promise.all([
+        refreshRoomsAndFolders(token, currentUserId),
+        refreshSocialData(token),
+      ]);
     }
-    setBlockedUsers((prev) => prev.filter((item) => item.id !== blockedId));
   };
 
   const saveEmergencySettings = async (settings: EmergencySettings) => {
@@ -1067,36 +1610,134 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     }));
   };
 
+  const triggerEmergencyAlertNow = async (message?: string): Promise<TriggerEmergencyAlertResult> => {
+    if (!token) {
+      throw new Error("Not authenticated");
+    }
+
+    return triggerEmergencyAlertApi(token, message?.trim() ? message.trim() : undefined);
+  };
+
   const setUiLanguage = (language: UiLanguage) => {
     localStorage.setItem("language", language);
     setUiLanguageState(language);
   };
 
   useEffect(() => {
-    const lastMessage = messages.at(-1);
-    if (lastMessage && socketRef.current && !lastMessage.isOutgoing) {
-      sendReadReceipt(socketRef.current, {
-        roomId: lastMessage.roomId,
-        messageId: lastMessage.id,
+    if (!currentUserId) return;
+
+    const messagesByRoom = messages.reduce<Record<string, Message[]>>((acc, message) => {
+      (acc[message.roomId] ??= []).push(message);
+      return acc;
+    }, {});
+
+    // TODO: derive unread counts / previews during render (useMemo) instead of
+    // writing back into rooms state; needs a wider refactor of rooms consumers.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- guarded write-back (returns `current` when unchanged) prevents render loops
+    setRooms((current) => {
+      let changed = false;
+
+      const nextRooms = current.map((room) => {
+        const roomMessages = sortMessages(messagesByRoom[room.id] ?? []);
+        const latestMessage = roomMessages.at(-1);
+        const roomLastReadId =
+          groupReadStates[room.id]?.[currentUserId] ??
+          room.lastReadId ??
+          room.members?.find((member) => member.userId === currentUserId)?.lastReadId ??
+          null;
+        const nextUnreadCount =
+          activeRoomId === room.id ? 0 : computeUnreadCount(roomMessages, currentUserId, roomLastReadId);
+        const nextPreview = latestMessage ? summarizeMessagePreview(latestMessage) : room.lastMessagePreview;
+        const nextLastMessageAt = latestMessage ? latestMessage.timestamp : room.lastMessageAt;
+
+        if (
+          room.unreadCount === nextUnreadCount &&
+          room.lastMessagePreview === nextPreview &&
+          room.lastMessageAt === nextLastMessageAt
+        ) {
+          return room;
+        }
+
+        changed = true;
+        return {
+          ...room,
+          unreadCount: nextUnreadCount,
+          lastMessagePreview: nextPreview,
+          lastMessageAt: nextLastMessageAt,
+        };
       });
-    }
-  }, [messages]);
+
+      return changed ? nextRooms : current;
+    });
+  }, [activeRoomId, currentUserId, groupReadStates, messages]);
+
+  useEffect(() => {
+    if (!socketRef.current || !activeRoomId || !currentUserId) return;
+
+    const activeRoom = roomsRef.current.find((room) => room.id === activeRoomId);
+    if (!activeRoom) return;
+
+    const roomMessages = sortMessages(messages.filter((message) => message.roomId === activeRoomId));
+    const latestIncoming = [...roomMessages].reverse().find((message) => message.senderId !== currentUserId);
+    if (!latestIncoming) return;
+
+    const currentLastReadId =
+      groupReadStates[activeRoomId]?.[currentUserId] ??
+      activeRoom.members?.find((member) => member.userId === currentUserId)?.lastReadId ??
+      null;
+
+    if (currentLastReadId === latestIncoming.id) return;
+
+    sendReadReceipt(socketRef.current, {
+      roomId: activeRoomId,
+      messageId: latestIncoming.id,
+    });
+
+    setGroupReadStates((current) => ({
+      ...current,
+      [activeRoomId]: {
+        ...(current[activeRoomId] ?? {}),
+        [currentUserId]: latestIncoming.id,
+      },
+    }));
+  }, [activeRoomId, currentUserId, groupReadStates, messages]);
 
   const derivedRooms = useMemo(() => {
     return rooms.map((room) => {
-      if (room.type === "msg" && room.members && currentUserId) {
-        const otherMember = room.members.find((m) => m.userId !== currentUserId);
-        if (otherMember) {
-          const friend = friends.find((f) => f.id === otherMember.userId);
-          return {
-            ...room,
-            name: friend ? friend.name : (otherMember.name || room.name),
-          };
+      let nextName = room.name;
+      let nextIsOnline = room.isOnline;
+
+      if (room.type === "msg") {
+        const otherMemberId = room.otherMemberId || room.members?.find((m) => m.userId !== currentUserId)?.userId;
+        const blockedUser = otherMemberId ? blockedUsers.find((item) => item.id === otherMemberId) : undefined;
+        const privateRoomName = getPrivateRoomName(room, currentUserId);
+        if (privateRoomName) {
+          nextName = privateRoomName;
+        }
+        if (otherMemberId) {
+          const friend = friends.find((f) => f.id === otherMemberId);
+          if (friend) {
+            nextName = friend.name;
+            nextIsOnline = friend.status === "online";
+          } else if (blockedUser) {
+            nextName = blockedUser.name;
+            nextIsOnline = false;
+          }
         }
       }
-      return room;
+      return {
+        ...room,
+        name: nextName,
+        isOnline: nextIsOnline,
+      };
     });
-  }, [rooms, friends, currentUserId]);
+  }, [rooms, friends, blockedUsers, currentUserId]);
+
+  const handleRefreshSocialData = async () => {
+    if (token) {
+      await refreshSocialData(token);
+    }
+  };
 
   return (
     <ChatContext.Provider
@@ -1114,6 +1755,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         uiLanguage,
         isAuthenticated,
         isMounted,
+        roomsInitialized,
         selectedFriendForSidebar,
         setSelectedFriendForSidebar,
         showRightPanel,
@@ -1129,13 +1771,16 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         handleTyping,
         handleUploadAttachment,
         handleRecallMessage,
+        handleUpdateProfile,
+        handleUpdatePreferences,
         handleCreateRoom,
         handleOpenPrivateRoom,
         handleCreateFolder,
+        handleDeleteFolder,
         handleCategorizeRoom,
         handleModifyNickname,
         handleLeaveOrBlock,
-        handleSavePersonalSettings,
+        handleDeleteAccount,
         loadGroupMembers,
         saveGroupSettings,
         approveGroupMember,
@@ -1144,6 +1789,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         transferGroupOwner,
         handleDeleteGroupRoom,
         getReadAvatarsForMessage,
+        searchUsersForInvite,
+        handleJoinByInviteCode,
         sendFriendRequest,
         acceptFriendRequest,
         rejectFriendRequest,
@@ -1151,7 +1798,14 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         blockFriend,
         unblockUser,
         saveEmergencySettings,
+        triggerEmergencyAlertNow,
         setUiLanguage,
+        typingUsers,
+        activeProfilePopover,
+        setActiveProfilePopover,
+        hasUnsavedChanges,
+        setHasUnsavedChanges,
+        refreshSocialData: handleRefreshSocialData,
       }}
     >
       {children}

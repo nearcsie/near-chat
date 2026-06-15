@@ -9,9 +9,15 @@ import {
 
 describe('security middleware', () => {
   const originalNodeEnv = process.env.NODE_ENV;
+  const originalRateLimitDisabled = process.env.RATE_LIMIT_DISABLED;
 
   afterEach(() => {
     process.env.NODE_ENV = originalNodeEnv;
+    if (originalRateLimitDisabled !== undefined) {
+      process.env.RATE_LIMIT_DISABLED = originalRateLimitDisabled;
+    } else {
+      delete process.env.RATE_LIMIT_DISABLED;
+    }
   });
 
   it('adds standard Helmet security headers', async () => {
@@ -28,6 +34,7 @@ describe('security middleware', () => {
 
   it('limits baseline API request volume when enabled', async () => {
     process.env.NODE_ENV = 'production';
+    delete process.env.RATE_LIMIT_DISABLED;
     const app = express();
     app.use(makeGlobalRateLimiter({ windowMs: 60_000, limit: 2 }));
     app.get('/api/ping', (_req, res) => res.json({ ok: true }));
@@ -41,6 +48,7 @@ describe('security middleware', () => {
 
   it('uses a stricter auth limiter message when enabled', async () => {
     process.env.NODE_ENV = 'production';
+    delete process.env.RATE_LIMIT_DISABLED;
     const app = express();
     app.use(makeAuthRateLimiter({ windowMs: 60_000, limit: 1, skipSuccessfulRequests: false }));
     app.post('/api/v1/auth/login', (_req, res) => res.status(401).json({ message: 'Invalid' }));

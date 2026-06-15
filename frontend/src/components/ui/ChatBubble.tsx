@@ -1,7 +1,10 @@
 import React, { useEffect, useState } from "react";
+import { resolveAssetUrl } from "@/lib/assets";
 import { cn } from "@/lib/utils";
 import { Avatar } from "./Avatar";
 import ProfilePopover from "../chat/ProfilePopover";
+import { downloadAttachment } from "@/lib/api";
+import { useChat } from "@/context/ChatContext";
 
 export interface Attachment {
   filename: string;
@@ -23,13 +26,37 @@ export interface ChatBubbleProps {
   attachments?: Attachment[];
   senderAvatar?: string;
   isRead?: boolean;
-  readByAvatars?: string[];
+  readByAvatars?: { name: string; displayName?: string; avatarUrl: string }[];
   roomType?: "msg" | "group";
   onReply?: () => void;
   onRecall?: () => void;
   canRecall?: boolean;
   canEdit?: boolean;
+  senderId?: string;
+  messageId?: string;
+  avatarName?: string;
 }
+
+const renderMentionContent = (
+  content: string,
+  isOutgoing: boolean,
+  isHighEmphasis: boolean,
+) => {
+  const parts = content.split(/(@[^\s@]+)/g);
+  const mentionClass = isOutgoing && isHighEmphasis
+    ? "rounded px-1 py-0.5 bg-white/15 text-white font-semibold"
+    : "rounded px-1 py-0.5 bg-primary/10 text-primary font-semibold";
+
+  return parts.map((part, index) =>
+    part.startsWith("@") ? (
+      <span key={`${part}-${index}`} className={mentionClass}>
+        {part}
+      </span>
+    ) : (
+      <React.Fragment key={`${part}-${index}`}>{part}</React.Fragment>
+    ),
+  );
+};
 
 export function ChatBubble({
   content,
@@ -48,10 +75,17 @@ export function ChatBubble({
   onRecall,
   canRecall = false,
   canEdit = false,
+  senderId,
+  messageId,
+  avatarName,
 }: ChatBubbleProps) {
   const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null>(null);
-  const [showPopover, setShowPopover] = useState(false);
   const [popoverStyle, setPopoverStyle] = useState<React.CSSProperties>({});
+  const [downloadingUrl, setDownloadingUrl] = useState<string | null>(null);
+  const [downloadError, setDownloadError] = useState("");
+
+  const { activeProfilePopover, setActiveProfilePopover } = useChat();
+  const showPopover = messageId ? activeProfilePopover?.instanceId === messageId : false;
 
   useEffect(() => {
     if (!menuPosition) return;
@@ -67,6 +101,11 @@ export function ChatBubble({
   }, [menuPosition]);
 
   const handleTogglePopover = (event: React.MouseEvent) => {
+    if (!senderId) {
+      console.warn("No senderId provided to ChatBubble, cannot open profile popover");
+      return;
+    }
+
     const rect = event.currentTarget.getBoundingClientRect();
     const scrollEl = event.currentTarget.closest(".overflow-y-auto");
 
@@ -92,13 +131,35 @@ export function ChatBubble({
       });
     }
 
-    setShowPopover((current) => !current);
+    if (messageId) {
+      if (activeProfilePopover?.instanceId === messageId) {
+        setActiveProfilePopover(null);
+      } else {
+        setActiveProfilePopover({ instanceId: messageId, userId: senderId });
+      }
+    }
   };
 
   const handleCopy = async () => {
     if (!content || isRecalled) return;
     await navigator.clipboard?.writeText(content);
     setMenuPosition(null);
+  };
+
+  const handleDownloadAttachment = async (file: Attachment) => {
+    if (!file.url || downloadingUrl) return;
+
+    setDownloadError("");
+    setDownloadingUrl(file.url);
+
+    try {
+      await downloadAttachment(file.url, file.filename);
+    } catch (error) {
+      console.error(error);
+      setDownloadError(error instanceof Error ? error.message : "Failed to download attachment");
+    } finally {
+      setDownloadingUrl(null);
+    }
   };
 
   const menuItemClass =
@@ -116,13 +177,14 @@ export function ChatBubble({
           className="shrink-0 mt-1 relative cursor-pointer avatar-click-target"
           onClick={handleTogglePopover}
         >
-          <Avatar name={senderName} src={senderAvatar} size="sm" />
+          <Avatar name={avatarName || senderName} src={senderAvatar} size="sm" />
           {showPopover && (
             <ProfilePopover
+              userId={senderId || ""}
               username={senderName}
               onClose={(event) => {
                 event.stopPropagation();
-                setShowPopover(false);
+                setActiveProfilePopover(null);
               }}
               position="custom"
               className="absolute left-full ml-3"
@@ -145,9 +207,6 @@ export function ChatBubble({
         <div className="flex items-end gap-1.5">
           {isOutgoing && (
             <div className="flex flex-col items-end text-[10px] text-text-muted font-mono leading-none select-none mb-0.5">
-              {roomType === "msg" && isRead && (
-                <span className="text-primary font-bold text-[9px] mb-1 font-sans">已讀</span>
-              )}
               <span>{timestamp}</span>
             </div>
           )}
@@ -182,8 +241,13 @@ export function ChatBubble({
               </div>
             )}
 
-            <div className={cn("text-sm break-words", isRecalled && "italic text-text-muted/70")}>
-              {isRecalled ? "訊息已收回" : content}
+            <div
+              className={cn(
+                "text-sm break-words whitespace-pre-wrap",
+                isRecalled && "italic text-text-muted/70",
+              )}
+            >
+              {isRecalled ? "訊息已收回" : renderMentionContent(content, isOutgoing, isHighEmphasis)}
             </div>
 
             {attachments.length > 0 && (
@@ -219,28 +283,37 @@ export function ChatBubble({
                   );
 
                   const className = cn(
-                    "flex items-center gap-2.5 p-2 border rounded-sm text-xs cursor-pointer select-none transition-colors",
+                    "flex w-full items-center gap-2.5 p-2 border rounded-sm text-xs cursor-pointer select-none transition-colors",
                     isOutgoing && isHighEmphasis
                       ? "bg-white/10 border-white/20 hover:bg-white/20 text-white"
                       : "bg-surface-card border-border-secondary hover:border-border-primary text-foreground",
                   );
 
                   return file.url ? (
-                    <a
+                    <button
                       key={idx}
-                      href={file.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className={className}
+                      type="button"
+                      onClick={() => void handleDownloadAttachment(file)}
+                      disabled={downloadingUrl === file.url}
+                      className={cn(
+                        className,
+                        "text-left disabled:cursor-wait disabled:opacity-70",
+                      )}
+                      title={downloadingUrl === file.url ? "Downloading attachment" : "Download attachment"}
                     >
                       {fileContent}
-                    </a>
+                    </button>
                   ) : (
                     <div key={idx} className={className}>
                       {fileContent}
                     </div>
                   );
                 })}
+                {downloadError && (
+                  <p className="text-[10px] text-danger select-none">
+                    {downloadError}
+                  </p>
+                )}
               </div>
             )}
           </div>
@@ -293,18 +366,25 @@ export function ChatBubble({
           )}
         </div>
 
-        {roomType === "group" && readByAvatars && readByAvatars.length > 0 && (
+        {(roomType === "group" || roomType === "msg") && readByAvatars && readByAvatars.length > 0 && (
           <div className="flex gap-1 mt-1 justify-end w-full px-0.5">
-            {readByAvatars.map((avatarUrl, idx) => (
+            {readByAvatars.map((reader, idx) => (
               <div
                 key={idx}
-                className="h-4.5 w-4.5 border border-border-primary bg-surface-muted rounded-sm overflow-hidden select-none"
-                title="已讀"
+                className="h-4.5 w-4.5 border border-border-primary bg-surface-muted rounded-sm overflow-hidden select-none flex items-center justify-center"
+                title={reader.displayName || reader.name}
               >
-                {avatarUrl ? (
-                  <img src={avatarUrl} alt="read status" className="h-full w-full object-cover" />
+                {reader.avatarUrl ? (
+                  <img src={resolveAssetUrl(reader.avatarUrl)} alt={reader.name} className="h-full w-full object-cover" />
                 ) : (
-                  <span className="text-[8px] flex items-center justify-center h-full w-full font-bold">R</span>
+                  <span className="text-[8px] font-bold leading-none">
+                    {reader.name
+                      .split(" ")
+                      .map((n) => n[0])
+                      .join("")
+                      .slice(0, 2)
+                      .toUpperCase() || "U"}
+                  </span>
                 )}
               </div>
             ))}

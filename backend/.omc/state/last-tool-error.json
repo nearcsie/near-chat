@@ -1,7 +1,0 @@
-{
-  "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"gh -R ray0520/1142-ntnu-db-app run list --branch dev --limit 5\",\"description\":\"List recent CI runs on dev branch\"}",
-  "error": "Exit code 1\nfailed to get runs: HTTP 404: Not Found (https://api.github.com/repos/ray0520/1142-ntnu-db-app/actions/runs?per_page=5&exclude_pull_requests=true&branch=dev)",
-  "timestamp": "2026-06-02T14:50:28.823Z",
-  "retry_count": 1
-}

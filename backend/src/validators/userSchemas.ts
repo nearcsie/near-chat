@@ -16,8 +16,9 @@ export const updateMeSchema = z
     name: z.string().trim().min(1, 'Name cannot be empty').optional(),
     email: z.string().email('Invalid email format').optional(),
     password: z.string().min(8, 'Password must be at least 8 characters long').optional(),
+    currentPassword: z.string().optional(),
     bio: z.string().trim().optional(),
-    avatarUrl: z.string().url('Invalid avatar URL').optional(),
+    avatarUrl: z.union([z.literal(''), z.string().url('Invalid avatar URL')]).optional(),
   })
   .refine((v) => Object.keys(v).length > 0, {
     message: 'At least one field must be provided',
@@ -44,6 +45,8 @@ export const updateSettingsSchema = z
 
 export const searchQuerySchema = z.object({
   q: z.string().trim().min(1, 'Search query cannot be empty'),
+  mode: z.enum(['name', 'userId', 'email']).optional(),
+  friendsOnly: z.preprocess((val) => val === 'true' || val === true, z.boolean()).optional(),
 });
 
 type RegisterSchema = z.infer<typeof registerSchema>;

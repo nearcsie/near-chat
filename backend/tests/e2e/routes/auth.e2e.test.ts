@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, beforeAll } from 'vitest';
 import request from 'supertest';
 let app: any;
 import { resetDb } from '../../helpers/resetDb';
@@ -22,7 +22,7 @@ describe('Auth E2E', () => {
     });
     if (res.status !== 201) throw new Error("RES: " + JSON.stringify(res.body));
     expect(res.body.token).toBeDefined();
-    expect(res.headers['set-cookie']?.join(';')).toContain('auth_token=');
+    expect(res.headers['set-cookie']?.join(';')).toContain('refresh_token=');
     expect(res.headers['set-cookie']?.join(';')).toContain('HttpOnly');
     expect(res.headers['set-cookie']?.join(';')).toContain('SameSite=Strict');
     expect(res.body.user).toBeDefined();
@@ -58,24 +58,39 @@ describe('Auth E2E', () => {
     });
     expect(res.status).toBe(200);
     expect(res.body.token).toBeDefined();
-    expect(res.headers['set-cookie']?.join(';')).toContain('auth_token=');
+    expect(res.headers['set-cookie']?.join(';')).toContain('refresh_token=');
   });
 
-  it('should authenticate protected routes with the auth cookie', async () => {
+  it('should authenticate protected routes with the auth header', async () => {
     const register = await request(app).post('/api/v1/auth/register').send({
       name: 'Cookie User',
       email: 'cookie@example.com',
       password: 'Password123!',
     });
+    const token = register.body.token;
     const cookie = register.headers['set-cookie'];
 
-    const me = await request(app).get('/api/v1/users/me').set('Cookie', cookie);
+    const me = await request(app).get('/api/v1/users/me').set('Authorization', `Bearer ${token}`);
     expect(me.status).toBe(200);
     expect(me.body.name).toBe('Cookie User');
 
-    const logout = await request(app).post('/api/v1/auth/logout').set('Cookie', cookie);
+    const logout = await request(app).post('/api/v1/auth/logout').set('Cookie', cookie).set('Authorization', `Bearer ${token}`);
     expect(logout.status).toBe(204);
-    expect(logout.headers['set-cookie']?.join(';')).toContain('auth_token=');
+    expect(logout.headers['set-cookie']?.join(';')).toContain('refresh_token=');
+  });
+
+  it('should refresh access token using refresh token cookie', async () => {
+    const register = await request(app).post('/api/v1/auth/register').send({
+      name: 'Refresh User',
+      email: 'refresh@example.com',
+      password: 'Password123!',
+    });
+    const cookie = register.headers['set-cookie'];
+
+    const res = await request(app).post('/api/v1/auth/refresh').set('Cookie', cookie);
+    expect(res.status).toBe(200);
+    expect(res.body.token).toBeDefined();
+    expect(res.headers['set-cookie']?.join(';')).toContain('refresh_token=');
   });
 
   it('should fail login with incorrect password', async () => {

@@ -42,6 +42,12 @@ export interface PublicUser {
   avatarUrl?: string;
 }
 
+/** Extended projection returned by the user-search endpoint.
+ * email is omitted when mode=name to prevent email enumeration via fuzzy search. */
+export interface SearchUserResult extends PublicUser {
+  email?: string;
+}
+
 export interface UserProfile {
   userId: string;
   name: string;
@@ -85,6 +91,9 @@ export interface Room {
 export interface RoomSummary extends Room {
   latestMessage?: Pick<Message, 'messageId' | 'senderId' | 'content' | 'sentAt'>;
   unreadCount: number;
+  isOnline?: boolean;
+  otherMemberId?: string;
+  lastReadId?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -183,6 +192,7 @@ export interface ServerToClientEvents {
   friend_request:   (payload: FriendRequest) => void;
   emergency_alert:  (payload: { userId: string; message: string }) => void;
   error:            (payload: ApiError) => void;
+  user_status:      (payload: { userId: string; status: 'online' | 'offline' }) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -203,6 +213,7 @@ export interface FriendRequestResponse {
 export interface FriendResponse {
   friend: PublicUser;
   friendshipCreatedAt: Date;
+  status?: 'online' | 'offline';
 }
 
 /** Payload for the `friend_request` Socket.IO server event. */

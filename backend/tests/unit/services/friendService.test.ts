@@ -22,11 +22,163 @@ describe('friendService', () => {
 
   it('unblockUser calls repo.unblockUser', async () => {
     const mockRepo = {
-      unblockUser: vi.fn().mockResolvedValue(true)
+      unblockUser: vi.fn().mockResolvedValue(true),
+      areFriends: vi.fn().mockResolvedValue(false),
     } as any;
     const service = makeFriendService(mockRepo);
     const result = await service.unblockUser('u1', 'u2');
     expect(mockRepo.unblockUser).toHaveBeenCalledWith('u1', 'u2');
-    expect(result).toBe(true);
+    expect(mockRepo.areFriends).toHaveBeenCalledWith('u1', 'u2');
+    expect(result).toBeUndefined();
+  });
+
+  it('unblockUser reopens the private room when the users are still friends', async () => {
+    const mockRepo = {
+      unblockUser: vi.fn().mockResolvedValue(true),
+      areFriends: vi.fn().mockResolvedValue(true),
+    } as any;
+    const privateRooms = { markPrivateReadOnly: vi.fn(), reopenPrivateRoom: vi.fn() };
+    const service = makeFriendService(mockRepo, undefined, privateRooms as any);
+    await service.unblockUser('u1', 'u2');
+    expect(privateRooms.reopenPrivateRoom).toHaveBeenCalledWith('u1', 'u2');
+  });
+
+  it('sendFriendRequest throws when sending to yourself', async () => {
+    const service = makeFriendService({} as any);
+    await expect(service.sendFriendRequest('u1', 'u1')).rejects.toThrow('Cannot send friend request to yourself');
+  });
+
+  it('sendFriendRequest throws FORBIDDEN when blocked', async () => {
+    const mockRepo = {
+      isBlocked: vi.fn().mockResolvedValue(true)
+    } as any;
+    const service = makeFriendService(mockRepo);
+    await expect(service.sendFriendRequest('u1', 'u2')).rejects.toThrow('Cannot interact with this user');
+  });
+
+  it('sendFriendRequest throws when already friends', async () => {
+    const mockRepo = {
+      isBlocked: vi.fn().mockResolvedValue(false),
+      areFriends: vi.fn().mockResolvedValue(true)
+    } as any;
+    const service = makeFriendService(mockRepo);
+    await expect(service.sendFriendRequest('u1', 'u2')).rejects.toThrow('Already friends');
+  });
+
+  it('sendFriendRequest creates a request and notifies the target', async () => {
+    const request = { requesterId: 'u1', targetUserId: 'u2', status: 'pending' };
+    const mockRepo = {
+      isBlocked: vi.fn().mockResolvedValue(false),
+      areFriends: vi.fn().mockResolvedValue(false),
+      getPendingRequests: vi.fn().mockResolvedValue([]),
+      sendFriendRequest: vi.fn().mockResolvedValue(request)
+    } as any;
+    const notifyUser = vi.fn();
+    const service = makeFriendService(mockRepo, notifyUser);
+    const result = await service.sendFriendRequest('u1', 'u2');
+    expect(result).toEqual(request);
+    expect(notifyUser).toHaveBeenCalledWith('u2', 'friend_request', request);
+  });
+
+  it('sendFriendRequest auto-accepts a reciprocal pending request and creates a private room', async () => {
+    const accepted = { requesterId: 'u2', targetUserId: 'u1', status: 'accepted' };
+    const mockRepo = {
+      isBlocked: vi.fn().mockResolvedValue(false),
+      areFriends: vi.fn().mockResolvedValue(false),
+      getPendingRequests: vi.fn().mockResolvedValue([{ requesterId: 'u2' }]),
+      acceptFriendRequest: vi.fn().mockResolvedValue(accepted)
+    } as any;
+    const notifyUser = vi.fn();
+    const privateRooms = { markPrivateReadOnly: vi.fn(), createPrivate: vi.fn() };
+    const service = makeFriendService(mockRepo, notifyUser, privateRooms as any);
+    const result = await service.sendFriendRequest('u1', 'u2');
+    expect(result).toEqual(accepted);
+    expect(mockRepo.acceptFriendRequest).toHaveBeenCalledWith('u2', 'u1');
+    expect(privateRooms.createPrivate).toHaveBeenCalledWith('u1', 'u2');
+    expect(notifyUser).toHaveBeenCalledWith('u2', 'friend_request', accepted);
+  });
+
+  it('sendFriendRequest reciprocal path falls back to reopenPrivateRoom without createPrivate', async () => {
+    const accepted = { requesterId: 'u2', targetUserId: 'u1', status: 'accepted' };
+    const mockRepo = {
+      isBlocked: vi.fn().mockResolvedValue(false),
+      areFriends: vi.fn().mockResolvedValue(false),
+      getPendingRequests: vi.fn().mockResolvedValue([{ requesterId: 'u2' }]),
+      acceptFriendRequest: vi.fn().mockResolvedValue(accepted)
+    } as any;
+    const privateRooms = { markPrivateReadOnly: vi.fn(), reopenPrivateRoom: vi.fn() };
+    const service = makeFriendService(mockRepo, undefined, privateRooms as any);
+    await service.sendFriendRequest('u1', 'u2');
+    expect(privateRooms.reopenPrivateRoom).toHaveBeenCalledWith('u1', 'u2');
+  });
+
+  it('respondFriendRequest accepted creates a private room', async () => {
+    const accepted = { requesterId: 'u2', targetUserId: 'u1', status: 'accepted' };
+    const mockRepo = {
+      isBlocked: vi.fn().mockResolvedValue(false),
+      acceptFriendRequest: vi.fn().mockResolvedValue(accepted)
+    } as any;
+    const privateRooms = { markPrivateReadOnly: vi.fn(), createPrivate: vi.fn() };
+    const service = makeFriendService(mockRepo, undefined, privateRooms as any);
+    const result = await service.respondFriendRequest('u1', 'u2', 'accepted');
+    expect(result).toEqual(accepted);
+    expect(privateRooms.createPrivate).toHaveBeenCalledWith('u2', 'u1');
+  });
+
+  it('respondFriendRequest accepted throws FORBIDDEN when blocked', async () => {
+    const mockRepo = {
+      isBlocked: vi.fn().mockResolvedValue(true)
+    } as any;
+    const service = makeFriendService(mockRepo);
+    await expect(service.respondFriendRequest('u1', 'u2', 'accepted')).rejects.toThrow('Cannot interact with this user');
+  });
+
+  it('respondFriendRequest rejected returns rejected status', async () => {
+    const mockRepo = {
+      rejectFriendRequest: vi.fn().mockResolvedValue({ status: 'rejected' })
+    } as any;
+    const service = makeFriendService(mockRepo);
+    const result = await service.respondFriendRequest('u1', 'u2', 'rejected');
+    expect(result).toEqual({ status: 'rejected' });
+  });
+
+  it('removeFriend deletes the friendship and marks the private room read-only', async () => {
+    const mockRepo = {
+      deleteFriendship: vi.fn().mockResolvedValue(undefined)
+    } as any;
+    const privateRooms = { markPrivateReadOnly: vi.fn() };
+    const service = makeFriendService(mockRepo, undefined, privateRooms as any);
+    await service.removeFriend('u1', 'u2');
+    expect(mockRepo.deleteFriendship).toHaveBeenCalledWith('u1', 'u2');
+    expect(privateRooms.markPrivateReadOnly).toHaveBeenCalledWith('u1', 'u2');
+  });
+
+  it('blockUser throws when blocking yourself', async () => {
+    const service = makeFriendService({} as any);
+    await expect(service.blockUser('u1', 'u1')).rejects.toThrow('Cannot block yourself');
+  });
+
+  it('blockUser blocks and marks the room read-only without deleting the friendship', async () => {
+    const mockRepo = {
+      blockUser: vi.fn().mockResolvedValue(undefined),
+    } as any;
+    const privateRooms = { markPrivateReadOnly: vi.fn() };
+    const service = makeFriendService(mockRepo, undefined, privateRooms as any);
+    const result = await service.blockUser('u1', 'u2');
+    expect(result).toEqual({ status: 'blocked' });
+    expect(mockRepo.blockUser).toHaveBeenCalledWith('u1', 'u2');
+    expect(privateRooms.markPrivateReadOnly).toHaveBeenCalledWith('u1', 'u2');
+  });
+
+  it('getPendingRequests, getFriends and getBlockedUsers delegate to the repo', async () => {
+    const mockRepo = {
+      getPendingRequests: vi.fn().mockResolvedValue(['p']),
+      getFriends: vi.fn().mockResolvedValue(['f']),
+      getBlockedUsers: vi.fn().mockResolvedValue(['b'])
+    } as any;
+    const service = makeFriendService(mockRepo);
+    expect(await service.getPendingRequests('u1')).toEqual(['p']);
+    expect(await service.getFriends('u1')).toEqual(['f']);
+    expect(await service.getBlockedUsers('u1')).toEqual(['b']);
   });
 });

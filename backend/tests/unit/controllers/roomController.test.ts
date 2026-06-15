@@ -35,6 +35,7 @@ describe('roomController', () => {
     getById: vi.fn(),
     listMembers: vi.fn(),
     update: vi.fn(),
+    deleteGroup: vi.fn(),
     joinByCode: vi.fn(),
     leave: vi.fn(),
     approveMember: vi.fn(),
@@ -237,6 +238,30 @@ describe('roomController', () => {
       const next = vi.fn();
 
       await ctrl.leave(authedReq({ params: { id: 'room-1' } }), res, next);
+
+      expect(next).toHaveBeenCalledWith(expect.any(Error));
+    });
+  });
+
+  describe('deleteGroup', () => {
+    it('returns 204', async () => {
+      service.deleteGroup.mockResolvedValue(undefined);
+      const res = mockRes();
+      const next = vi.fn();
+
+      await ctrl.deleteGroup(authedReq({ params: { id: 'room-1' } }), res, next);
+
+      expect(service.deleteGroup).toHaveBeenCalledWith('room-1', 'user-1');
+      expect(res.status).toHaveBeenCalledWith(204);
+      expect(res.send).toHaveBeenCalled();
+    });
+
+    it('calls next with error when service throws', async () => {
+      service.deleteGroup.mockRejectedValue(new Error('forbidden'));
+      const res = mockRes();
+      const next = vi.fn();
+
+      await ctrl.deleteGroup(authedReq({ params: { id: 'room-1' } }), res, next);
 
       expect(next).toHaveBeenCalledWith(expect.any(Error));
     });

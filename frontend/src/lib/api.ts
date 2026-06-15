@@ -13,15 +13,33 @@ import type {
   Room,
   RoomMember,
   RoomSummary,
+  SearchUserResult,
   UserProfile,
   UserSettings,
 } from '@shared/types';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
+const getApiBaseUrl = (): string => {
+  if (typeof window !== 'undefined') {
+    const envUrl = process.env.NEXT_PUBLIC_API_URL;
+    let port = '4005';
+    if (envUrl) {
+      try {
+        const urlObj = new URL(envUrl);
+        if (urlObj.port) port = urlObj.port;
+      } catch (e) {
+        // ignore
+      }
+    }
+    return `${window.location.protocol}//${window.location.hostname}:${port}`;
+  }
+  return process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
+};
+const API_BASE_URL = getApiBaseUrl();
 const API_PREFIX = '/api/v1';
 
 type UpdateMeRequest = Partial<Pick<MyProfile, 'name' | 'email' | 'bio' | 'avatarUrl'>> & {
   password?: string;
+  currentPassword?: string;
 };
 type UpdateMySettingsRequest = Partial<
   Pick<UserSettings, 'warningEnabled' | 'warningDays' | 'language' | 'theme' | 'notifyDesktop' | 'notifySound'>
@@ -76,31 +94,123 @@ type RequestOptions = {
   token?: string;
 };
 
+let activeAccessToken: string | null = null;
+export const getActiveAccessToken = (): string | null => activeAccessToken;
+export const setActiveAccessToken = (token: string | null): void => {
+  activeAccessToken = token;
+};
+
 const buildUrl = (path: string): string => `${API_BASE_URL}${API_PREFIX}${path}`;
+const resolveRequestUrl = (path: string): string => {
+  if (path.startsWith('http')) return path;
+  if (path.startsWith('/api/')) return `${API_BASE_URL}${path}`;
+  return buildUrl(path);
+};
 
-const authHeaders = (token?: string): HeadersInit =>
-  token ? { Authorization: `Bearer ${token}` } : {};
+const authHeaders = (token?: string): HeadersInit => {
+  const actualToken = token ?? activeAccessToken;
+  return actualToken ? { Authorization: `Bearer ${actualToken}` } : {};
+};
 
-const requestJson = async <T>(
+export const refreshTokens = (): Promise<AuthResponse> =>
+  requestJson<AuthResponse>('/auth/refresh', {
+    method: 'POST',
+  });
+
+// The refresh cookie is shared across tabs; two concurrent refreshes would
+// trip the server's reuse detection and revoke every session. Serialize the
+// refresh across tabs with the Web Locks API where available.
+const runExclusiveRefresh = <T,>(task: () => Promise<T>): Promise<T> => {
+  if (typeof navigator !== 'undefined' && 'locks' in navigator) {
+    return navigator.locks.request('auth:refresh', task) as Promise<T>;
+  }
+  return task();
+};
+
+let isRefreshing = false;
+let refreshSubscribers: { resolve: (token: string) => void; reject: (err: unknown) => void }[] = [];
+
+const onTokenRefreshed = (token: string) => {
+  refreshSubscribers.forEach((sub) => sub.resolve(token));
+  refreshSubscribers = [];
+};
+
+const onRefreshFailed = (err: unknown) => {
+  refreshSubscribers.forEach((sub) => sub.reject(err));
+  refreshSubscribers = [];
+};
+
+const addRefreshSubscriber = (resolve: (token: string) => void, reject: (err: unknown) => void) => {
+  refreshSubscribers.push({ resolve, reject });
+};
+
+const request = async (
   path: string,
   init: RequestInit = {},
   options: RequestOptions = {},
-): Promise<T> => {
+): Promise<Response> => {
   const headers = {
     ...authHeaders(options.token),
     ...init.headers,
   };
 
-  const response = await fetch(buildUrl(path), {
+  const response = await fetch(resolveRequestUrl(path), {
     ...init,
     credentials: 'include',
     headers,
   });
 
   if (!response.ok) {
+    if (response.status === 401 && !path.startsWith('/auth/') && typeof window !== 'undefined') {
+      if (!isRefreshing) {
+        isRefreshing = true;
+        runExclusiveRefresh(() => refreshTokens())
+          .then((refreshResult) => {
+            isRefreshing = false;
+            setActiveAccessToken(refreshResult.token);
+            window.dispatchEvent(
+              new CustomEvent('auth:token-refreshed', { detail: refreshResult }),
+            );
+            onTokenRefreshed(refreshResult.token);
+          })
+          .catch((refreshErr) => {
+            isRefreshing = false;
+            onRefreshFailed(refreshErr);
+            window.dispatchEvent(new Event('auth:token-expired'));
+          });
+      }
+
+      return new Promise<Response>((resolve, reject) => {
+        addRefreshSubscriber(
+          (newToken) => {
+            const newHeaders = {
+              ...init.headers,
+              Authorization: `Bearer ${newToken}`,
+            };
+            request(path, { ...init, headers: newHeaders }, { ...options, token: newToken })
+              .then(resolve)
+              .catch(reject);
+          },
+          (err) => {
+            reject(err);
+          },
+        );
+      });
+    }
+
     const payload = (await response.json().catch(() => null)) as { message?: string } | null;
     throw new Error(payload?.message ?? `Request failed with status ${response.status}`);
   }
+
+  return response;
+};
+
+const requestJson = async <T>(
+  path: string,
+  init: RequestInit = {},
+  options: RequestOptions = {},
+): Promise<T> => {
+  const response = await request(path, init, options);
 
   if (response.status === 204) {
     return undefined as T;
@@ -118,21 +228,29 @@ export const register = (data: RegisterRequest): Promise<AuthResponse> =>
   requestJson<AuthResponse>('/auth/register', {
     method: 'POST',
     ...withJsonBody(data),
+  }).then((res) => {
+    setActiveAccessToken(res.token);
+    return res;
   });
 
 export const login = (data: LoginRequest): Promise<AuthResponse> =>
   requestJson<AuthResponse>('/auth/login', {
     method: 'POST',
     ...withJsonBody(data),
+  }).then((res) => {
+    setActiveAccessToken(res.token);
+    return res;
   });
 
 export const logout = (token: string): Promise<void> =>
-  requestJson<void>('/auth/logout', { method: 'POST' }, { token });
+  requestJson<void>('/auth/logout', { method: 'POST' }, { token }).then(() => {
+    setActiveAccessToken(null);
+  });
 
 export const getMe = (token: string): Promise<MyProfile> =>
   requestJson<MyProfile>('/users/me', {}, { token });
 
-export const getUserProfile = (token: string, userId: string): Promise<UserProfile> =>
+export const getUserProfile = (userId: string, token?: string): Promise<UserProfile> =>
   requestJson<UserProfile>(`/users/${userId}`, {}, { token });
 
 export const updateMe = (token: string, data: UpdateMeRequest): Promise<MyProfile> =>
@@ -144,6 +262,23 @@ export const updateMe = (token: string, data: UpdateMeRequest): Promise<MyProfil
     },
     { token },
   );
+
+export const uploadAvatar = (token: string, file: File): Promise<MyProfile> => {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  return requestJson<MyProfile>(
+    '/users/me/avatar',
+    {
+      method: 'POST',
+      body: formData,
+    },
+    { token },
+  );
+};
+
+export const deleteMe = (token: string): Promise<void> =>
+  requestJson<void>('/users/me', { method: 'DELETE' }, { token });
 
 export const getMySettings = (token: string): Promise<UserSettings> =>
   requestJson<UserSettings>('/users/me/settings', {}, { token });
@@ -161,9 +296,14 @@ export const updateMySettings = (
     { token },
   );
 
-export const searchUsers = (token: string, params: { query: string }): Promise<PublicUser[]> => {
-  const query = new URLSearchParams({ q: params.query });
-  return requestJson<PublicUser[]>(`/users?${query.toString()}`, {}, { token });
+export const searchUsers = (
+  token: string,
+  params: { query: string; mode?: 'name' | 'userId' | 'email'; friendsOnly?: boolean },
+): Promise<SearchUserResult[]> => {
+  const qs = new URLSearchParams({ q: params.query });
+  if (params.mode) qs.set('mode', params.mode);
+  if (params.friendsOnly) qs.set('friendsOnly', 'true');
+  return requestJson<SearchUserResult[]>(`/users?${qs.toString()}`, {}, { token });
 };
 
 export const listFriends = (token: string): Promise<FriendResponse[]> =>
@@ -241,6 +381,16 @@ export const createPrivateRoom = (token: string, data: CreatePrivateRequest): Pr
     { token },
   );
 
+export const joinRoomByCode = (token: string, inviteCode: string): Promise<Room> =>
+  requestJson<Room>(
+    '/rooms/join',
+    {
+      method: 'POST',
+      ...withJsonBody({ inviteCode }),
+    },
+    { token },
+  );
+
 export const updateRoom = (
   token: string,
   roomId: string,
@@ -254,6 +404,23 @@ export const updateRoom = (
     },
     { token },
   );
+
+export const uploadRoomAvatar = (token: string, roomId: string, file: File): Promise<Room> => {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  return requestJson<Room>(
+    `/rooms/${roomId}/avatar`,
+    {
+      method: 'POST',
+      body: formData,
+    },
+    { token },
+  );
+};
+
+export const deleteRoom = (token: string, roomId: string): Promise<void> =>
+  requestJson<void>(`/rooms/${roomId}`, { method: 'DELETE' }, { token });
 
 export const leaveRoom = (token: string, roomId: string): Promise<void> =>
   requestJson<void>(`/rooms/${roomId}/members/me`, { method: 'DELETE' }, { token });
@@ -368,7 +535,22 @@ export const uploadAttachment = async (
 };
 
 export const attachmentDownloadUrl = (fileUrl: string): string =>
-  fileUrl.startsWith('http') ? fileUrl : `${API_BASE_URL}${fileUrl}`;
+  resolveRequestUrl(fileUrl);
+
+export const downloadAttachment = async (fileUrl: string, filename: string): Promise<void> => {
+  const response = await request(fileUrl);
+  const blob = await response.blob();
+  const downloadUrl = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+
+  link.href = downloadUrl;
+  link.download = filename;
+  link.style.display = 'none';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 0);
+};
 
 export const triggerEmergencyAlert = (token: string, message?: string): Promise<EmergencyAlertResult> =>
   requestJson<EmergencyAlertResult>(

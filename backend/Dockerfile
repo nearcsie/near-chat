@@ -5,6 +5,8 @@ RUN corepack enable && corepack prepare pnpm@latest --activate
 
 WORKDIR /app
 
+RUN mkdir -p /app/uploads/attachments /app/uploads/avatars
+
 # Give the built-in node user ownership of /app before switching
 RUN chown -R node:node /app
 

@@ -3,7 +3,8 @@ import http from "http";
 import cors from "cors";
 import { Server } from "socket.io";
 import pool from "./db";
-import { signToken } from "./auth/jwt";
+import { signToken, generateRefreshToken, hashToken } from "./auth/jwt";
+import { RefreshTokenRepository } from "./repositories/refreshTokenRepository";
 import { errorHandler } from "./middlewares/errorHandler";
 import { makeAuthRateLimiter, makeGlobalRateLimiter, securityHeaders } from "./middlewares/securityMiddleware";
 import { UserRepository } from "./repositories/userRepository";
@@ -37,6 +38,7 @@ import { makeFolderRoutes } from "./routes/folderRoutes";
 import { makeFriendRoutes, makeBlockRoutes, makeFriendRequestRoutes } from "./routes/friendRoutes";
 import { attachSocketAuth } from "./realtime/authSocket";
 import { attachSockets } from "./realtime/socketServer";
+import { AVATARS_UPLOAD_DIR, ensureUploadDirectories } from "./lib/uploads";
 import type { ClientToServerEvents, ServerToClientEvents } from "../../shared/types";
 
 const app = express();
@@ -58,6 +60,16 @@ app.use(securityHeaders);
 app.use(cors({ origin: allowedOrigins, credentials: true }));
 app.use(express.json());
 app.use("/api", makeGlobalRateLimiter());
+ensureUploadDirectories();
+app.use("/uploads/avatars", express.static(AVATARS_UPLOAD_DIR, {
+  fallthrough: true,
+  index: false,
+  immutable: true,
+  maxAge: '7d',
+  setHeaders: (res) => {
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  },
+}));
 
 const userRepo = new UserRepository(pool);
 const emergencyContactRepo = new EmergencyContactRepository(pool);
@@ -67,13 +79,35 @@ const messageRepo = new MessageRepository(pool);
 const folderRepo = new FolderRepository(pool);
 const attachmentRepo = new AttachmentRepository(pool);
 const friendRepo = makeFriendRepository(pool);
+const refreshTokenRepo = new RefreshTokenRepository(pool);
 
-const userService = makeUserService(userRepo, emergencyContactRepo, { signToken }, (contactId, payload) =>
-  io.to(`user_${contactId}`).emit('emergency_alert', payload),
-);
+const userService = makeUserService(
+  userRepo,
+  emergencyContactRepo,
+  refreshTokenRepo,
+  { signToken, generateRefreshToken, hashToken },
+  async (contactId, payload) => {
+  // Send a real chat message
+  const room = await roomRepo.findPrivateRoomByMembers(payload.userId, contactId);
+  if (room) {
+    try {
+      const message = await messageService.sendMessage(payload.userId, room.roomId, payload.message);
+      io.to(`room_${room.roomId}`).emit('new_message', message);
+    } catch (err) {
+      console.error('Failed to auto-send emergency message:', err);
+      // Fallback to basic socket alert if messaging fails
+      io.to(`user_${contactId}`).emit('emergency_alert', payload);
+    }
+  } else {
+    // Fallback to basic socket alert if they have no private room
+    io.to(`user_${contactId}`).emit('emergency_alert', payload);
+  }
+}, friendRepo);
 const roomService = makeRoomService(roomRepo, roomMemberRepo, (roomId, eventName, payload) =>
   io.to(`room_${roomId}`).emit(eventName as any, payload),
   friendRepo,
+  userRepo,
+  messageRepo,
 );
 const messageService = makeMessageService(messageRepo, roomRepo, roomMemberRepo);
 const folderService = makeFolderService(folderRepo, roomMemberRepo);
@@ -83,6 +117,7 @@ const friendService = makeFriendService(friendRepo, (userId, eventName, payload)
   io.to(`user_${userId}`).emit(eventName as any, payload);
 }, {
   markPrivateReadOnly: roomService.markPrivateReadOnly,
+  createPrivate: (userA: string, userB: string) => roomService.createPrivate(userA, userB),
   reopenPrivateRoom: roomService.reopenPrivateRoom,
 });
 const friendController = makeFriendController(friendService);
@@ -99,7 +134,12 @@ app.use("/api/v1/blocks", makeBlockRoutes(friendController));
 app.use(errorHandler);
 
 attachSocketAuth(io);
-attachSockets(io, { messageService, messageRepository: messageRepo, roomMemberRepository: roomMemberRepo });
+attachSockets(io, {
+  messageService,
+  messageRepository: messageRepo,
+  roomMemberRepository: roomMemberRepo,
+  friendRepository: friendRepo
+});
 
 if (require.main === module) {
   startInactivityJob(userRepo, userService);

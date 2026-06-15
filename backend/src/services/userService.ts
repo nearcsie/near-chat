@@ -8,11 +8,14 @@ import type {
   JwtPayload,
   MyProfile,
   PublicUser,
+  SearchUserResult,
   User,
   UserProfile,
   UserSettings,
 } from '../../../shared/types';
+
 import { ConflictError, NotFoundError, ValidationError } from '../errors/AppError';
+import { removeManagedAvatar, saveAvatarUpload } from '../lib/avatarUpload';
 import {
   updateMeSchema,
   updateSettingsSchema,
@@ -20,9 +23,14 @@ import {
   type UpdateMeInput,
   type UpdateSettingsInput,
 } from '../validators/userSchemas';
+import { getRefreshTokenTtlMs } from '../auth/refreshTokenTtl';
+
+import type { IRefreshTokenRepository } from '../repositories/IRefreshTokenRepository';
 
 interface JwtHelper {
   signToken(payload: JwtPayload): string;
+  generateRefreshToken(): string;
+  hashToken(token: string): string;
 }
 
 interface EmergencyAlertResult {
@@ -65,10 +73,12 @@ const toUserSettings = (
 export const makeUserService = (
   repo: IUserRepository,
   emergencyContactRepo: IEmergencyContactRepository,
+  refreshTokenRepo: IRefreshTokenRepository,
   jwt: JwtHelper,
-  notifyEmergencyContact?: (contactId: string, payload: { userId: string; message: string }) => void,
+  notifyEmergencyContact?: (contactId: string, payload: { userId: string; message: string }) => void | Promise<void>,
+  friendRepo?: any,
 ) => {
-  const notifyContacts = async (userId: string, fallbackMessage: string): Promise<EmergencyAlertResult> => {
+  const notifyContacts = async (userId: string, fallbackMessage: string, isTest: boolean = false): Promise<EmergencyAlertResult> => {
     const user = await repo.findById(userId);
     if (!user) throw new NotFoundError('user', userId);
 
@@ -79,18 +89,31 @@ export const makeUserService = (
 
     const recipients: string[] = [];
     for (const contact of contacts) {
-      notifyEmergencyContact?.(contact.contactId, {
-        userId,
-        message: contact.message || fallbackMessage,
-      });
+      const msg = (isTest ? '(測試) ' : '') + (contact.message || fallbackMessage);
+      if (notifyEmergencyContact) {
+        await notifyEmergencyContact(contact.contactId, {
+          userId,
+          message: msg,
+        });
+      }
       recipients.push(contact.contactId);
     }
 
     return { alerted: true, recipients };
   };
 
+  const issueRefreshToken = async (userId: string): Promise<string> => {
+    const refreshToken = jwt.generateRefreshToken();
+    await refreshTokenRepo.create({
+      userId,
+      tokenHash: jwt.hashToken(refreshToken),
+      expiresAt: new Date(Date.now() + getRefreshTokenTtlMs()),
+    });
+    return refreshToken;
+  };
+
   return {
-    async register(data: RegisterRequest): Promise<AuthResponse> {
+    async register(data: RegisterRequest): Promise<AuthResponse & { refreshToken: string }> {
       const existingUser = await repo.findByEmail(data.email);
       if (existingUser) {
         throw new ConflictError('Email already in use');
@@ -110,13 +133,16 @@ export const makeUserService = (
         name: user.name
       });
 
+      const refreshToken = await issueRefreshToken(user.userId);
+
       return {
         token,
+        refreshToken,
         user: toPublicUser(user)
       };
     },
 
-    async login(data: LoginRequest): Promise<AuthResponse> {
+    async login(data: LoginRequest): Promise<AuthResponse & { refreshToken: string }> {
       const user = await repo.findByEmail(data.email);
       if (!user || user.deletedAt) {
         throw new ValidationError('Invalid email or password');
@@ -134,8 +160,11 @@ export const makeUserService = (
         name: user.name
       });
 
+      const refreshToken = await issueRefreshToken(user.userId);
+
       return {
         token,
+        refreshToken,
         user: toPublicUser(user)
       };
     },
@@ -173,12 +202,43 @@ export const makeUserService = (
       }
 
       if (parsed.data.password !== undefined) {
+        if (!parsed.data.currentPassword) {
+          throw new ValidationError('Current password is required to change password');
+        }
+        const currentUser = await repo.findById(userId);
+        if (!currentUser) throw new NotFoundError('user', userId);
+
+        const isMatch = await bcrypt.compare(parsed.data.currentPassword, currentUser.passwordHash);
+        if (!isMatch) {
+          throw new ValidationError('Incorrect current password');
+        }
+
         const salt = await bcrypt.genSalt(10);
         updateData.passwordHash = await bcrypt.hash(parsed.data.password, salt);
       }
 
       const updated = await repo.update(userId, updateData);
       return toMyProfile(updated);
+    },
+
+    async uploadAvatar(userId: string, file: Express.Multer.File): Promise<MyProfile> {
+      const currentUser = await repo.findById(userId);
+      if (!currentUser) {
+        throw new NotFoundError('user', userId);
+      }
+
+      const avatarUrl = await saveAvatarUpload(userId, file);
+
+      try {
+        const updated = await repo.update(userId, { avatarUrl });
+        if (currentUser.avatarUrl && currentUser.avatarUrl !== avatarUrl) {
+          await removeManagedAvatar(currentUser.avatarUrl);
+        }
+        return toMyProfile(updated);
+      } catch (error) {
+        await removeManagedAvatar(avatarUrl);
+        throw error;
+      }
     },
 
     async getMySettings(userId: string): Promise<UserSettings> {
@@ -229,7 +289,7 @@ export const makeUserService = (
     },
 
     async triggerEmergencyAlert(userId: string, message = 'Emergency alert triggered'): Promise<EmergencyAlertResult> {
-      return notifyContacts(userId, message);
+      return notifyContacts(userId, message, true);
     },
 
     async checkInactivity(userId: string, now = new Date()): Promise<EmergencyAlertResult> {
@@ -257,13 +317,112 @@ export const makeUserService = (
       return notifyContacts(userId, 'User has exceeded their inactivity warning threshold');
     },
 
-    async search(query: string): Promise<PublicUser[]> {
-      const parsed = searchQuerySchema.safeParse({ q: query });
+    async search(query: string, mode?: 'name' | 'userId' | 'email', currentUserId?: string): Promise<SearchUserResult[]> {
+      const parsed = searchQuerySchema.safeParse({ q: query, mode, friendsOnly: !!currentUserId });
       if (!parsed.success) {
         throw new ValidationError(parsed.error.issues[0]?.message ?? 'Invalid query');
       }
-      const users = await repo.search(parsed.data.q);
-      return users.map(toPublicUser);
+
+      let users: any[] = [];
+      if (currentUserId && friendRepo) {
+        const friendships = await friendRepo.getFriends(currentUserId);
+        const searchVal = parsed.data.q.toLowerCase();
+
+        const matchingFriends = friendships.filter((f: any) => {
+          const u = f.friend;
+          if (parsed.data.mode === 'userId') {
+            return u.userId.toLowerCase() === searchVal;
+          } else if (parsed.data.mode === 'email') {
+            return u.email && u.email.toLowerCase() === searchVal;
+          } else if (parsed.data.mode === 'name') {
+            return u.name.toLowerCase().includes(searchVal);
+          } else {
+            return (
+              u.name.toLowerCase().includes(searchVal) ||
+              u.userId.toLowerCase() === searchVal ||
+              (u.email && u.email.toLowerCase().includes(searchVal))
+            );
+          }
+        });
+
+        users = matchingFriends.map((f: any) => ({
+          userId: f.friend.userId,
+          name: f.friend.name,
+          email: f.friend.email,
+          avatarUrl: f.friend.avatarUrl,
+        }));
+      } else {
+        const dbUsers = await repo.search(parsed.data.q, parsed.data.mode);
+        users = dbUsers.map((u) => ({
+          userId: u.userId,
+          name: u.name,
+          email: u.email,
+          avatarUrl: u.avatarUrl,
+        }));
+      }
+
+      return users.map((user) => {
+        const result: SearchUserResult = {
+          userId: user.userId,
+          name: user.name,
+          avatarUrl: user.avatarUrl,
+        };
+        if (parsed.data.mode !== 'name') {
+          result.email = user.email;
+        }
+        return result;
+      });
+    },
+
+    async refresh(refreshToken: string): Promise<AuthResponse & { refreshToken: string }> {
+      const tokenHash = jwt.hashToken(refreshToken);
+      const tokenRecord = await refreshTokenRepo.findByHash(tokenHash);
+      if (!tokenRecord) {
+        throw new ValidationError('Invalid refresh token');
+      }
+
+      if (tokenRecord.revokedAt) {
+        if (tokenRecord.replacedBy) {
+          await refreshTokenRepo.revokeAllForUser(tokenRecord.userId);
+          throw new ValidationError('Refresh token has been reused and revoked');
+        }
+        throw new ValidationError('Refresh token has been revoked');
+      }
+
+      if (new Date() > new Date(tokenRecord.expiresAt)) {
+        throw new ValidationError('Refresh token expired');
+      }
+
+      const user = await repo.findById(tokenRecord.userId);
+      if (!user || user.deletedAt) {
+        throw new ValidationError('User not found or deleted');
+      }
+
+      const newAccessToken = jwt.signToken({
+        userId: user.userId,
+        name: user.name,
+      });
+      const newRefreshToken = jwt.generateRefreshToken();
+
+      await refreshTokenRepo.rotate(tokenRecord.tokenId, {
+        userId: user.userId,
+        tokenHash: jwt.hashToken(newRefreshToken),
+        expiresAt: new Date(Date.now() + getRefreshTokenTtlMs()),
+      });
+
+      return {
+        token: newAccessToken,
+        refreshToken: newRefreshToken,
+        user: toPublicUser(user),
+      };
+    },
+
+    async revokeToken(refreshToken: string): Promise<void> {
+      const tokenHash = jwt.hashToken(refreshToken);
+      const tokenRecord = await refreshTokenRepo.findByHash(tokenHash);
+      if (tokenRecord) {
+        await refreshTokenRepo.revoke(tokenRecord.tokenId);
+      }
     },
   };
 };

@@ -21,6 +21,8 @@ function mapRowToRoomSummary(row: any): RoomSummary {
   const summary: RoomSummary = {
     ...mapRowToRoom(row),
     unreadCount: Number(row.unread_count ?? 0),
+    otherMemberId: row.other_member_id ?? undefined,
+    lastReadId: row.last_read_id ?? undefined,
   };
 
   if (row.latest_message_id) {
@@ -71,11 +73,13 @@ export class RoomRepository implements IRoomRepository {
     const res = await this.db.query(
       `SELECT
          cr.*,
+         rm.last_read_id AS last_read_id,
          latest.message_id AS latest_message_id,
          latest.sender_id AS latest_sender_id,
          latest.content AS latest_content,
          latest.sent_at AS latest_sent_at,
-         COALESCE(unread.unread_count, 0) AS unread_count
+         COALESCE(unread.unread_count, 0) AS unread_count,
+         (SELECT rm2.user_id::text FROM room_members rm2 WHERE rm2.room_id = cr.room_id AND rm2.user_id != $1 LIMIT 1) AS other_member_id
        FROM chat_rooms cr
        JOIN room_members rm ON rm.room_id = cr.room_id
        LEFT JOIN messages last_read ON last_read.message_id = rm.last_read_id
@@ -95,6 +99,7 @@ export class RoomRepository implements IRoomRepository {
            WHERE m.room_id = cr.room_id
              AND (cr.view_history = true OR m.sent_at >= rm.join_time)
              AND (last_read.sent_at IS NULL OR m.sent_at > last_read.sent_at)
+             AND (m.sender_id IS NULL OR m.sender_id != $1)
            LIMIT 100
          ) _sub
        ) unread ON true

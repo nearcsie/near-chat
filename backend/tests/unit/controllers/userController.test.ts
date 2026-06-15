@@ -43,6 +43,7 @@ describe('userController', () => {
     getMe: vi.fn(),
     getUserProfile: vi.fn(),
     updateMe: vi.fn(),
+    uploadAvatar: vi.fn(),
     getMySettings: vi.fn(),
     updateMySettings: vi.fn(),
     deleteMe: vi.fn(),
@@ -102,6 +103,36 @@ describe('userController', () => {
     expect(next).toHaveBeenCalledWith(expect.any(ValidationError));
   });
 
+  it('uploads avatar for the current user', async () => {
+    const updated = { ...myProfile, avatarUrl: '/uploads/avatars/user-1.png' };
+    service.uploadAvatar.mockResolvedValue(updated);
+    const res = mockRes();
+    const next = vi.fn();
+    const file = {
+      fieldname: 'file',
+      originalname: 'avatar.png',
+      encoding: '7bit',
+      mimetype: 'image/png',
+      size: 16,
+      buffer: Buffer.from([0x89, 0x50, 0x4e, 0x47]),
+    } as Express.Multer.File;
+
+    await ctrl.uploadAvatar(authedReq({ file }), res, next);
+
+    expect(service.uploadAvatar).toHaveBeenCalledWith('user-1', file);
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith(updated);
+  });
+
+  it('rejects avatar uploads without a file', async () => {
+    const res = mockRes();
+    const next = vi.fn();
+
+    await ctrl.uploadAvatar(authedReq(), res, next);
+
+    expect(next).toHaveBeenCalledWith(expect.any(ValidationError));
+  });
+
   it('returns my settings', async () => {
     service.getMySettings.mockResolvedValue(settings);
     const res = mockRes();
@@ -147,14 +178,35 @@ describe('userController', () => {
   });
 
   it('searches users', async () => {
-    service.search.mockResolvedValue([{ userId: 'user-2', name: 'Bob', avatarUrl: undefined }]);
+    service.search.mockResolvedValue([{ userId: 'user-2', name: 'Bob', email: 'bob@example.com', avatarUrl: undefined }]);
     const res = mockRes();
     const next = vi.fn();
 
     await ctrl.search(authedReq({ query: { q: 'bob' } }), res, next);
 
-    expect(service.search).toHaveBeenCalledWith('bob');
-    expect(res.json).toHaveBeenCalledWith([{ userId: 'user-2', name: 'Bob', avatarUrl: undefined }]);
+    expect(service.search).toHaveBeenCalledWith('bob', undefined);
+    expect(res.json).toHaveBeenCalledWith([{ userId: 'user-2', name: 'Bob', email: 'bob@example.com', avatarUrl: undefined }]);
+  });
+
+  it('searches users with mode', async () => {
+    service.search.mockResolvedValue([{ userId: 'user-2', name: 'Bob', email: 'bob@example.com', avatarUrl: undefined }]);
+    const res = mockRes();
+    const next = vi.fn();
+
+    await ctrl.search(authedReq({ query: { q: 'bob', mode: 'email' } }), res, next);
+
+    expect(service.search).toHaveBeenCalledWith('bob', 'email');
+    expect(res.json).toHaveBeenCalledWith([{ userId: 'user-2', name: 'Bob', email: 'bob@example.com', avatarUrl: undefined }]);
+  });
+
+  it('rejects invalid mode value', async () => {
+    const res = mockRes();
+    const next = vi.fn();
+
+    await ctrl.search(authedReq({ query: { q: 'bob', mode: 'invalid' } }), res, next);
+
+    expect(next).toHaveBeenCalledWith(expect.any(ValidationError));
+    expect(service.search).not.toHaveBeenCalled();
   });
 
   it('soft deletes the current user', async () => {

@@ -11,6 +11,7 @@ coverage
 # next.js
 .next/
 out/
+frontend/next-env.d.ts
 
 # production
 build/
@@ -46,6 +47,7 @@ yarn-error.log*
 .claire/
 .omc/
 .agents/
+.gemini/
 
 # MCP server (local tool, not for repo)
 mcp/

@@ -1,17 +1,21 @@
-# Development Guide
+# Developer & Testing Guide
 
-## Quick Start
+This document provides setup instructions, development workflows, testing guidelines, and test data descriptions for the application.
 
-### 1. Prepare Environment Variables
+---
+
+## 1. Quick Start
+
+### Step 1: Prepare Environment Variables
 Copy the `.env.example` file from the project root and rename it to `.env`:
 
 ```bash
 cp .env.example .env
 ```
 
-The `.env` file is already listed in `.gitignore`, so do not commit it to the Git repository.
+*Note: The `.env` file is listed in `.gitignore` and should not be committed to the Git repository.*
 
-### 2. Start the Containers
+### Step 2: Start the Containers
 Use Docker Compose to start all services:
 
 ```bash
@@ -22,7 +26,15 @@ docker compose build
 docker compose up -d
 ```
 
-### 3. Check the Status
+Uploaded files are stored in whatever source is mounted to `/app/uploads` for the backend container. By default, this is the Docker named volume `app_uploads`. Attachments live under `/app/uploads/attachments/` and avatars use `/app/uploads/avatars/`.
+
+If you want uploads to go to a custom folder on the host instead of the default named volume, set `UPLOADS_MOUNT_SOURCE` in `.env` before running Docker Compose:
+
+```env
+UPLOADS_MOUNT_SOURCE=C:/chat-uploads
+```
+
+### Step 3: Check Container Status
 
 ```bash
 # View container status
@@ -34,61 +46,52 @@ docker compose logs -f backend
 
 ---
 
-## Environment Variables and Constants
+## 2. Environment Variables & Port Access
 
-This project uses environment variables to manage deployment constants in one place.
+### Local Service Ports
 
-### Development
-1. Create `.env`: copy `.env.example` and rename it before your first local setup.
-2. Security: `.env` is ignored by Git to protect local secrets.
-3. Frontend note: any browser-accessible environment variable must start with `NEXT_PUBLIC_`.
+Docker Compose exposes different host ports from the container-internal ports:
 
-### Deployment Notes
-1. Production should not depend on a checked-in `.env` file. Inject values through the platform settings instead, such as Vercel or AWS Secrets Manager.
-2. For self-hosted deployments, create a production `.env` file in the project root and apply strict permissions, for example `chmod 600 .env`.
-3. Template maintenance: when adding new variables, update `.env.example` as well, but keep values blank or use placeholder data.
+| Service | Host URL / port | Container port | Description |
+|---------|------------------|----------------|-------------|
+| **Frontend** | [http://localhost:3005](http://localhost:3005) | 3000 | Next.js frontend web app |
+| **Backend API** | [http://localhost:4005](http://localhost:4005) | 4000 | Express API & Socket.IO server |
+| **Database** | `localhost:5435` | 5432 | PostgreSQL 18 instance |
 
----
+For browser-facing frontend requests, set the API environment variable to:
+```env
+NEXT_PUBLIC_API_URL=http://localhost:4005
+```
 
-## Frontend Development
-
-The frontend is a Next.js application in the `frontend/` directory.
-
-### Common Commands
-- Start the development server: `pnpm dev`
-- Build for production: `pnpm build`
-- Start the production server: `pnpm start`
-- Run lint checks: `pnpm lint`
-
-### Notes
-1. The project uses the App Router structure under `frontend/app/`.
-2. `frontend/next.config.ts` currently uses the default configuration, so no extra Next.js settings are required at the moment.
-3. If you add a new browser-side environment variable, prefix it with `NEXT_PUBLIC_`.
+### Environment Rules
+1. **Frontend prefix**: Any environment variable that must be readable on the browser-side of Next.js must be prefixed with `NEXT_PUBLIC_`.
+2. **Production injection**: Production should not depend on a checked-in `.env` file. Inject settings through your hosting platform configuration instead (e.g. Vercel, AWS Secrets Manager).
+3. **Template maintenance**: When adding new environment variables, update `.env.example` to document them, leaving values blank or using placeholders.
 
 ---
 
-## Database Management
+## 3. Database Management & Seeding
 
 ### Initialization Flow
 When setting up the project for the first time, you must initialize the database schema. Ensure your Docker containers are running, then apply the migrations:
 
 ```bash
 docker compose exec backend pnpm run migrate:up
+```
+
+To seed the database with mock data:
+```bash
 docker compose exec backend pnpm run db:seed
 ```
 
 ### Common Commands
-- Create a new migration file: `docker compose exec backend pnpm run migrate:create <name>`
-- Run migrations up: `docker compose exec backend pnpm run migrate:up`
-- Roll migrations back: `docker compose exec backend pnpm run migrate:down`
-- Seed database with mock data: `docker compose exec backend pnpm run db:seed`
-
-**Note on Seeding**: The seed script (`backend/src/db/seed.ts`) generates 6 test users (e.g. `alice@test.com`, `bob@test.com`), mock friendships, and a sample group room. Default password is `password123`. It is idempotent and resets existing mock data each time.
+- **Create a new migration**: `docker compose exec backend pnpm run migrate:create <name>`
+- **Run migrations**: `docker compose exec backend pnpm run migrate:up`
+- **Rollback migrations**: `docker compose exec backend pnpm run migrate:down`
+- **Seed database**: `docker compose exec backend pnpm run db:seed`
 
 ### Repairing a Broken Dev Database
-If you encounter `relation ... already exists` errors during migration, or if `node-pg-migrate` reports that a new migration is preceding an already-run migration, your local database state is out of sync with the migration history (e.g. missing `pgmigrations` table). 
-
-Because this is a development database, the safest and clearest way to repair it is to wipe the database volume and run migrations from a clean state:
+If you encounter `relation ... already exists` errors during migration, or migration state goes out of sync:
 
 ```bash
 # 1. Stop containers and wipe the database volume
@@ -103,68 +106,145 @@ docker compose exec backend pnpm run migrate:up
 
 ---
 
-## Service URLs
+## 4. Default Seed Test Data
 
-Docker Compose exposes different host ports from the container-internal ports:
+Running `db:seed` populates the development database with the following reproducible test data. **The default password for all test users is: `password123`.**
 
-| Service | Host URL / port | Container port |
-|---------|------------------|----------------|
-| Frontend | http://localhost:3005 | 3000 |
-| Backend API | http://localhost:4005 | 4000 |
-| Database | localhost:5435 | 5432 |
+### Seed Users
+| Name | Email | User ID | Role / Note |
+| --- | --- | --- | --- |
+| **Alice** | `alice@test.com` | `11111111-1111-4111-a111-111111111111` | Default Group Owner |
+| **Bob** | `bob@test.com` | `22222222-2222-4222-a222-222222222222` | Default Group Admin |
+| **Charlie** | `charlie@test.com` | `33333333-3333-4333-a333-333333333333` | Member |
+| **Dave** | `dave@test.com` | `44444444-4444-4444-a444-444444444444` | Out-of-group |
+| **Eve** | `eve@test.com` | `55555555-5555-4555-a555-555555555555` | Out-of-group |
+| **Frank** | `frank@test.com` | `66666666-6666-4666-a666-666666666666` | Member |
 
-Use `NEXT_PUBLIC_API_URL=http://localhost:4005` for browser-facing frontend requests when running through Docker Compose.
+### Relationships & Groups
+* **Friendships**:
+  - Alice & Bob (Accepted)
+  - Alice & Charlie (Accepted)
+  - Dave → Alice (Pending request)
+* **Blocks**:
+  - Eve blocks Alice.
+* **Study Group Room**:
+  - **Room ID**: `77777777-7777-4777-a777-777777777777`
+  - **Invite Code**: `STUDY123`
+  - **Members**: Alice (Owner), Bob (Admin), Charlie (Member), Frank (Member)
+  - **Initial messages**:
+    1. *Alice*: "Hello everyone! Welcome to the study group."
+    2. *Bob*: "Hi Alice, thanks for inviting me!"
 
 ---
 
-## Testing Strategy
+## 5. Testing Guide
 
-This project uses three separate containers for testing. Each layer is tested in the container that matches its runtime.
+### Testing Architecture
+The development environment runs entirely within Docker. There is no `node_modules` on the host machine. All Vitest tests must be executed inside the backend container using `docker compose exec`.
 
-### Container Roles
-
-| Container | Role | When to use |
-|-----------|------|-------------|
-| `backend` | TypeScript type-check + unit tests | `tsc --noEmit`, Vitest unit tests (mocked repo) |
-| `frontend` | TypeScript type-check | `tsc --noEmit` |
-| `db` | Integration tests only | Vitest integration tests that need a real DB |
-
-> **Note:** The `db` container is the production Postgres instance. Integration tests should use a separate ephemeral container defined in `docker-compose.test.yml` (see Issue #2).
+Testing database setup: Integration tests run against an ephemeral Postgres test database instance (`db-test`) defined in `docker-compose.test.yml`, separating development data from tests.
 
 ### Running TypeScript Type Checks
-
 ```bash
-# Backend
+# Backend Check
 docker compose exec backend ./node_modules/.bin/tsc --noEmit
 
-# Frontend
+# Frontend Check
 docker compose exec frontend ./node_modules/.bin/tsc --noEmit
 ```
 
-### Running Tests
+### Running Unit Tests
+Unit tests do not require a database connection.
+```bash
+docker compose exec backend pnpm run test:unit
+```
+
+### Running Integration Tests
+Integration tests require starting the ephemeral test database and applying migrations:
 
 ```bash
-# Unit tests (no DB required)
-docker compose exec backend pnpm run test:unit
+# 1. Start the ephemeral test database
+pnpm -C backend run test:db:up
+# Or: docker compose -f docker-compose.test.yml up -d --wait
 
-# Start ephemeral test DB, then run integration tests
-docker compose exec backend pnpm run test:db:up
+# 2. Apply migrations to the test database (needed on container spin-up)
+docker compose exec -e DATABASE_URL=postgresql://postgres:postgres@db-test:5432/ntnu_test backend pnpm run migrate:up
+
+# 3. Run the integration test suite
 docker compose exec backend pnpm run test:integration
+
+# 4. Stop the test database
+pnpm -C backend run test:db:down
+# Or: docker compose -f docker-compose.test.yml down
 ```
 
-### Why Non-Root Containers
-
-Both `backend` and `frontend` containers run as the built-in `node` user (UID 1000) rather than root. This ensures any files written back to the bind-mounted source directory on the host are owned by the current user, preventing root-owned file accumulation.
-
-The `db` container is intentionally left as-is — Postgres manages its own internal permission scheme and should not be modified.
-
-### Shared Types
-
-`shared/` and `tsconfig.base.json` (repo root) are mounted read-only into both `backend` and `frontend` containers:
-
-```
-/tsconfig.base.json   ← ./tsconfig.base.json
-/shared/              ← ./shared/
+### Running All Tests
+```bash
+pnpm -C backend run test:db:up
+docker compose exec backend pnpm run test
+pnpm -C backend run test:db:down
 ```
 
-This allows `import type { X } from '@shared/types'` to resolve correctly inside containers without a monorepo workspace setup.
+---
+
+## 6. Writing Tests
+
+### Unit Tests
+* **Path**: `backend/tests/unit/**/*.test.ts`
+* **Guidelines**: Mock database repositories using `vi.mock()` to test business logic in isolation without making real database connections.
+
+```typescript
+// Example: backend/tests/unit/services/userService.test.ts
+import { describe, it, expect } from 'vitest';
+
+describe('userService', () => {
+  it('adds two numbers', () => {
+    expect(1 + 1).toBe(2);
+  });
+});
+```
+
+### Integration Tests
+* **Path**: `backend/tests/integration/**/*.test.ts`
+* **Guidelines**: Tests query the real PostgreSQL test database. Use the helpers `testPool` and `resetDb` to manage connections and clear tables before each test.
+
+```typescript
+// Example: backend/tests/integration/repositories/userRepository.test.ts
+import { beforeEach, afterAll, describe, it, expect } from 'vitest';
+import { testPool } from '../helpers/testPool';
+import { resetDb } from '../helpers/resetDb';
+
+describe('userRepository', () => {
+  beforeEach(async () => {
+    await resetDb(); // Clears users, rooms, messages, room_members
+  });
+
+  afterAll(async () => {
+    await testPool.end(); // Closes pool connection
+  });
+
+  it('queries database successfully', async () => {
+    const result = await testPool.query('SELECT 1 + 1 AS sum');
+    expect(result.rows[0].sum).toBe(2);
+  });
+});
+```
+
+---
+
+## 7. Troubleshooting
+
+* **`vitest: not found`**: Backend container `node_modules` is out of sync. Rebuild container:
+  ```bash
+  docker compose rm -v -s -f backend
+  docker compose up -d --build backend
+  ```
+* **`DATABASE_URL_TEST is not set`**: Ensure `backend/.env.test` exists. If not:
+  ```bash
+  cp backend/.env.test.example backend/.env.test
+  ```
+* **`db-test` connection hangs/timeouts**: Ensure `db-test` is running using `docker compose -f docker-compose.test.yml ps`. Spin it up if down.
+* **`TRUNCATE` failures**: Make sure migrations were applied to the test DB using:
+  ```bash
+  docker compose exec -e DATABASE_URL=postgresql://postgres:postgres@db-test:5432/ntnu_test backend pnpm run migrate:up
+  ```

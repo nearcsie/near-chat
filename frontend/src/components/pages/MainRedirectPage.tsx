@@ -3,20 +3,38 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useChat } from "@/context/ChatContext";
+import { useTranslation } from "@/hooks/useTranslation";
 
 export default function MainRedirectPage() {
   const router = useRouter();
-  const { rooms } = useChat();
+  const { rooms, roomsInitialized } = useChat();
+  const { t } = useTranslation();
 
   useEffect(() => {
-    if (rooms.length > 0) {
+    if (roomsInitialized && rooms.length > 0) {
       router.replace(`/chat/${rooms[0].id}`);
     }
-  }, [rooms, router]);
+  }, [rooms, roomsInitialized, router]);
+
+  if (!roomsInitialized) {
+    return (
+      <div className="flex flex-1 items-center justify-center bg-background font-sans text-foreground animate-pulse">
+        {t("common.loading")}
+      </div>
+    );
+  }
+
+  if (rooms.length === 0) {
+    return (
+      <div className="flex flex-1 items-center justify-center bg-background font-sans text-foreground">
+        {t("mainRedirect.emptyChats")}
+      </div>
+    );
+  }
 
   return (
-    <div className="flex-1 flex items-center justify-center bg-background text-foreground font-sans animate-pulse">
-      載入聊天室中...
+    <div className="flex flex-1 items-center justify-center bg-background font-sans text-foreground animate-pulse">
+      {t("common.loading")}
     </div>
   );
 }
