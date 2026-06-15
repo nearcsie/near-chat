@@ -558,31 +558,33 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
               onChange={handleFileSelected}
             />
             {pendingAttachments.length > 0 && (
-              <div className="flex flex-col gap-2 max-h-40 overflow-y-auto">
-                {pendingAttachments.map((file, index) => (
-                  <div key={index} className="bg-surface-muted border border-border-primary px-6 py-2 flex items-center justify-between text-xs select-none rounded-sm">
-                    <div className="flex-1 min-w-0 border-l-2 border-primary pl-2">
-                      <span className="font-bold text-foreground block">
-                        {t("chatroom.attachmentPreview")} ({index + 1}/{pendingAttachments.length})
-                      </span>
-                      <p className="text-foreground truncate mt-0.5">{file.name}</p>
-                      <p className="text-text-muted truncate mt-0.5 font-mono">
-                        {file.type || "application/octet-stream"} · {formatFileSize(file.size)}
-                      </p>
+              <div className="bg-surface-muted border border-border-primary px-4 py-3 flex flex-col gap-2 select-none rounded-sm">
+                <span className="text-[10px] font-bold text-text-muted uppercase tracking-widest px-1">
+                  {t("chatroom.attachmentPreview")} ({pendingAttachments.length})
+                </span>
+                <div className="flex flex-col gap-2.5 max-h-40 overflow-y-auto pr-1">
+                  {pendingAttachments.map((file, idx) => (
+                    <div key={idx} className="flex items-center gap-3 text-xs border-l-2 border-primary pl-2.5 py-0.5">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-foreground truncate font-semibold">{file.name}</p>
+                        <p className="text-text-muted text-[10px] font-mono truncate mt-0.5">
+                          {file.type || "application/octet-stream"} · {formatFileSize(file.size)}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleRemovePendingAttachment(idx)}
+                        disabled={isUploadingAttachment}
+                        className="text-text-muted hover:text-foreground cursor-pointer p-0.5 border border-transparent hover:border-border-primary rounded-sm disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+                        title={t("chatroom.cancel")}
+                      >
+                        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => handleRemovePendingAttachment(index)}
-                      disabled={isUploadingAttachment}
-                      className="text-text-muted hover:text-foreground cursor-pointer p-0.5 border border-transparent hover:border-border-primary rounded-sm disabled:opacity-50 disabled:cursor-not-allowed shrink-0 ml-4"
-                      title={t("chatroom.cancel")}
-                    >
-                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </button>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
             )}
 
