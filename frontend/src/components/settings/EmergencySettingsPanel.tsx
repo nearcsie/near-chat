@@ -20,9 +20,9 @@ export default function EmergencySettingsPanel() {
     triggerEmergencyAlertNow,
   } = useChat();
   const [warningEnabled, setWarningEnabled] = useState(true);
-  const [warningDays, setWarningDays] = useState(7);
+  const [warningDays, setWarningDays] = useState<number | "">(7);
   const [demoWarningEnabled, setDemoWarningEnabled] = useState(false);
-  const [demoWarningSeconds, setDemoWarningSeconds] = useState(30);
+  const [demoWarningSeconds, setDemoWarningSeconds] = useState<number | "">(30);
   const [emergencyContacts, setEmergencyContacts] = useState<EmergencyContact[]>([]);
   const [defaultEmergencyMessage, setDefaultEmergencyMessage] = useState("");
   const [feedback, setFeedback] = useState<SettingsFeedback | null>(null);
@@ -84,9 +84,9 @@ export default function EmergencySettingsPanel() {
     event.preventDefault();
     const settings: EmergencySettings = {
       warningEnabled,
-      warningDays: Math.max(1, warningDays),
+      warningDays: warningDays === "" ? 14 : Math.max(1, Number(warningDays)),
       demoWarningEnabled,
-      demoWarningSeconds: Math.max(1, demoWarningSeconds),
+      demoWarningSeconds: demoWarningSeconds === "" ? 30 : Math.max(1, Number(demoWarningSeconds)),
       contacts: emergencyContacts,
     };
     try {
@@ -151,10 +151,16 @@ export default function EmergencySettingsPanel() {
           <div className="grid grid-cols-1 md:grid-cols-[180px_minmax(0,1fr)] gap-4">
             <Input
               label={t("emergency.warningDays")}
-              type="number"
-              min={1}
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
               value={warningDays}
-              onChange={(event) => setWarningDays(Number(event.target.value))}
+              onChange={(event) => {
+                const val = event.target.value;
+                if (/^[0-9]*$/.test(val)) {
+                  setWarningDays(val === "" ? "" : Number(val));
+                }
+              }}
             />
             <Input
               label={t("emergency.defaultAlertMessage")}
@@ -174,10 +180,16 @@ export default function EmergencySettingsPanel() {
           <div className="grid grid-cols-1 md:grid-cols-[180px_minmax(0,1fr)] gap-4">
             <Input
               label={"警示秒數"}
-              type="number"
-              min={1}
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
               value={demoWarningSeconds}
-              onChange={(event) => setDemoWarningSeconds(Number(event.target.value))}
+              onChange={(event) => {
+                const val = event.target.value;
+                if (/^[0-9]*$/.test(val)) {
+                  setDemoWarningSeconds(val === "" ? "" : Number(val));
+                }
+              }}
             />
             <Input
               label={t("emergency.defaultAlertMessage")}
