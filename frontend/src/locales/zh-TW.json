@@ -193,6 +193,8 @@
     "membersList": "成員列表 ({count})",
     "hideInfoPanel": "隱藏資訊欄",
     "showInfoPanel": "顯示資訊欄",
+    "searchMessages": "搜尋訊息",
+    "closeSearch": "關閉搜尋",
     "muted": "已靜音"
   },
   "profileCard": {
