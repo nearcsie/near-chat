@@ -142,6 +142,9 @@ export const makeRoomService = (
       if (!room) throw new NotFoundError('room', roomId);
       const caller = await roomMemberRepo.findMember(roomId, callerId);
       if (!caller) throw new ForbiddenError('User is not a member of this room');
+      if (caller.role === 'pending') {
+        return [caller];
+      }
       return roomMemberRepo.findByRoom(roomId);
     },
 
