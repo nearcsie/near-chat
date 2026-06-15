@@ -26,6 +26,10 @@ export const makeRoomService = (
   socialRepo?: { isBlocked(userA: string, userB: string): Promise<boolean>; areFriends(userA: string, userB: string): Promise<boolean> },
   userRepo?: IUserRepository,
   messageRepo?: IMessageRepository,
+  // Emits an event directly to a specific user's personal socket room (user_${userId}).
+  // Used to notify users of events they cannot receive via room broadcast (e.g., being
+  // approved into a group they haven't joined yet).
+  emitToUser?: (userId: string, eventName: string, payload: any) => void,
 ) => {
   const ensureMember = async (roomId: string, userId: string) => {
     const existing = await roomMemberRepo.findMember(roomId, userId);
@@ -156,8 +160,14 @@ export const makeRoomService = (
       await roomMemberRepo.add({ roomId: room.roomId, userId, role });
 
       if (role === 'member') {
+        // Notify existing room members that someone new joined.
         if (emitRoomEvent) {
           emitRoomEvent(room.roomId, 'room_update', { type: 'MEMBER_JOINED', data: { userId } });
+        }
+        // Notify the joining user directly so their room list refreshes immediately.
+        // They are not yet in the socket room, so the room broadcast above won't reach them.
+        if (emitToUser) {
+          emitToUser(userId, 'room_update', { type: 'ROOM_JOINED', roomId: room.roomId, data: {} });
         }
         if (userRepo && messageRepo) {
           const user = await userRepo.findById(userId);
@@ -261,6 +271,11 @@ export const makeRoomService = (
       await roomMemberRepo.update(roomId, targetUserId, { role: 'member' });
       if (emitRoomEvent) {
         emitRoomEvent(roomId, 'room_update', { type: 'MEMBER_APPROVED', data: { userId: targetUserId } });
+      }
+      // Notify the approved user directly — they are not yet subscribed to the
+      // room's socket channel, so the room broadcast above won't reach them.
+      if (emitToUser) {
+        emitToUser(targetUserId, 'room_update', { type: 'ROOM_JOINED', roomId, data: {} });
       }
 
       if (userRepo && messageRepo) {

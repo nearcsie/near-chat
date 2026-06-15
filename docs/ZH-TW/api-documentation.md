@@ -65,8 +65,9 @@
 | | `message_recalled` | 連線需驗證 | 訊息已被原發送者收回 |
 | | `user_typing` | 連線需驗證 | 其他成員正在輸入中之狀態 |
 | | `read_update` | 連線需驗證 | 其他成員已讀游標的更新 |
-| | `room_update` | 連線需驗證 | 房間設定變更、成員變動或被剔除之通知 |
-| | `friend_request` | 連線需驗證 | 收到新的好友邀請通知 |
+| | `room_update` | 連線需驗證 | 房間設定變更、成員變動或被剔除之通知。詳見 [room_update 子類型](#room_update-子類型)。 |
+| | `friend_request` | 連線需驗證 | 好友請求狀態變更的即時通知（已送出、已接受、已拒絕） |
+| | `user_status` | 連線需驗證 | 好友的上線 / 下線狀態變更 |
 | | `emergency_alert` | 連線需驗證 | 收到緊急聯絡人發送之警報通知 |
 | | `error` | 連線需驗證 | 事件處理失敗之錯誤回報 |
 
@@ -1357,6 +1358,7 @@ NEXT_PUBLIC_API_URL=http://localhost:4005
 - **URL**: 與 REST API 相同主機（預設埠為 `4000`）
 - **Namespace**: `/`
 - **驗證**: 連線時需帶上 `auth_token` Cookie 或 `Authorization: Bearer <token>` Header
+- **個人頻道**: 連線後，伺服器會自動將 socket 加入 `user_<userId>` 頻道。針對個人的事件（例如好友請求通知、入群批准）會透過此頻道推送，客戶端無需額外操作。
 
 ### 客戶端發送事件
 
@@ -1377,7 +1379,45 @@ NEXT_PUBLIC_API_URL=http://localhost:4005
 | `message_recalled` | `{ messageId: string }` | 訊息被收回 |
 | `user_typing` | `{ roomId: string, userId: string, isTyping: boolean }` | 其他成員的輸入狀態 |
 | `read_update` | `{ roomId: string, userId: string, messageId: string }` | 其他成員的已讀游標更新 |
-| `room_update` | `{ type: string, data: unknown }` | 房間設定變更、成員變動或被剔除之通知 |
-| `friend_request` | `{ requesterId: string, addresseeId: string, status: string, createdAt: string }` | 收到新的好友邀請 |
+| `room_update` | `{ type: string, roomId: string, data: unknown }` | 房間或成員狀態變更。`type` 欄位決定子類型，詳見 [`room_update` 子類型](#room_update-子類型)。 |
+| `friend_request` | `{ requesterId: string, addresseeId: string, status: 'pending' \| 'accepted' \| 'rejected', createdAt: string }` | 好友請求狀態變更通知。**收件方**（新邀請）與**發送方**（被接受／拒絕）都會收到此事件。客戶端收到後不論 `status` 為何，皆應重新拉取好友與待確認請求列表。 |
+| `user_status` | `{ userId: string, status: 'online' \| 'offline' }` | 好友的上線 / 下線狀態更新。於好友連線或斷線時推送。 |
 | `emergency_alert` | `{ userId: string, message: string }` | 收到緊急聯絡人的警報通知 |
 | `error` | `ApiError` | 事件處理失敗的錯誤回報 |
+
+---
+
+### `room_update` 子類型
+
+所有 `room_update` 事件共用信封格式 `{ type: string, roomId: string, data: any }`，`type` 欄位決定應如何處理 payload。
+
+#### 房間層級子類型
+廣播至房間的所有現有成員（`room_<roomId>` socket 頻道）。
+
+| `type` | `data` 格式 | 觸發時機 | 接收者 |
+| :--- | :--- | :--- | :--- |
+| `ROOM_SETTINGS_UPDATED` | `Room` 物件 | `PATCH /rooms/:id`（名稱、頭像、設定） | 所有房間成員 |
+| `ROOM_AVATAR_UPDATED` | `{ roomId: string, avatarUrl: string }` | 上傳房間頭像 | 所有房間成員 |
+| `ROOM_DELETED` | `{ roomId: string }` | `DELETE /rooms/:id`（封存／刪除） | 所有房間成員 |
+
+#### 成員層級子類型
+廣播至房間的所有現有成員。
+
+| `type` | `data` 格式 | 觸發時機 | 接收者 |
+| :--- | :--- | :--- | :--- |
+| `MEMBER_JOINED` | `{ userId: string }` | 使用者以邀請碼加入（無需審核） | 所有現有房間成員 |
+| `MEMBER_APPROVED` | `{ userId: string }` | 待審成員被管理員核准 | 所有現有房間成員 |
+| `MEMBER_UPDATED` | `{ userId: string, role?: string, nickname?: string, isMuted?: boolean }` | 成員角色／暱稱／靜音狀態變更 | 所有房間成員 |
+| `MEMBER_KICKED` | `{ userId: string }` | 成員被管理員移除 | 所有房間成員（含被移除者） |
+| `MEMBER_LEFT` | `{ userId: string }` | 成員主動離開 | 剩餘所有房間成員 |
+| `OWNERSHIP_TRANSFERRED` | `{ oldOwner: string, newOwner: string }` | 轉讓群組擁有權 | 所有房間成員 |
+| `USER_UPDATED` | `{ userId: string, name?: string, avatarUrl?: string }` | 成員更新自己的個人資料 | 該使用者所在的所有房間 |
+
+#### 個人專屬子類型
+**僅**推送至目標使用者的個人 socket 頻道（`user_<userId>`），不廣播至房間。
+
+| `type` | `data` 格式 | 觸發時機 | 接收者 |
+| :--- | :--- | :--- | :--- |
+| `ROOM_JOINED` | `{}` | 使用者以邀請碼加入**或**待審成員被核准 | 僅限加入 / 被核准的使用者 |
+
+> **客戶端處理建議**：收到 `ROOM_JOINED` 後，客戶端應呼叫 `GET /rooms` 重新整理房間列表，並對新出現的房間呼叫 `join_room` 以開始接收其推播事件。

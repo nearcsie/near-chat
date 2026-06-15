@@ -1158,6 +1158,16 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         type === 'OWNERSHIP_TRANSFERRED'
       ) {
         void loadGroupMembers(roomId);
+      } else if (type === 'ROOM_JOINED') {
+        // The current user was just approved into a group (or joined directly via
+        // invite code). Since they were not yet subscribed to the room's socket
+        // channel, the server pushes this event to their personal user channel.
+        // Refresh rooms/folders so the new room appears in the sidebar, then
+        // join its socket channel so future room events are received.
+        const activeTok = tokenRef.current;
+        if (activeTok) {
+          void refreshRoomsAndFolders(activeTok, currentUserId);
+        }
       }
     });
 

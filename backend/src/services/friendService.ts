@@ -69,11 +69,26 @@ export function makeFriendService(
         } else {
           await privateRooms?.reopenPrivateRoom?.(requesterId, userId);
         }
+        // Notify the original requester that their request was accepted so their
+        // friend list updates in real-time without a page refresh.
+        if (notifyUser) {
+          notifyUser(requesterId, 'friend_request', accepted);
+        }
         return accepted;
       } else {
         const rejected = await repo.rejectFriendRequest(requesterId, userId);
         if (!rejected) {
           throw new AppError(404, 'Friend request not found', 'NOT_FOUND');
+        }
+        // Notify the original requester that their request was rejected so they
+        // can remove the pending entry from their list without a page refresh.
+        if (notifyUser) {
+          notifyUser(requesterId, 'friend_request', {
+            requesterId,
+            addresseeId: userId,
+            status: 'rejected' as const,
+            createdAt: new Date(),
+          });
         }
         return { status: 'rejected' };
       }

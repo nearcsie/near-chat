@@ -132,6 +132,10 @@ const roomService = makeRoomService(
   friendRepo,
   userRepo,
   messageRepo,
+  // Emits directly to a user's personal socket room for targeted notifications.
+  (userId, eventName, payload) => {
+    io.to(`user_${userId}`).emit(eventName as any, payload);
+  },
 );
 const messageService = makeMessageService(messageRepo, roomRepo, roomMemberRepo);
 const folderService = makeFolderService(folderRepo, roomMemberRepo);
