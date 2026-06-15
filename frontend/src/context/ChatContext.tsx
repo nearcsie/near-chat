@@ -157,6 +157,7 @@ export interface User {
   demoWarningEnabled?: boolean;
   demoWarningSeconds?: number;
   lastActivity?: Date | string;
+  roomOrder?: Record<string, string[]>;
 }
 
 type StoredUser = User;
@@ -324,6 +325,7 @@ interface ChatContextType {
   activeProfilePopover: { instanceId: string; userId: string } | null;
   setActiveProfilePopover: React.Dispatch<React.SetStateAction<{ instanceId: string; userId: string } | null>>;
   refreshSocialData: () => Promise<void>;
+  updateRoomSorting: (nextOrder: Record<string, string[]>) => Promise<void>;
 }
 
 const ChatContext = createContext<ChatContextType | undefined>(undefined);
@@ -346,6 +348,7 @@ const toStoredUser = (
   demoWarningEnabled: settings?.demoWarningEnabled ?? false,
   demoWarningSeconds: settings?.demoWarningSeconds ?? 30,
   lastActivity: profile.lastActivity,
+  roomOrder: settings?.roomOrder ?? {},
 });
 
 const formatMessageTime = (value: Date | string): string => {
@@ -1915,6 +1918,16 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     });
   }, [rooms, friends, blockedUsers, currentUserId]);
 
+  const updateRoomSorting = async (nextOrder: Record<string, string[]>) => {
+    if (!token) return;
+    try {
+      const nextSettings = await updateMySettings(token, { roomOrder: nextOrder });
+      setUser((prev) => ({ ...prev, roomOrder: nextSettings.roomOrder }));
+    } catch (err) {
+      console.error("Failed to sync room order with backend:", err);
+    }
+  };
+
   const handleRefreshSocialData = async () => {
     if (token) {
       await refreshSocialData(token);
@@ -1989,6 +2002,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         hasUnsavedChanges,
         setHasUnsavedChanges,
         refreshSocialData: handleRefreshSocialData,
+        updateRoomSorting,
       }}
     >
       {children}

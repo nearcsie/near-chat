@@ -5,7 +5,7 @@ import type { IUserRepository } from "./IUserRepository";
 const USER_COLUMNS =
   'user_id, name, email, password_hash, bio, avatar_url, lang_preference, app_theme, ' +
   'notify_desktop, notify_sound, warning_enabled, warning_days, last_activity, created_at, deleted_at, ' +
-  'demo_warning_enabled, demo_warning_seconds';
+  'demo_warning_enabled, demo_warning_seconds, room_order';
 
 function mapRowToUser(row: any): User {
   return {
@@ -26,6 +26,7 @@ function mapRowToUser(row: any): User {
     deletedAt: row.deleted_at ?? null,
     demoWarningEnabled: row.demo_warning_enabled ?? false,
     demoWarningSeconds: row.demo_warning_seconds ?? 30,
+    roomOrder: row.room_order ?? undefined,
   };
 }
 
@@ -129,6 +130,7 @@ export class UserRepository implements IUserRepository {
         | "deletedAt"
         | "demoWarningEnabled"
         | "demoWarningSeconds"
+        | "roomOrder"
       >
     >,
   ): Promise<User> {
@@ -195,6 +197,10 @@ export class UserRepository implements IUserRepository {
     if (data.deletedAt !== undefined) {
       fields.push(`deleted_at = $${queryIdx++}`);
       values.push(data.deletedAt);
+    }
+    if (data.roomOrder !== undefined) {
+      fields.push(`room_order = $${queryIdx++}`);
+      values.push(JSON.stringify(data.roomOrder));
     }
 
     if (fields.length === 0) {

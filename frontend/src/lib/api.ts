@@ -60,7 +60,7 @@ type UpdateMeRequest = Partial<Pick<MyProfile, 'name' | 'email' | 'bio' | 'avata
   currentPassword?: string;
 };
 type UpdateMySettingsRequest = Partial<
-  Pick<UserSettings, 'warningEnabled' | 'warningDays' | 'demoWarningEnabled' | 'demoWarningSeconds' | 'language' | 'theme' | 'notifyDesktop' | 'notifySound'>
+  Pick<UserSettings, 'warningEnabled' | 'warningDays' | 'demoWarningEnabled' | 'demoWarningSeconds' | 'language' | 'theme' | 'notifyDesktop' | 'notifySound' | 'roomOrder'>
 >;
 
 type CreateGroupRequest = {
