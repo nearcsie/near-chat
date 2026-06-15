@@ -89,7 +89,7 @@ export default function MobileNav() {
   ];
 
   return (
-    <nav className="md:hidden shrink-0 border-t border-border-primary bg-surface-muted flex items-stretch h-16 select-none">
+    <nav className="md:hidden shrink-0 border-t border-border-primary bg-surface-muted flex items-stretch min-h-16 h-auto pb-[env(safe-area-inset-bottom)] py-1.5 select-none">
       {items.map((item, idx) => (
         <button
           key={idx}
