@@ -61,13 +61,13 @@ export class UserRepository implements IUserRepository {
       );
     } else if (mode === 'name') {
       res = await this.db.query(
-        `SELECT ${USER_COLUMNS} FROM users WHERE name ILIKE $1 AND deleted_at IS NULL LIMIT 20`,
+        `SELECT ${USER_COLUMNS} FROM users WHERE LOWER(name) LIKE LOWER($1) AND deleted_at IS NULL LIMIT 20`,
         [`%${query}%`]
       );
     } else {
       // Legacy: combined search across name, user_id, and email
       res = await this.db.query(
-        `SELECT ${USER_COLUMNS} FROM users WHERE (name ILIKE $1 OR user_id::text = $2 OR email ILIKE $1) AND deleted_at IS NULL LIMIT 20`,
+        `SELECT ${USER_COLUMNS} FROM users WHERE (LOWER(name) LIKE LOWER($1) OR user_id::text = $2 OR LOWER(email) LIKE LOWER($1)) AND deleted_at IS NULL LIMIT 20`,
         [`%${query}%`, query]
       );
     }
