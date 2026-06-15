@@ -281,7 +281,7 @@ interface ChatContextType {
   handleTyping: (roomId: string, isTyping: boolean) => void;
   handleUploadAttachment: (
     roomId: string,
-    file: File,
+    files: File | File[],
     options?: { content?: string; replyTarget?: Message | null },
   ) => Promise<void>;
   handleRecallMessage: (msgId: string) => void;
@@ -1226,20 +1226,25 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
   const handleUploadAttachment = async (
     roomId: string,
-    file: File,
+    files: File | File[],
     options?: { content?: string; replyTarget?: Message | null },
   ) => {
     if (!token || !socketRef.current) return;
-    const uploaded = await uploadAttachment(token, file);
-    const content = options?.content?.trim()
-      ? options.content.trim()
-      : formatUploadedAttachmentMessage(uiLanguage, file.name);
+    const fileList = Array.isArray(files) ? files : [files];
+    const uploads = await Promise.all(fileList.map((f) => uploadAttachment(token, f)));
+    const defaultContent =
+      fileList.length === 1
+        ? formatUploadedAttachmentMessage(uiLanguage, fileList[0].name)
+        : uiLanguage === "zh-TW"
+          ? `已上傳 ${fileList.length} 個附件`
+          : `Shared ${fileList.length} attachments`;
+    const content = options?.content?.trim() ? options.content.trim() : defaultContent;
 
     sendMessage(socketRef.current, {
       roomId,
       content,
       replyTo: options?.replyTarget?.id,
-      attachmentIds: [uploaded.attachmentId],
+      attachmentIds: uploads.map((u) => u.attachmentId),
     });
   };
 
