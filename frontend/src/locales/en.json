@@ -48,7 +48,9 @@
     "title": "Friend list"
   },
   "mainRedirect": {
-    "emptyChats": "No chat rooms yet"
+    "emptyChats": "No chat rooms yet",
+    "emptyChatsDesc": "Head to the Friends page to start a private chat, or create a new group from the sidebar",
+    "goToFriends": "Go to Friends"
   },
   "profilePage": {
     "title": "Profile settings"
