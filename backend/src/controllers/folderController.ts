@@ -31,5 +31,13 @@ export const makeFolderController = (service: FolderService) => ({
       await service.updateFolderRooms(req.params.id, req.user!.userId, parsed.data.roomIds);
       res.status(200).json({ success: true });
     } catch (err) { next(err); }
+  },
+  async rename(req: Request<{ id: string }>, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const parsed = createFolderSchema.safeParse(req.body);
+      if (!parsed.success) return next(new ValidationError('Invalid folder name'));
+      const folder = await service.renameFolder(req.params.id, req.user!.userId, parsed.data.name);
+      res.status(200).json(folder);
+    } catch (err) { next(err); }
   }
 });

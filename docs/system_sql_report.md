@@ -445,14 +445,22 @@
 ## 8. 資料夾分類 (FolderRepository)
 
 ### 新增/查詢/修改/刪除
-* **建立**：`create` -> `INSERT INTO folders (user_id, name) VALUES ...`
+* **建立**：`create` -> `INSERT INTO folders (user_id, name) VALUES ($1, $2) RETURNING *`
 * **查詢**：
-  * `SELECT folder_id, user_id, name FROM folders WHERE user_id = $1`
+  * `SELECT folder_id, user_id, name, created_at FROM folders WHERE user_id = $1 ORDER BY created_at ASC`
   * `SELECT folder_id, room_id FROM folder_rooms WHERE user_id = $1`
 * **更新分類成員**：
-  在 Transaction 中先 `DELETE FROM folder_rooms WHERE folder_id = $1`，再 `INSERT INTO folder_rooms (folder_id, room_id, user_id) VALUES ...`
+  在 Transaction 中先 `DELETE FROM folder_rooms WHERE folder_id = $1`，再 `INSERT INTO folder_rooms (folder_id, room_id, user_id) VALUES ($1, $2, $3)`
+* **更名**：`rename` ->
+  ```sql
+  -- 1. 更新資料夾名稱
+  UPDATE folders SET name = $1 WHERE folder_id = $2 AND user_id = $3 RETURNING *;
+  
+  -- 2. 獲取該資料夾下所有聊天室關聯 ID
+  SELECT room_id FROM folder_rooms WHERE folder_id = $1;
+  ```
 * **刪除**：`DELETE FROM folders WHERE folder_id = $1 AND user_id = $2`
-* **後端用途**：管理用戶自訂的聊天分組標籤，對聊天列表進行客製化分組。
+* **後端用途**：管理與維護用戶自訂的聊天分組標籤，提供資料夾名稱的客製化、聊天室分類及刪除，以便對聊天列表進行客製化分組。
 
 ---
 ---

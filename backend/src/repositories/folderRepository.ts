@@ -6,6 +6,7 @@ export interface IFolderRepository {
   findByUserId(userId: string): Promise<Folder[]>;
   delete(folderId: string, userId: string): Promise<void>;
   updateRooms(folderId: string, userId: string, roomIds: string[]): Promise<void>;
+  rename(folderId: string, userId: string, name: string): Promise<Folder>;
 }
 
 interface FolderRow {
@@ -104,5 +105,21 @@ export class FolderRepository implements IFolderRepository {
     } finally {
       client.release();
     }
+  }
+
+  async rename(folderId: string, userId: string, name: string): Promise<Folder> {
+    const res = await this.db.query<FolderRow>(
+      `UPDATE folders SET name = $1 WHERE folder_id = $2 AND user_id = $3 RETURNING *`,
+      [name, folderId, userId]
+    );
+    if (res.rowCount === 0) {
+      throw new Error('Folder not found');
+    }
+    const roomsRes = await this.db.query<{ room_id: string }>(
+      `SELECT room_id FROM folder_rooms WHERE folder_id = $1`,
+      [folderId]
+    );
+    const roomIds = roomsRes.rows.map((row) => row.room_id);
+    return mapFolderRow(res.rows[0], roomIds);
   }
 }
