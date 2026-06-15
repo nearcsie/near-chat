@@ -25,14 +25,19 @@ COPY shared/ ./shared/
 COPY --from=deps /workspace/frontend/node_modules ./frontend/node_modules
 COPY frontend/ ./frontend/
 WORKDIR /workspace/frontend
-ENV NEXT_TELEMETRY_DISABLED 1
+ENV NEXT_TELEMETRY_DISABLED=1
+
+# Pass API URL at build time for Next.js to inline into client bundles
+ARG NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+
 RUN pnpm build
 
 # Stage 3: Runner
 FROM node:lts-slim AS runner
 WORKDIR /app
-ENV NODE_ENV production
-ENV NEXT_TELEMETRY_DISABLED 1
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
 
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
@@ -48,7 +53,8 @@ COPY --from=builder --chown=nextjs:nodejs /workspace/frontend/public ./public
 USER nextjs
 
 EXPOSE 3000
-ENV PORT 3000
-ENV HOSTNAME "0.0.0.0"
+ENV PORT=3000
+ENV HOSTNAME="0.0.0.0"
 
 CMD ["node", "server.js"]
+
