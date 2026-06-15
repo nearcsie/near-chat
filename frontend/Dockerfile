@@ -1,23 +1,10 @@
-# Stage 1: Install dependencies
-FROM node:lts-slim AS deps
-RUN corepack enable && corepack prepare pnpm@latest --activate
-WORKDIR /workspace
-
-# Copy global configs and shared files
-COPY tsconfig.base.json ./
-COPY shared/ ./shared/
-
-# Copy frontend packages
-COPY frontend/package.json frontend/pnpm-lock.yaml ./frontend/
-WORKDIR /workspace/frontend
-RUN pnpm install --no-frozen-lockfile --ignore-scripts
+FROM node:lts-slim
 
 # Stage 2: Build the frontend
 FROM node:lts-slim AS builder
 ARG NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 RUN corepack enable && corepack prepare pnpm@latest --activate
-WORKDIR /workspace
 
 # Copy global configs and shared files
 COPY tsconfig.base.json ./
@@ -41,18 +28,16 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
-RUN addgroup --system --gid 1001 nodejs
-RUN adduser --system --uid 1001 nextjs
+# Give the built-in node user ownership of /app before switching
+RUN chown -R node:node /app
 
-# Set correct permissions
-RUN mkdir -p .next && chown -R nextjs:nodejs /app
+USER node
 
-# Leverage standalone output
-COPY --from=builder --chown=nextjs:nodejs /workspace/frontend/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /workspace/frontend/.next/static ./.next/static
-COPY --from=builder --chown=nextjs:nodejs /workspace/frontend/public ./public
+COPY --chown=node:node package.json pnpm-lock.yaml ./
 
-USER nextjs
+RUN pnpm install --no-frozen-lockfile --ignore-scripts
+
+COPY --chown=node:node . .
 
 EXPOSE 3000
 ENV PORT=3000
