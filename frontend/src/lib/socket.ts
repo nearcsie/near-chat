@@ -123,3 +123,11 @@ export const onUserStatus = (
   socket.on('user_status', handler);
   return () => socket.off('user_status', handler);
 };
+
+export const onRoomUpdate = (
+  socket: ChatSocket,
+  handler: ServerToClientEvents['room_update'],
+): (() => void) => {
+  socket.on('room_update', handler);
+  return () => socket.off('room_update', handler);
+};

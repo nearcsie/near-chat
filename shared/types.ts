@@ -188,7 +188,7 @@ export interface ServerToClientEvents {
   message_recalled: (payload: { messageId: string }) => void;
   user_typing:      (payload: { roomId: string; userId: string; isTyping: boolean }) => void;
   read_update:      (payload: { roomId: string; userId: string; messageId: string }) => void;
-  room_update:      (payload: { type: string; data: unknown }) => void;
+  room_update:      (payload: { type: string; roomId: string; data: any }) => void;
   friend_request:   (payload: FriendRequest) => void;
   emergency_alert:  (payload: { userId: string; message: string }) => void;
   error:            (payload: ApiError) => void;

@@ -77,6 +77,7 @@ export const makeUserService = (
   jwt: JwtHelper,
   notifyEmergencyContact?: (contactId: string, payload: { userId: string; message: string }) => void | Promise<void>,
   friendRepo?: any,
+  onUserUpdated?: (userId: string, data: { name?: string; avatarUrl?: string }) => void | Promise<void>,
 ) => {
   const notifyContacts = async (userId: string, fallbackMessage: string, isTest: boolean = false): Promise<EmergencyAlertResult> => {
     const user = await repo.findById(userId);
@@ -218,7 +219,11 @@ export const makeUserService = (
       }
 
       const updated = await repo.update(userId, updateData);
-      return toMyProfile(updated);
+      const profile = toMyProfile(updated);
+      if (onUserUpdated) {
+        onUserUpdated(userId, { name: profile.name, avatarUrl: profile.avatarUrl });
+      }
+      return profile;
     },
 
     async uploadAvatar(userId: string, file: Express.Multer.File): Promise<MyProfile> {
@@ -231,10 +236,14 @@ export const makeUserService = (
 
       try {
         const updated = await repo.update(userId, { avatarUrl });
+        const profile = toMyProfile(updated);
+        if (onUserUpdated) {
+          onUserUpdated(userId, { name: profile.name, avatarUrl: profile.avatarUrl });
+        }
         if (currentUser.avatarUrl && currentUser.avatarUrl !== avatarUrl) {
           await removeManagedAvatar(currentUser.avatarUrl, userId);
         }
-        return toMyProfile(updated);
+        return profile;
       } catch (error) {
         await removeManagedAvatar(avatarUrl, userId);
         throw error;

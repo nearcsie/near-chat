@@ -140,7 +140,11 @@ export const makeRoomService = (
       if (!member || (member.role !== 'owner' && member.role !== 'admin')) {
         throw new ForbiddenError('Only owner or admin can update room settings');
       }
-      return repo.update(roomId, parsed.data);
+      const updated = await repo.update(roomId, parsed.data);
+      if (emitRoomEvent) {
+        emitRoomEvent(roomId, 'room_update', { type: 'ROOM_SETTINGS_UPDATED', data: updated });
+      }
+      return updated;
     },
 
     async joinByCode(userId: string, inviteCode: string): Promise<Room> {
@@ -151,16 +155,21 @@ export const makeRoomService = (
       const role = room.requireApproval ? 'pending' : 'member';
       await roomMemberRepo.add({ roomId: room.roomId, userId, role });
 
-      if (role === 'member' && userRepo && messageRepo) {
-        const user = await userRepo.findById(userId);
-        if (user) {
-          const sysMsg = await messageRepo.create({
-            roomId: room.roomId,
-            senderId: null,
-            content: `[System] ${user.name}已加入`,
-          });
-          if (emitRoomEvent) {
-            emitRoomEvent(room.roomId, 'new_message', sysMsg);
+      if (role === 'member') {
+        if (emitRoomEvent) {
+          emitRoomEvent(room.roomId, 'room_update', { type: 'MEMBER_JOINED', data: { userId } });
+        }
+        if (userRepo && messageRepo) {
+          const user = await userRepo.findById(userId);
+          if (user) {
+            const sysMsg = await messageRepo.create({
+              roomId: room.roomId,
+              senderId: null,
+              content: `[System] ${user.name}已加入`,
+            });
+            if (emitRoomEvent) {
+              emitRoomEvent(room.roomId, 'new_message', sysMsg);
+            }
           }
         }
       }
@@ -177,6 +186,24 @@ export const makeRoomService = (
         throw new ForbiddenError('Owner cannot leave room. Transfer ownership first.');
       }
       await roomMemberRepo.remove(roomId, userId);
+
+      if (emitRoomEvent) {
+        emitRoomEvent(roomId, 'room_update', { type: 'MEMBER_LEFT', data: { userId } });
+      }
+
+      if (userRepo && messageRepo) {
+        const user = await userRepo.findById(userId);
+        if (user) {
+          const sysMsg = await messageRepo.create({
+            roomId,
+            senderId: null,
+            content: `[System] ${user.name}已離開`,
+          });
+          if (emitRoomEvent) {
+            emitRoomEvent(roomId, 'new_message', sysMsg);
+          }
+        }
+      }
     },
 
     async transferOwnership(roomId: string, callerId: string, targetUserId: string): Promise<void> {
@@ -304,6 +331,20 @@ export const makeRoomService = (
       await roomMemberRepo.remove(roomId, targetUserId);
       if (emitRoomEvent) {
         emitRoomEvent(roomId, 'room_update', { type: 'MEMBER_KICKED', data: { userId: targetUserId } });
+      }
+
+      if (userRepo && messageRepo) {
+        const user = await userRepo.findById(targetUserId);
+        if (user) {
+          const sysMsg = await messageRepo.create({
+            roomId,
+            senderId: null,
+            content: `[System] ${user.name}已被移出群組`,
+          });
+          if (emitRoomEvent) {
+            emitRoomEvent(roomId, 'new_message', sysMsg);
+          }
+        }
       }
     },
 
