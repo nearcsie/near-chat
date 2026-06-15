@@ -110,6 +110,14 @@ export function makeFriendService(
     async removeFriend(userId: string, friendId: string) {
       await repo.deleteFriendship(userId, friendId);
       await privateRooms?.markPrivateReadOnly(userId, friendId);
+      if (notifyUser) {
+        notifyUser(friendId, 'friend_request', {
+          requesterId: userId,
+          addresseeId: friendId,
+          status: 'deleted' as any,
+          createdAt: new Date(),
+        });
+      }
     },
 
     async blockUser(userId: string, targetUserId: string) {
@@ -118,6 +126,14 @@ export function makeFriendService(
       }
       await repo.blockUser(userId, targetUserId);
       await privateRooms?.markPrivateReadOnly(userId, targetUserId);
+      if (notifyUser) {
+        notifyUser(targetUserId, 'friend_request', {
+          requesterId: userId,
+          addresseeId: targetUserId,
+          status: 'blocked' as any,
+          createdAt: new Date(),
+        });
+      }
       return { status: 'blocked' };
     },
 
@@ -125,6 +141,14 @@ export function makeFriendService(
       await repo.unblockUser(userId, blockedId);
       if (await repo.areFriends(userId, blockedId)) {
         await privateRooms?.reopenPrivateRoom?.(userId, blockedId);
+      }
+      if (notifyUser) {
+        notifyUser(blockedId, 'friend_request', {
+          requesterId: userId,
+          addresseeId: blockedId,
+          status: 'unblocked' as any,
+          createdAt: new Date(),
+        });
       }
     },
 

@@ -1,4 +1,4 @@
-# Real-Time Messaging System
+# Near Chat
 
 English | [繁體中文](README.zh-TW.md)
 

@@ -1062,10 +1062,20 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     const cleanupError = onSocketError(socket, (error) => {
       console.error("Socket error", error);
     });
-    const cleanupFriendRequest = onFriendRequest(socket, () => {
+    const cleanupFriendRequest = onFriendRequest(socket, (payload) => {
       const activeTok = tokenRef.current;
       if (activeTok) {
         void refreshSocialData(activeTok, undefined, currentUserId);
+        
+        const status = payload.status as string;
+        if (
+          status === "accepted" ||
+          status === "deleted" ||
+          status === "blocked" ||
+          status === "unblocked"
+        ) {
+          void refreshRoomsAndFolders(activeTok, currentUserId);
+        }
       }
     });
     const cleanupEmergencyAlert = onEmergencyAlert(socket, (payload) => {
@@ -1687,6 +1697,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       });
     }
     await refreshSocialData(token, undefined, currentUserId);
+    await refreshRoomsAndFolders(token, currentUserId);
   };
 
   const rejectFriendRequest = async (requestId: string) => {

@@ -1,4 +1,4 @@
-# 即時文字通訊系統
+# Near Chat
 
 [English](README.md) | 繁體中文
 
