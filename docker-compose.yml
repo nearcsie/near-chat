@@ -34,6 +34,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    volumes:
+      - ${UPLOADS_MOUNT_SOURCE:-app_uploads}:/app/uploads
 
   frontend:
     build:
@@ -51,3 +53,4 @@ services:
 
 volumes:
   pgdata:
+  app_uploads:
