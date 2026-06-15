@@ -18,11 +18,12 @@ const getSocketUrl = (): string => {
   return process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 };
 const SOCKET_URL = getSocketUrl();
+import { getApiBaseUrl } from './api';
 
 export type ChatSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 
 export const createChatSocket = (token: string): ChatSocket =>
-  io(SOCKET_URL, {
+  io(getApiBaseUrl(), {
     autoConnect: false,
     auth: { token },
   });
