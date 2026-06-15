@@ -95,6 +95,10 @@ export const makeRoomService = (
       if (existing) {
         if (existing.isReadonly) {
           const room = await repo.update(existing.roomId, { isReadonly: false });
+          if (emitToUser) {
+            emitToUser(creatorId, 'room_update', { type: 'ROOM_JOINED', roomId: existing.roomId, data: {} });
+            emitToUser(targetUserId, 'room_update', { type: 'ROOM_JOINED', roomId: existing.roomId, data: {} });
+          }
           return { room, created: false };
         }
         return { room: existing, created: false };
@@ -108,6 +112,10 @@ export const makeRoomService = (
       });
       await ensureMember(room.roomId, creatorId);
       await ensureMember(room.roomId, targetUserId);
+      if (emitToUser) {
+        emitToUser(creatorId, 'room_update', { type: 'ROOM_JOINED', roomId: room.roomId, data: {} });
+        emitToUser(targetUserId, 'room_update', { type: 'ROOM_JOINED', roomId: room.roomId, data: {} });
+      }
       return { room, created: true };
     },
 
@@ -122,6 +130,10 @@ export const makeRoomService = (
       const existing = await repo.findPrivateRoomByMembers(userA, userB);
       if (existing && existing.isReadonly) {
         await repo.update(existing.roomId, { isReadonly: false });
+        if (emitToUser) {
+          emitToUser(userA, 'room_update', { type: 'ROOM_JOINED', roomId: existing.roomId, data: {} });
+          emitToUser(userB, 'room_update', { type: 'ROOM_JOINED', roomId: existing.roomId, data: {} });
+        }
       }
     },
 

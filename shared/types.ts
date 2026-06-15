@@ -99,6 +99,7 @@ export interface RoomSummary extends Room {
   isOnline?: boolean;
   otherMemberId?: string;
   lastReadId?: string;
+  role?: RoomMemberRole;
 }
 
 // ---------------------------------------------------------------------------

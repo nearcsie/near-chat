@@ -240,8 +240,7 @@ export default function ChatList({ searchQuery }: ChatListProps) {
               }`}
             >
               {rootRooms.map((room) => {
-                const roomMember = room.members?.find((m) => m.userId === user.userId || m.name === user.username);
-                const isPending = roomMember?.role === "pending";
+                const isPending = room.myRole === "pending";
                 return (
                   <RoomItem
                     key={room.id}
@@ -341,8 +340,7 @@ export default function ChatList({ searchQuery }: ChatListProps) {
                 {!folder.collapsed && (
                   <div className="pl-4 border-l border-border-secondary/40 ml-5">
                     {folderRooms.map((room) => {
-                      const roomMember = room.members?.find((m) => m.userId === user.userId || m.name === user.username);
-                      const isPending = roomMember?.role === "pending";
+                      const isPending = room.myRole === "pending";
                       return (
                         <RoomItem
                           key={room.id}

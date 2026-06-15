@@ -262,6 +262,7 @@ All errors return the following JSON structure:
   | `createdAt` | String | Creation timestamp |
   | `latestMessage` | Object \| null | Summary of the latest message, null if none |
   | `unreadCount` | Number | Number of unread messages |
+  | `role` | String \| null | The caller's role in this room ('owner', 'admin', 'member', 'pending') |
 - **Example**:
   ```json
   {

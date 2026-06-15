@@ -262,6 +262,7 @@ NEXT_PUBLIC_API_URL=http://localhost:4005
   | `createdAt` | 字串 | 建立時間（時間格式） |
   | `latestMessage` | 物件 \| null | 最新一筆訊息摘要，若無訊息則為 null |
   | `unreadCount` | 數字 | 未讀訊息數量 |
+  | `role` | 字串 \| null | 調用者在此聊天室的角色 ('owner', 'admin', 'member', 'pending') |
 - **範例**:
   ```json
   {

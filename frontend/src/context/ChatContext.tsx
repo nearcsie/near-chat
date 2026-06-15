@@ -113,6 +113,7 @@ export interface ChatRoom {
   lastMessageAt?: string;
   avatarUrl?: string;
   lastReadId?: string | null;
+  myRole?: RoomMemberRole;
 }
 
 export interface Message {
@@ -512,6 +513,7 @@ const mapRooms = (
       members: currentRoom?.members ?? (room.type === "group" ? [] : undefined),
       unreadCount: room.unreadCount ?? currentRoom?.unreadCount ?? 0,
       lastReadId: room.lastReadId ?? currentRoom?.lastReadId ?? null,
+      myRole: room.role ?? currentRoom?.myRole,
       lastMessagePreview: latestMessage
         ? summarizeMessagePreview(latestMessage)
         : currentRoom?.lastMessagePreview,
@@ -761,7 +763,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       nextRooms.map(async (room) => {
         try {
           const roomMember = room.members?.find((m) => m.userId === userId || m.name === user.username);
-          if (roomMember?.role === "pending") {
+          const role = roomMember?.role ?? room.myRole;
+          if (role === "pending") {
             return [];
           }
           const rows = await listMessages(authToken, room.id, { limit: 50 });

@@ -34,10 +34,8 @@ export function makeFriendService(
         if (notifyUser) {
           notifyUser(targetUserId, 'friend_request', accepted);
         }
-        if (privateRooms?.createPrivate) {
-          await privateRooms.createPrivate(requesterId, targetUserId);
-        } else {
-          await privateRooms?.reopenPrivateRoom?.(requesterId, targetUserId);
+        if (privateRooms?.reopenPrivateRoom) {
+          await privateRooms.reopenPrivateRoom(requesterId, targetUserId);
         }
         return accepted;
       }
@@ -64,10 +62,8 @@ export function makeFriendService(
         if (!accepted) {
           throw new AppError(404, 'Friend request not found', 'NOT_FOUND');
         }
-        if (privateRooms?.createPrivate) {
-          await privateRooms.createPrivate(requesterId, userId);
-        } else {
-          await privateRooms?.reopenPrivateRoom?.(requesterId, userId);
+        if (privateRooms?.reopenPrivateRoom) {
+          await privateRooms.reopenPrivateRoom(requesterId, userId);
         }
         // Notify the original requester that their request was accepted so their
         // friend list updates in real-time without a page refresh.
