@@ -1,12 +1,11 @@
 import { io, type Socket } from 'socket.io-client';
 import type { ClientToServerEvents, ServerToClientEvents } from '@shared/types';
-
-const SOCKET_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
+import { getApiBaseUrl } from './api';
 
 export type ChatSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 
 export const createChatSocket = (token: string): ChatSocket =>
-  io(SOCKET_URL, {
+  io(getApiBaseUrl(), {
     autoConnect: false,
     auth: { token },
   });
