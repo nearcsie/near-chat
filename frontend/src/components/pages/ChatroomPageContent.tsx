@@ -10,7 +10,7 @@ import FriendInfoPanel from "@/components/chat/FriendInfoPanel";
 
 export default function ChatroomPageContent() {
   const params = useParams();
-  const { rooms, showRightPanel, user } = useChat();
+  const { rooms, showRightPanel, setShowRightPanel, user } = useChat();
   const [showSettings, setShowSettings] = useState(false);
 
   const chatId = params?.chatId as string;
@@ -42,8 +42,17 @@ export default function ChatroomPageContent() {
     ? activeRoom.members?.find((m) => m.userId !== user.userId)
     : undefined;
 
+  const rightPanel =
+    activeRoom.type === "group" && activeRoom.members ? (
+      <RoomMembersPanel room={activeRoom} members={activeRoom.members} />
+    ) : activeRoom.type === "msg" ? (
+      <div className="w-[280px] max-w-[85vw] lg:w-[240px] shrink-0 border-l border-border-primary bg-surface-card h-full">
+        <FriendInfoPanel userId={otherMember?.userId} friendName={activeRoom.name} />
+      </div>
+    ) : null;
+
   return (
-    <div className="flex-1 flex h-full overflow-hidden">
+    <div className="relative flex-1 flex h-full overflow-hidden">
       {showSettings ? (
         <GroupSettings roomId={activeRoom.id} onClose={() => setShowSettings(false)} />
       ) : (
@@ -53,14 +62,18 @@ export default function ChatroomPageContent() {
         />
       )}
 
-      {showRightPanel && (
-        activeRoom.type === "group" && activeRoom.members ? (
-          <RoomMembersPanel room={activeRoom} members={activeRoom.members} />
-        ) : activeRoom.type === "msg" ? (
-          <div className="w-[240px] shrink-0 border-l border-border-primary bg-surface-card h-full">
-            <FriendInfoPanel userId={otherMember?.userId} friendName={activeRoom.name} />
+      {showRightPanel && rightPanel && (
+        <>
+          {/* Below lg the panel floats over the conversation as a drawer. */}
+          <div
+            className="fixed inset-0 z-30 bg-black/50 lg:hidden animate-fade-in"
+            onClick={() => setShowRightPanel(false)}
+            aria-hidden
+          />
+          <div className="absolute inset-y-0 right-0 z-40 flex h-full lg:static lg:z-auto animate-slide-in-right lg:animate-none">
+            {rightPanel}
           </div>
-        ) : null
+        </>
       )}
     </div>
   );
