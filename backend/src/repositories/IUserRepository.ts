@@ -8,7 +8,7 @@ export interface IUserRepository {
   update(
     userId: string,
     data: Partial<
-      Pick<User, 'name' | 'bio' | 'avatarUrl' | 'language' | 'warningEnabled' | 'warningDays' | 'lastActivity' | 'deletedAt'>
+      Pick<User, 'name' | 'bio' | 'avatarUrl' | 'language' | 'warningEnabled' | 'warningDays' | 'lastActivity' | 'deletedAt' | 'roomOrder'>
       & Pick<User, 'email' | 'passwordHash' | 'theme' | 'notifyDesktop' | 'notifySound'>
     >,
   ): Promise<User>;

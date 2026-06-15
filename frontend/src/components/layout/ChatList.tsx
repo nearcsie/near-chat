@@ -28,6 +28,7 @@ export default function ChatList({ searchQuery }: ChatListProps) {
     handleDeleteFolder,
     handleRenameFolder,
     handleCategorizeRoom,
+    updateRoomSorting,
   } = useChat();
 
   const activeRoomId = params?.chatId as string | undefined;
@@ -39,6 +40,9 @@ export default function ChatList({ searchQuery }: ChatListProps) {
   const [dragOverUncategorized, setDragOverUncategorized] = React.useState(false);
   const [isRootDropActive, setIsRootDropActive] = React.useState(false);
   const [isUncategorizedCollapsed, setIsUncategorizedCollapsed] = React.useState(false);
+  const [dropTargetRoomId, setDropTargetRoomId] = React.useState<string | null>(null);
+  const [dropPlacement, setDropPlacement] = React.useState<"above" | "below" | null>(null);
+  const [roomOrderMap, setRoomOrderMap] = React.useState<Record<string, string[]>>({});
   const [contextMenu, setContextMenu] = React.useState<{
     folderId: string;
     folderName: string;
@@ -62,6 +66,57 @@ export default function ChatList({ searchQuery }: ChatListProps) {
     window.addEventListener("click", handleCloseMenu);
     return () => window.removeEventListener("click", handleCloseMenu);
   }, []);
+
+  React.useEffect(() => {
+    if (user?.roomOrder) {
+      setRoomOrderMap(user.roomOrder);
+    } else {
+      try {
+        const saved = localStorage.getItem("near:roomOrder");
+        if (saved) setRoomOrderMap(JSON.parse(saved) as Record<string, string[]>);
+      } catch {}
+    }
+  }, [user?.roomOrder]);
+
+  const applyRoomOrder = (sectionRooms: ChatRoom[], sectionKey: string): ChatRoom[] => {
+    const order = roomOrderMap[sectionKey];
+    if (!order || order.length === 0) return sectionRooms;
+    const posMap = new Map(order.map((id, i) => [id, i]));
+    return [...sectionRooms].sort((a, b) => {
+      const pa = posMap.has(a.id) ? (posMap.get(a.id) as number) : sectionRooms.length;
+      const pb = posMap.has(b.id) ? (posMap.get(b.id) as number) : sectionRooms.length;
+      return pa - pb;
+    });
+  };
+
+  const saveRoomOrder = (sectionKey: string, orderedIds: string[]) => {
+    const next = { ...roomOrderMap, [sectionKey]: orderedIds };
+    setRoomOrderMap(next);
+    try {
+      localStorage.setItem("near:roomOrder", JSON.stringify(next));
+    } catch {}
+    void updateRoomSorting(next);
+  };
+
+  const handleRoomDropOnRoom = (sectionKey: string, draggedId: string, targetId: string, placement: "above" | "below") => {
+    if (draggedId === targetId) return;
+    const sectionRooms = sectionKey === "root"
+      ? rooms.filter((r) => !r.folderId && r.id !== draggedId)
+      : rooms.filter((r) => r.folderId === sectionKey && r.id !== draggedId);
+    const ordered = applyRoomOrder(sectionRooms, sectionKey);
+    const ids = ordered.map((r) => r.id);
+    
+    let insertIdx = ids.indexOf(targetId);
+    if (insertIdx !== -1) {
+      if (placement === "below") {
+        insertIdx += 1;
+      }
+      ids.splice(insertIdx, 0, draggedId);
+    } else {
+      ids.push(draggedId);
+    }
+    saveRoomOrder(sectionKey, ids);
+  };
 
   const handleRenameFolderClick = (folderId: string, currentName: string) => {
     setRenameTargetFolderId(folderId);
@@ -100,6 +155,8 @@ export default function ChatList({ searchQuery }: ChatListProps) {
     setDragOverFolderId(null);
     setDragOverUncategorized(false);
     setIsRootDropActive(false);
+    setDropTargetRoomId(null);
+    setDropPlacement(null);
   };
 
   const getDroppedRoomId = (event: React.DragEvent) =>
@@ -236,16 +293,40 @@ export default function ChatList({ searchQuery }: ChatListProps) {
                 isRootDropActive ? "bg-primary/5 outline-1 outline-primary/40 outline-offset-1" : ""
               }`}
             >
-              {rootRooms.map((room) => {
+              {applyRoomOrder(rootRooms, "root").map((room) => {
                 const isPending = room.myRole === "pending";
                 return (
                   <RoomItem
                     key={room.id}
                     room={room}
                     isActive={room.id === activeRoomId && isChatPage}
+                    isDropTarget={dropTargetRoomId === room.id}
+                    dropPlacement={dropTargetRoomId === room.id ? dropPlacement : null}
                     onClick={() => router.push(`/chat/${room.id}`)}
                     onDragStart={(event) => handleRoomDragStart(event, room.id)}
                     onDragEnd={resetDragState}
+                    onDragOver={(event) => {
+                      if (!draggedRoomId || draggedRoomId === room.id) return;
+                      event.preventDefault();
+                      event.stopPropagation();
+                      const rect = event.currentTarget.getBoundingClientRect();
+                      const relativeY = event.clientY - rect.top;
+                      const placement = relativeY < rect.height / 2 ? "above" : "below";
+                      setDropTargetRoomId(room.id);
+                      setDropPlacement(placement);
+                    }}
+                    onDrop={async (event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      const drId = getDroppedRoomId(event);
+                      if (!drId || drId === room.id) { resetDragState(); return; }
+                      const draggedRoom = rooms.find((r) => r.id === drId);
+                      if (draggedRoom && draggedRoom.folderId) {
+                        await handleCategorizeRoom(drId, null);
+                      }
+                      handleRoomDropOnRoom("root", drId, room.id, dropPlacement || "above");
+                      resetDragState();
+                    }}
                     avatarSrc={(() => {
                       if (room.avatarUrl) {
                         return resolveAssetUrl(room.avatarUrl);
@@ -336,16 +417,40 @@ export default function ChatList({ searchQuery }: ChatListProps) {
 
                 {!folder.collapsed && (
                   <div className="pl-4 border-l border-border-secondary/40 ml-5">
-                    {folderRooms.map((room) => {
+                    {applyRoomOrder(folderRooms, folder.id).map((room) => {
                       const isPending = room.myRole === "pending";
                       return (
                         <RoomItem
                           key={room.id}
                           room={room}
                           isActive={room.id === activeRoomId && isChatPage}
+                          isDropTarget={dropTargetRoomId === room.id}
+                          dropPlacement={dropTargetRoomId === room.id ? dropPlacement : null}
                           onClick={() => router.push(`/chat/${room.id}`)}
                           onDragStart={(event) => handleRoomDragStart(event, room.id)}
                           onDragEnd={resetDragState}
+                          onDragOver={(event) => {
+                            if (!draggedRoomId || draggedRoomId === room.id) return;
+                            event.preventDefault();
+                            event.stopPropagation();
+                            const rect = event.currentTarget.getBoundingClientRect();
+                            const relativeY = event.clientY - rect.top;
+                            const placement = relativeY < rect.height / 2 ? "above" : "below";
+                            setDropTargetRoomId(room.id);
+                            setDropPlacement(placement);
+                          }}
+                          onDrop={async (event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            const drId = getDroppedRoomId(event);
+                            if (!drId || drId === room.id) { resetDragState(); return; }
+                            const draggedRoom = rooms.find((r) => r.id === drId);
+                            if (draggedRoom && draggedRoom.folderId !== folder.id) {
+                              await handleCategorizeRoom(drId, folder.id);
+                            }
+                            handleRoomDropOnRoom(folder.id, drId, room.id, dropPlacement || "above");
+                            resetDragState();
+                          }}
                           avatarSrc={(() => {
                             if (room.avatarUrl) {
                               return resolveAssetUrl(room.avatarUrl);
@@ -507,18 +612,26 @@ function SectionLabel({ label }: { label: string }) {
 function RoomItem({
   room,
   isActive,
+  isDropTarget,
+  dropPlacement,
   onClick,
   onDragStart,
   onDragEnd,
+  onDragOver,
+  onDrop,
   avatarSrc,
   noMessagesText,
   isPending,
 }: {
   room: ChatRoom;
   isActive: boolean;
+  isDropTarget?: boolean;
+  dropPlacement?: "above" | "below" | null;
   onClick: () => void;
   onDragStart: (event: React.DragEvent<HTMLButtonElement>) => void;
   onDragEnd: () => void;
+  onDragOver?: (event: React.DragEvent<HTMLDivElement>) => void;
+  onDrop?: (event: React.DragEvent<HTMLDivElement>) => void;
   avatarSrc?: string;
   noMessagesText: string;
   isPending?: boolean;
@@ -527,10 +640,19 @@ function RoomItem({
 
   return (
     <div
-      className={`group relative flex w-full items-center gap-2.5 px-4 py-2.5 transition-colors ${
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+      className={`group relative flex w-full items-center gap-2.5 px-4 py-2.5 transition-all ${
         isActive ? "bg-surface-muted" : "hover:bg-surface-muted/70"
-      }`}
+      } ${isDropTarget ? "bg-primary/5" : ""}`}
     >
+      {isDropTarget && dropPlacement && (
+        <div
+          className={`absolute left-0 right-0 h-[3px] bg-primary z-20 pointer-events-none ${
+            dropPlacement === "above" ? "top-0" : "bottom-0"
+          }`}
+        />
+      )}
       {isActive && <span className="absolute left-0 top-0 bottom-0 w-1 bg-primary" />}
       <button
         type="button"

@@ -35,6 +35,7 @@ export interface User {
   lastActivity: Date;
   createdAt: Date;
   deletedAt?: Date | null;
+  roomOrder?: Record<string, string[]>;
 }
 
 /** Safe public projection of a user — no credentials. */
@@ -71,6 +72,7 @@ export interface UserSettings {
   theme: 'light' | 'dark';
   notifyDesktop: boolean;
   notifySound: boolean;
+  roomOrder?: Record<string, string[]>;
 }
 
 // ---------------------------------------------------------------------------

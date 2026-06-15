@@ -48,6 +48,7 @@ export const updateSettingsSchema = z
     theme: z.enum(['light', 'dark']).optional(),
     notifyDesktop: z.boolean().optional(),
     notifySound: z.boolean().optional(),
+    roomOrder: z.record(z.string(), z.array(z.string())).optional(),
   })
   .refine((v) => Object.keys(v).length > 0, {
     message: 'At least one field must be provided',
