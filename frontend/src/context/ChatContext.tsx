@@ -755,8 +755,17 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const loadMessagesForRooms = async (authToken: string, nextRooms: ChatRoom[], userId?: string) => {
     const roomMessages = await Promise.all(
       nextRooms.map(async (room) => {
-        const rows = await listMessages(authToken, room.id, { limit: 50 });
-        return rows.reverse().map((message) => mapMessage(message, userId));
+        try {
+          const roomMember = room.members?.find((m) => m.userId === userId || m.name === user.username);
+          if (roomMember?.role === "pending") {
+            return [];
+          }
+          const rows = await listMessages(authToken, room.id, { limit: 50 });
+          return rows.reverse().map((message) => mapMessage(message, userId));
+        } catch (error) {
+          console.error(`Failed to load messages for room ${room.id}:`, error);
+          return [];
+        }
       }),
     );
     setMessages(hydrateReplyTargets(roomMessages.flat()));

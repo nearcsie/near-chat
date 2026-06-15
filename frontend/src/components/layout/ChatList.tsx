@@ -239,33 +239,38 @@ export default function ChatList({ searchQuery }: ChatListProps) {
                 isRootDropActive ? "bg-primary/5 outline outline-1 outline-primary/40 outline-offset-[-1px]" : ""
               }`}
             >
-              {rootRooms.map((room) => (
-                <RoomItem
-                  key={room.id}
-                  room={room}
-                  isActive={room.id === activeRoomId && isChatPage}
-                  onClick={() => router.push(`/chat/${room.id}`)}
-                  onDragStart={(event) => handleRoomDragStart(event, room.id)}
-                  onDragEnd={resetDragState}
-                  avatarSrc={(() => {
-                    if (room.avatarUrl) {
-                      return resolveAssetUrl(room.avatarUrl);
-                    }
-                    if (room.type === "msg") {
-                      const otherMember = room.members?.find((m) => m.userId !== user.userId);
-                      if (otherMember?.avatarUrl) {
-                        return resolveAssetUrl(otherMember.avatarUrl);
+              {rootRooms.map((room) => {
+                const roomMember = room.members?.find((m) => m.userId === user.userId || m.name === user.username);
+                const isPending = roomMember?.role === "pending";
+                return (
+                  <RoomItem
+                    key={room.id}
+                    room={room}
+                    isActive={room.id === activeRoomId && isChatPage}
+                    onClick={() => router.push(`/chat/${room.id}`)}
+                    onDragStart={(event) => handleRoomDragStart(event, room.id)}
+                    onDragEnd={resetDragState}
+                    avatarSrc={(() => {
+                      if (room.avatarUrl) {
+                        return resolveAssetUrl(room.avatarUrl);
                       }
-                      const friend = friends.find((f) => f.id === room.otherMemberId || f.name === room.name);
-                      if (friend?.avatarUrl) {
-                        return resolveAssetUrl(friend.avatarUrl);
+                      if (room.type === "msg") {
+                        const otherMember = room.members?.find((m) => m.userId !== user.userId);
+                        if (otherMember?.avatarUrl) {
+                          return resolveAssetUrl(otherMember.avatarUrl);
+                        }
+                        const friend = friends.find((f) => f.id === room.otherMemberId || f.name === room.name);
+                        if (friend?.avatarUrl) {
+                          return resolveAssetUrl(friend.avatarUrl);
+                        }
                       }
-                    }
-                    return getAvatarForUser(room.name, user.avatar, user.username);
-                  })()}
-                  noMessagesText={t("sidebar.noMessages")}
-                />
-              ))}
+                      return getAvatarForUser(room.name, user.avatar, user.username);
+                    })()}
+                    noMessagesText={t("sidebar.noMessages")}
+                    isPending={isPending}
+                  />
+                );
+              })}
             </div>
           )}
         </div>
@@ -335,33 +340,38 @@ export default function ChatList({ searchQuery }: ChatListProps) {
 
                 {!folder.collapsed && (
                   <div className="pl-4 border-l border-border-secondary/40 ml-5">
-                    {folderRooms.map((room) => (
-                      <RoomItem
-                        key={room.id}
-                        room={room}
-                        isActive={room.id === activeRoomId && isChatPage}
-                        onClick={() => router.push(`/chat/${room.id}`)}
-                        onDragStart={(event) => handleRoomDragStart(event, room.id)}
-                        onDragEnd={resetDragState}
-                        avatarSrc={(() => {
-                          if (room.avatarUrl) {
-                            return resolveAssetUrl(room.avatarUrl);
-                          }
-                          if (room.type === "msg") {
-                            const otherMember = room.members?.find((m) => m.userId !== user.userId);
-                            if (otherMember?.avatarUrl) {
-                              return resolveAssetUrl(otherMember.avatarUrl);
+                    {folderRooms.map((room) => {
+                      const roomMember = room.members?.find((m) => m.userId === user.userId || m.name === user.username);
+                      const isPending = roomMember?.role === "pending";
+                      return (
+                        <RoomItem
+                          key={room.id}
+                          room={room}
+                          isActive={room.id === activeRoomId && isChatPage}
+                          onClick={() => router.push(`/chat/${room.id}`)}
+                          onDragStart={(event) => handleRoomDragStart(event, room.id)}
+                          onDragEnd={resetDragState}
+                          avatarSrc={(() => {
+                            if (room.avatarUrl) {
+                              return resolveAssetUrl(room.avatarUrl);
                             }
-                            const friend = friends.find((f) => f.id === room.otherMemberId || f.name === room.name);
-                            if (friend?.avatarUrl) {
-                              return resolveAssetUrl(friend.avatarUrl);
+                            if (room.type === "msg") {
+                              const otherMember = room.members?.find((m) => m.userId !== user.userId);
+                              if (otherMember?.avatarUrl) {
+                                return resolveAssetUrl(otherMember.avatarUrl);
+                              }
+                              const friend = friends.find((f) => f.id === room.otherMemberId || f.name === room.name);
+                              if (friend?.avatarUrl) {
+                                return resolveAssetUrl(friend.avatarUrl);
+                              }
                             }
-                          }
-                          return getAvatarForUser(room.name, user.avatar, user.username);
-                        })()}
-                        noMessagesText={t("sidebar.noMessages")}
-                      />
-                    ))}
+                            return getAvatarForUser(room.name, user.avatar, user.username);
+                          })()}
+                          noMessagesText={t("sidebar.noMessages")}
+                          isPending={isPending}
+                        />
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -507,6 +517,7 @@ function RoomItem({
   onDragEnd,
   avatarSrc,
   noMessagesText,
+  isPending,
 }: {
   room: ChatRoom;
   isActive: boolean;
@@ -515,7 +526,10 @@ function RoomItem({
   onDragEnd: () => void;
   avatarSrc?: string;
   noMessagesText: string;
+  isPending?: boolean;
 }) {
+  const { t } = useTranslation();
+
   return (
     <div
       className={`group relative flex w-full items-center gap-2.5 px-4 py-2.5 transition-colors ${
@@ -534,12 +548,19 @@ function RoomItem({
         <Avatar name={room.name} src={avatarSrc} size="sm" isOnline={room.isOnline} />
         <span className="min-w-0 flex-1">
           <span className="flex items-center justify-between gap-2">
-            <span className="text-xs font-semibold text-foreground truncate">{room.name}</span>
+            <span className="flex items-center gap-1.5 min-w-0 flex-1">
+              <span className="text-xs font-semibold text-foreground truncate">{room.name}</span>
+              {isPending && (
+                <span className="text-[9px] font-bold text-amber-500 px-1.5 py-0.5 border border-amber-500/20 bg-amber-500/5 rounded-sm shrink-0 uppercase tracking-wide">
+                  {t("chatroom.pendingApproval")}
+                </span>
+              )}
+            </span>
             <span className="text-[9px] text-text-muted font-mono shrink-0">{room.lastMessageAt}</span>
           </span>
           <span className="mt-0.5 flex items-center gap-2">
             <span className="text-[10px] text-text-muted truncate flex-1">
-              {room.lastMessagePreview || noMessagesText}
+              {isPending ? t("chatroom.pendingApproval") : (room.lastMessagePreview || noMessagesText)}
             </span>
             {room.unreadCount ? <Badge variant="danger">{room.unreadCount}</Badge> : null}
           </span>
