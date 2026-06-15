@@ -146,7 +146,7 @@ export default function Sidebar() {
 
   return (
     <div 
-      className="relative w-[300px] shrink-0 border-r border-border-primary bg-surface-card flex flex-col h-full"
+      className="relative w-full md:w-[260px] lg:w-[300px] shrink-0 border-r border-border-primary bg-surface-card flex flex-col h-full"
       onClickCapture={(e) => {
         if (hasUnsavedChanges) {
           e.stopPropagation();
@@ -225,7 +225,7 @@ export default function Sidebar() {
             <p className="text-[10px] text-text-muted truncate font-mono mt-0.5">{user.email}</p>
           </div>
         </div>
-        <div className="flex items-stretch border-t border-border-secondary/40 h-12 bg-surface-muted">
+        <div className="hidden md:flex items-stretch border-t border-border-secondary/40 h-12 bg-surface-muted">
           {menuItems.map((item, idx) => (
             <div key={idx} className="relative group flex flex-col items-stretch flex-1">
               <button

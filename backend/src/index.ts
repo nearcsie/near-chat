@@ -87,24 +87,48 @@ const userService = makeUserService(
   refreshTokenRepo,
   { signToken, generateRefreshToken, hashToken },
   async (contactId, payload) => {
-  // Send a real chat message
-  const room = await roomRepo.findPrivateRoomByMembers(payload.userId, contactId);
-  if (room) {
-    try {
-      const message = await messageService.sendMessage(payload.userId, room.roomId, payload.message);
-      io.to(`room_${room.roomId}`).emit('new_message', message);
-    } catch (err) {
-      console.error('Failed to auto-send emergency message:', err);
-      // Fallback to basic socket alert if messaging fails
+    // Send a real chat message
+    const room = await roomRepo.findPrivateRoomByMembers(payload.userId, contactId);
+    if (room) {
+      try {
+        const message = await messageService.sendMessage(payload.userId, room.roomId, payload.message);
+        io.to(`room_${room.roomId}`).emit('new_message', message);
+      } catch (err) {
+        console.error('Failed to auto-send emergency message:', err);
+        // Fallback to basic socket alert if messaging fails
+        io.to(`user_${contactId}`).emit('emergency_alert', payload);
+      }
+    } else {
+      // Fallback to basic socket alert if they have no private room
       io.to(`user_${contactId}`).emit('emergency_alert', payload);
     }
-  } else {
-    // Fallback to basic socket alert if they have no private room
-    io.to(`user_${contactId}`).emit('emergency_alert', payload);
+  },
+  friendRepo,
+  async (userId, data) => {
+    try {
+      const rooms = await roomRepo.findByMember(userId);
+      for (const room of rooms) {
+        io.to(`room_${room.roomId}`).emit('room_update', {
+          type: 'USER_UPDATED',
+          roomId: room.roomId,
+          data: { userId, ...data },
+        });
+      }
+    } catch (err) {
+      console.error('Failed to broadcast user update:', err);
+    }
   }
-}, friendRepo);
-const roomService = makeRoomService(roomRepo, roomMemberRepo, (roomId, eventName, payload) =>
-  io.to(`room_${roomId}`).emit(eventName as any, payload),
+);
+const roomService = makeRoomService(
+  roomRepo,
+  roomMemberRepo,
+  (roomId, eventName, payload) => {
+    if (eventName === 'room_update') {
+      io.to(`room_${roomId}`).emit('room_update', { ...(payload as any), roomId });
+    } else {
+      io.to(`room_${roomId}`).emit(eventName as any, payload);
+    }
+  },
   friendRepo,
   userRepo,
   messageRepo,

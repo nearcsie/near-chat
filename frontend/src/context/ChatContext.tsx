@@ -29,6 +29,7 @@ import {
   deleteEmergencyContact,
   deleteFriend,
   deleteFolder as deleteFolderApi,
+  renameFolder as renameFolderApi,
   deleteMe as deleteMeApi,
   deleteRoom as deleteRoomApi,
   getBlockedUsers,
@@ -74,6 +75,7 @@ import {
   onNewMessage,
   onReadUpdate,
   onSocketError,
+  onRoomUpdate,
   onUserStatus,
   onUserTyping,
   recallMessage,
@@ -284,6 +286,7 @@ interface ChatContextType {
   handleOpenPrivateRoom: (targetUserId: string) => Promise<string>;
   handleCreateFolder: (name: string) => Promise<void>;
   handleDeleteFolder: (folderId: string) => Promise<void>;
+  handleRenameFolder: (folderId: string, name: string) => Promise<void>;
   handleCategorizeRoom: (roomId: string, folderId: string | null) => Promise<void>;
   handleModifyNickname: (roomId: string, nickname: string) => Promise<void>;
   handleLeaveOrBlock: (roomId: string) => Promise<{ isDeleted: boolean; newActiveId?: string }>;
@@ -631,6 +634,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const socialDataRefreshPromiseRef = useRef<Promise<void> | null>(null);
   const socialDataRefreshResolversRef = useRef<Array<() => void>>([]);
   const tokenRef = useRef<string | null>(null);
+  const activeRoomIdRef = useRef<string | null>(null);
 
   const [isMounted, setIsMounted] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -663,6 +667,66 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     const match = pathname.match(/^\/chat\/([^/]+)$/);
     return match?.[1] ?? null;
   }, [pathname]);
+
+  useEffect(() => {
+    activeRoomIdRef.current = activeRoomId;
+  }, [activeRoomId]);
+
+  const loadGroupMembers = async (roomId: string): Promise<Member[]> => {
+    if (!token) return [];
+    const existingRequest = roomMembersRequestRef.current.get(roomId);
+    if (existingRequest) {
+      return existingRequest;
+    }
+
+    // Deduplicate concurrent member loads for the same room.
+    const request = fetchRoomMembers(token, roomId)
+      .then((members) => {
+        setRooms((current) =>
+          current.map((room) =>
+            room.id === roomId ? { ...room, members } : room,
+          ),
+        );
+
+        const myMember = members.find((m) => m.userId === currentUserId || m.name === user.username);
+        setActiveRoomNicknames((current) => {
+          const next = { ...current };
+          if (myMember?.nickname) {
+            next[roomId] = myMember.nickname;
+          } else {
+            delete next[roomId];
+          }
+          return next;
+        });
+
+        const roomReads = members.reduce<Record<string, string>>((reads, member) => {
+          if (member.lastReadId) {
+            reads[member.userId] = member.lastReadId;
+          }
+          return reads;
+        }, {});
+
+        setGroupReadStates((current) =>
+          Object.keys(roomReads).length === 0
+            ? current
+            : {
+                ...current,
+                [roomId]: {
+                  ...(current[roomId] ?? {}),
+                  ...roomReads,
+                },
+              },
+        );
+
+        return members;
+      })
+      .finally(() => {
+        roomMembersRequestRef.current.delete(roomId);
+      });
+
+    roomMembersRequestRef.current.set(roomId, request);
+    return request;
+  };
 
   const clearSession = () => {
     localStorage.removeItem("user");
@@ -852,6 +916,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         setCurrentUserId(profile.userId);
         setUiLanguageState(stored.language ?? "en");
         setToken(currentToken);
+        setActiveAccessToken(currentToken);
         setIsAuthenticated(true);
         await Promise.all([
           refreshRoomsAndFolders(currentToken, profile.userId),
@@ -989,6 +1054,101 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       );
     });
 
+    const cleanupRoomUpdate = onRoomUpdate(socket, ({ type, roomId, data }) => {
+      const payload = data as any;
+      if (type === 'USER_UPDATED') {
+        const { userId, name, avatarUrl } = payload;
+        setRooms((current) =>
+          current.map((room) => {
+            if (!room.members) return room;
+            const hasMember = room.members.some((m) => m.userId === userId);
+            if (!hasMember) return room;
+            return {
+              ...room,
+              members: room.members.map((m) =>
+                m.userId === userId
+                  ? { ...m, name: name ?? m.name, avatarUrl: avatarUrl ?? m.avatarUrl }
+                  : m
+              ),
+            };
+          })
+        );
+        setFriends((prev) =>
+          prev.map((friend) =>
+            friend.id === userId
+              ? { ...friend, name: name ?? friend.name, avatarUrl: avatarUrl ?? friend.avatarUrl }
+              : friend
+          )
+        );
+        setFriendRequests((prev) =>
+          prev.map((req) =>
+            req.id === userId
+              ? { ...req, name: name ?? req.name, avatarUrl: avatarUrl ?? req.avatarUrl }
+              : req
+          )
+        );
+        setBlockedUsers((prev) =>
+          prev.map((u) =>
+            u.id === userId
+              ? { ...u, name: name ?? u.name, avatarUrl: avatarUrl ?? u.avatarUrl }
+              : u
+          )
+        );
+        if (userId === currentUserId) {
+          setUser((prev) => ({
+            ...prev,
+            username: name ?? prev.username,
+            avatar: avatarUrl ?? prev.avatar,
+          }));
+        }
+      } else if (type === 'ROOM_AVATAR_UPDATED') {
+        const { avatarUrl } = payload;
+        setRooms((current) =>
+          current.map((room) =>
+            room.id === roomId ? { ...room, avatarUrl } : room
+          )
+        );
+      } else if (type === 'ROOM_SETTINGS_UPDATED') {
+        const updatedRoom = payload;
+        setRooms((current) =>
+          current.map((room) =>
+            room.id === roomId
+              ? {
+                  ...room,
+                  name: updatedRoom.name ?? room.name,
+                  avatarUrl: updatedRoom.avatarUrl ?? room.avatarUrl,
+                  requireApproval: updatedRoom.requireApproval,
+                  viewHistory: updatedRoom.viewHistory,
+                  isArchived: updatedRoom.isArchived,
+                }
+              : room
+          )
+        );
+      } else if (type === 'ROOM_DELETED') {
+        setRooms((current) => current.filter((r) => r.id !== roomId));
+        if (activeRoomIdRef.current === roomId) {
+          router.push("/chat");
+        }
+      } else if (type === 'MEMBER_KICKED' || type === 'MEMBER_LEFT') {
+        const { userId } = payload;
+        if (userId === currentUserId) {
+          setRooms((current) => current.filter((r) => r.id !== roomId));
+          if (activeRoomIdRef.current === roomId) {
+            router.push("/chat");
+          }
+        } else {
+          void loadGroupMembers(roomId);
+        }
+      } else if (
+        type === 'MEMBER_JOINED' ||
+        type === 'MEMBER_APPROVED' ||
+        type === 'MEMBER_UPDATED' ||
+        type === 'OWNERSHIP_TRANSFERRED'
+      ) {
+        void loadGroupMembers(roomId);
+      }
+    });
+
     socket.on("connect", joinKnownRooms);
     socket.connect();
 
@@ -1001,6 +1161,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       cleanupFriendRequest();
       cleanupEmergencyAlert();
       cleanupUserStatus();
+      cleanupRoomUpdate();
       socket.off("connect", joinKnownRooms);
       socket.disconnect();
       if (socketRef.current === socket) {
@@ -1250,6 +1411,16 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     );
   };
 
+  const handleRenameFolder = async (folderId: string, name: string) => {
+    if (!token) return;
+    const updated = await renameFolderApi(token, folderId, name);
+    setFolders((current) =>
+      current.map((folder) =>
+        folder.id === folderId ? { ...folder, name: updated.name } : folder,
+      ),
+    );
+  };
+
   const handleCategorizeRoom = async (roomId: string, folderId: string | null) => {
     if (!token) return;
 
@@ -1312,62 +1483,6 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     if (!token) throw new Error("Not authenticated");
     await deleteMeApi(token);
     handleLogout();
-  };
-
-  const loadGroupMembers = async (roomId: string): Promise<Member[]> => {
-    if (!token) return [];
-    const existingRequest = roomMembersRequestRef.current.get(roomId);
-    if (existingRequest) {
-      return existingRequest;
-    }
-
-    // Deduplicate concurrent member loads for the same room.
-    const request = fetchRoomMembers(token, roomId)
-      .then((members) => {
-        setRooms((current) =>
-          current.map((room) =>
-            room.id === roomId ? { ...room, members } : room,
-          ),
-        );
-
-        const myMember = members.find((m) => m.userId === currentUserId || m.name === user.username);
-        setActiveRoomNicknames((current) => {
-          const next = { ...current };
-          if (myMember?.nickname) {
-            next[roomId] = myMember.nickname;
-          } else {
-            delete next[roomId];
-          }
-          return next;
-        });
-
-        const roomReads = members.reduce<Record<string, string>>((reads, member) => {
-          if (member.lastReadId) {
-            reads[member.userId] = member.lastReadId;
-          }
-          return reads;
-        }, {});
-
-        setGroupReadStates((current) =>
-          Object.keys(roomReads).length === 0
-            ? current
-            : {
-                ...current,
-                [roomId]: {
-                  ...(current[roomId] ?? {}),
-                  ...roomReads,
-                },
-              },
-        );
-
-        return members;
-      })
-      .finally(() => {
-        roomMembersRequestRef.current.delete(roomId);
-      });
-
-    roomMembersRequestRef.current.set(roomId, request);
-    return request;
   };
 
   // Lazy-load members for the active room (placed after loadGroupMembers so the
@@ -1777,6 +1892,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         handleOpenPrivateRoom,
         handleCreateFolder,
         handleDeleteFolder,
+        handleRenameFolder,
         handleCategorizeRoom,
         handleModifyNickname,
         handleLeaveOrBlock,

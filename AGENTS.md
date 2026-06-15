@@ -9,9 +9,10 @@ This is a real-time group chat application built as a database course project. I
 
 | File | Description |
 |------|-------------|
-| [docker-compose.dev.yml](file:///home/blade520/dev/projects/1142-ntnu-db-app/docker-compose.dev.yml) | Defines the local three-service development stack: `db` (PostgreSQL 18), `backend` (Express), and `frontend` (Next.js) in dev mode |
-| [docker-compose.prod.yml](file:///home/blade520/dev/projects/1142-ntnu-db-app/docker-compose.prod.yml) | Defines the local three-service production stack with optimized builds and Cloudflare Tunnel |
-| [.env.example](file:///home/blade520/dev/projects/1142-ntnu-db-app/.env.example) | Template for environment variables. Must be copied to `.env` in the root folder before local runs |
+| [docker-compose.yml](docker-compose.yml) | Defines the local three-service development stack: `db` (PostgreSQL 18), `backend` (Express), and `frontend` (Next.js) |
+| [docker-compose.prod.yml](docker-compose.prod.yml) | Defines the local three-service production stack with optimized builds and Cloudflare Tunnel |
+| [.env.example](.env.example) | Template for environment variables. Must be copied to `.env` in the root folder before local runs |
+| [issues.json](issues.json) | **CRITICAL TASK LIST**: Contains the active catalog of outstanding issues, bugs, refactorings, and features to implement with detailed tasks and acceptance criteria |
 
 ## Documentation Roadmap
 
@@ -46,13 +47,11 @@ To get details on database schemas, REST APIs, or local setups, refer to the fol
 
 ### 3. Local Development Workflows
 - Docker Compose handles container orchestration. Root `.env` values are automatically injected.
-- The default `docker-compose.yml` and default `Dockerfiles` have been removed to force explicit environment selection and prevent duplicate maintenance.
-- For local development:
-  - Run `docker compose -f docker-compose.dev.yml up -d` from the root folder.
-  - Run database seeding via `docker compose -f docker-compose.dev.yml exec backend pnpm run db:seed`. This wipes the database and creates reproducible testing profiles (such as `alice@test.com`, password: `password123`).
+- The `db` service must start before `backend`. Run `docker compose up -d` from the root folder.
+- Run database seeding via `docker compose exec backend pnpm run db:seed`. This wipes the database and creates reproducible testing profiles (such as `alice@test.com`, password: `password123`).
 - For production deployment testing:
   - Run `docker compose -f docker-compose.prod.yml up -d`.
-- For more setup troubleshooting, refer to [docs/DEVELOPMENT.md](file:///home/blade520/dev/projects/1142-ntnu-db-app/docs/DEVELOPMENT.md).
+- For more setup troubleshooting, refer to [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 
 ### 4. Git Workflows
 - The active branch is `dev`.

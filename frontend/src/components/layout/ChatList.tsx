@@ -5,6 +5,9 @@ import { useParams, usePathname, useRouter } from "next/navigation";
 import { ChatRoom, getAvatarForUser, useChat } from "@/context/ChatContext";
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
+import { Input } from "@/components/ui/Input";
+import { Modal } from "@/components/ui/Modal";
 import { useTranslation } from "@/hooks/useTranslation";
 import { resolveAssetUrl } from "@/lib/assets";
 
@@ -23,6 +26,7 @@ export default function ChatList({ searchQuery }: ChatListProps) {
     friends,
     toggleFolder,
     handleDeleteFolder,
+    handleRenameFolder,
     handleCategorizeRoom,
   } = useChat();
 
@@ -35,6 +39,64 @@ export default function ChatList({ searchQuery }: ChatListProps) {
   const [dragOverUncategorized, setDragOverUncategorized] = React.useState(false);
   const [isRootDropActive, setIsRootDropActive] = React.useState(false);
   const [isUncategorizedCollapsed, setIsUncategorizedCollapsed] = React.useState(false);
+  const [contextMenu, setContextMenu] = React.useState<{
+    folderId: string;
+    folderName: string;
+    x: number;
+    y: number;
+  } | null>(null);
+
+  // 刪除確認 Modal 狀態
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = React.useState(false);
+  const [deleteTargetFolderId, setDeleteTargetFolderId] = React.useState<string | null>(null);
+
+  // 更名 Modal 狀態
+  const [renameOpen, setRenameOpen] = React.useState(false);
+  const [renameTargetFolderId, setRenameTargetFolderId] = React.useState<string | null>(null);
+  const [renameValue, setRenameValue] = React.useState("");
+
+  // 通用錯誤警告 Alert Modal 狀態
+  const [alertOpen, setAlertOpen] = React.useState(false);
+  const [alertTitle, setAlertTitle] = React.useState("");
+  const [alertMessage, setAlertMessage] = React.useState("");
+
+  React.useEffect(() => {
+    const handleCloseMenu = () => setContextMenu(null);
+    window.addEventListener("click", handleCloseMenu);
+    return () => window.removeEventListener("click", handleCloseMenu);
+  }, []);
+
+  const handleRenameFolderClick = (folderId: string, currentName: string) => {
+    setRenameTargetFolderId(folderId);
+    setRenameValue(currentName);
+    setRenameOpen(true);
+  };
+
+  const handleRenameSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!renameTargetFolderId) return;
+    const trimmed = renameValue.trim();
+    if (!trimmed) {
+      setAlertTitle("錯誤");
+      setAlertMessage("資料夾名稱不能為空");
+      setAlertOpen(true);
+      return;
+    }
+    if (trimmed.length > 50) {
+      setAlertTitle("錯誤");
+      setAlertMessage("資料夾名稱長度不能超過 50 個字元");
+      setAlertOpen(true);
+      return;
+    }
+    try {
+      await handleRenameFolder(renameTargetFolderId, trimmed);
+      setRenameOpen(false);
+    } catch (error) {
+      setAlertTitle("錯誤");
+      setAlertMessage(error instanceof Error ? error.message : "修改資料夾名稱失敗");
+      setAlertOpen(true);
+    }
+  };
 
   const resetDragState = () => {
     setDraggedRoomId(null);
@@ -104,17 +166,22 @@ export default function ChatList({ searchQuery }: ChatListProps) {
       room.name.toLowerCase().includes(searchQuery.toLowerCase()),
   );
 
-  const handleDeleteFolderClick = async (event: React.MouseEvent, folderId: string) => {
-    event.stopPropagation();
-    if (!window.confirm("Delete this folder? Chats inside it will move back to Uncategorized.")) {
-      return;
-    }
+  const handleDeleteFolderClick = (event: React.MouseEvent | React.BaseSyntheticEvent | MouseEvent | undefined, folderId: string) => {
+    if (event) event.stopPropagation();
+    setDeleteTargetFolderId(folderId);
+    setDeleteConfirmOpen(true);
+  };
 
+  const handleDeleteConfirm = async () => {
+    if (!deleteTargetFolderId) return;
     try {
-      await handleDeleteFolder(folderId);
+      await handleDeleteFolder(deleteTargetFolderId);
+      setDeleteConfirmOpen(false);
     } catch (error) {
       console.error(error);
-      window.alert(error instanceof Error ? error.message : "Failed to delete folder");
+      setAlertTitle("錯誤");
+      setAlertMessage(error instanceof Error ? error.message : "刪除資料夾失敗");
+      setAlertOpen(true);
     }
   };
 
@@ -219,7 +286,16 @@ export default function ChatList({ searchQuery }: ChatListProps) {
                   }}
                   onDragLeave={() => setDragOverFolderId(null)}
                   onDrop={(event) => handleDropToFolder(event, folder.id)}
-                  className={`group w-full px-4 py-2 flex items-center justify-between text-xs font-semibold text-foreground hover:bg-surface-muted transition-colors ${
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    setContextMenu({
+                      folderId: folder.id,
+                      folderName: folder.name,
+                      x: event.clientX,
+                      y: event.clientY,
+                    });
+                  }}
+                  className={`group w-full px-4 py-2 flex items-center justify-between text-xs font-semibold text-foreground hover:bg-surface-muted transition-colors select-none ${
                     dragOverFolderId === folder.id ? "bg-primary/10 text-primary" : ""
                   }`}
                 >
@@ -235,13 +311,22 @@ export default function ChatList({ searchQuery }: ChatListProps) {
                   <span className="flex items-center gap-2 shrink-0">
                     <button
                       type="button"
-                      aria-label={`${t("friends.remove")} ${folder.name}`}
-                      title={t("friends.remove")}
-                      onClick={(event) => void handleDeleteFolderClick(event, folder.id)}
-                      className="rounded-sm border border-transparent px-1.5 py-0.5 text-[10px] text-text-muted opacity-0 transition-all hover:border-border-primary hover:text-red-600 group-hover:opacity-100"
+                      aria-label="Folder actions"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        const rect = event.currentTarget.getBoundingClientRect();
+                        setContextMenu({
+                          folderId: folder.id,
+                          folderName: folder.name,
+                          x: rect.right - 120,
+                          y: rect.bottom + 4,
+                        });
+                      }}
+                      className="rounded-sm border border-transparent px-1.5 py-0.5 text-xs text-text-muted opacity-0 transition-all hover:border-border-primary hover:text-foreground group-hover:opacity-100 focus:opacity-100"
                     >
-                      Del
+                      ...
                     </button>
+
                     <Badge variant="default" className="scale-90">
                       {folderRooms.length}
                     </Badge>
@@ -283,6 +368,124 @@ export default function ChatList({ searchQuery }: ChatListProps) {
             );
           })}
         </div>
+      )}
+      {contextMenu && (
+        <div
+          style={{
+            position: "fixed",
+            top: contextMenu.y,
+            left: contextMenu.x,
+          }}
+          className="bg-surface-card border border-border-primary rounded-sm shadow-md py-1 z-50 min-w-[120px]"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            type="button"
+            onClick={() => {
+              setContextMenu(null);
+              void handleRenameFolderClick(contextMenu.folderId, contextMenu.folderName);
+            }}
+            className="w-full text-left px-3 py-1.5 hover:bg-surface-muted text-foreground transition-colors font-normal text-xs block"
+          >
+            修改資料夾名稱
+          </button>
+          <button
+            type="button"
+            onClick={(event) => {
+              setContextMenu(null);
+              void handleDeleteFolderClick(event as unknown as React.MouseEvent, contextMenu.folderId);
+            }}
+            className="w-full text-left px-3 py-1.5 hover:bg-surface-muted text-red-600 transition-colors font-normal text-xs block"
+          >
+            刪除資料夾
+          </button>
+        </div>
+      )}
+
+      {deleteConfirmOpen && (
+        <Modal
+          isOpen={deleteConfirmOpen}
+          onClose={() => setDeleteConfirmOpen(false)}
+          title="確認刪除資料夾"
+        >
+          <div className="flex flex-col gap-4">
+            <p className="text-sm text-text-muted">
+              確定要刪除此資料夾嗎？資料夾內的聊天室將會移回「未分類」。
+            </p>
+            <div className="flex justify-end gap-2.5">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setDeleteConfirmOpen(false)}
+              >
+                取消
+              </Button>
+              <Button
+                type="button"
+                variant="primary"
+                className="bg-red-600 hover:bg-red-700 active:bg-red-800 border-none"
+                onClick={handleDeleteConfirm}
+              >
+                刪除
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {renameOpen && (
+        <Modal
+          isOpen={renameOpen}
+          onClose={() => setRenameOpen(false)}
+          title="修改資料夾名稱"
+        >
+          <form onSubmit={handleRenameSubmit} className="flex flex-col gap-4">
+            <Input
+              label="資料夾名稱"
+              type="text"
+              value={renameValue}
+              onChange={(e) => setRenameValue(e.target.value)}
+              required
+              autoFocus
+            />
+            <div className="flex justify-end gap-2.5">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setRenameOpen(false)}
+              >
+                取消
+              </Button>
+              <Button
+                type="submit"
+                variant="primary"
+              >
+                保存
+              </Button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {alertOpen && (
+        <Modal
+          isOpen={alertOpen}
+          onClose={() => setAlertOpen(false)}
+          title={alertTitle}
+        >
+          <div className="flex flex-col gap-4">
+            <p className="text-sm text-text-muted">{alertMessage}</p>
+            <div className="flex justify-end">
+              <Button
+                type="button"
+                variant="primary"
+                onClick={() => setAlertOpen(false)}
+              >
+                確定
+              </Button>
+            </div>
+          </div>
+        </Modal>
       )}
     </>
   );

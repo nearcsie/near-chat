@@ -74,12 +74,25 @@ export const saveAvatarUpload = async (
   return `/uploads/avatars/${storedName}`;
 };
 
-export const removeManagedAvatar = async (avatarUrl?: string): Promise<void> => {
+export const removeManagedAvatar = async (
+  avatarUrl?: string,
+  ownerId?: string,
+): Promise<void> => {
   if (!avatarUrl || !avatarUrl.startsWith('/uploads/avatars/')) {
     return;
   }
 
   const fileName = path.basename(avatarUrl);
+
+  // Defense in depth: only ever delete files that this owner produced.
+  // `saveAvatarUpload` always names files `${userId}-<uuid><ext>`, so a managed
+  // avatar belonging to `ownerId` must carry that prefix. This prevents one
+  // user's stored avatarUrl from ever pointing the unlink at another user's
+  // file, even if a future write path lets an arbitrary value reach here.
+  if (ownerId && !fileName.startsWith(`${ownerId}-`)) {
+    return;
+  }
+
   const targetPath = path.join(AVATARS_UPLOAD_DIR, fileName);
 
   try {

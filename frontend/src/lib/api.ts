@@ -53,7 +53,6 @@ export const getApiBaseUrl = (): string => {
   
   return envUrl ?? 'http://localhost:4000';
 };
-
 const API_PREFIX = '/api/v1';
 
 type UpdateMeRequest = Partial<Pick<MyProfile, 'name' | 'email' | 'bio' | 'avatarUrl'>> & {
@@ -134,6 +133,9 @@ const authHeaders = (token?: string): HeadersInit => {
 export const refreshTokens = (): Promise<AuthResponse> =>
   requestJson<AuthResponse>('/auth/refresh', {
     method: 'POST',
+  }).then((res) => {
+    setActiveAccessToken(res.token);
+    return res;
   });
 
 // The refresh cookie is shared across tabs; two concurrent refreshes would
@@ -521,6 +523,16 @@ export const createFolder = (token: string, name: string): Promise<ApiFolder> =>
 
 export const deleteFolder = (token: string, folderId: string): Promise<void> =>
   requestJson<void>(`/folders/${folderId}`, { method: 'DELETE' }, { token });
+
+export const renameFolder = (token: string, folderId: string, name: string): Promise<ApiFolder> =>
+  requestJson<ApiFolder>(
+    `/folders/${folderId}`,
+    {
+      method: 'PATCH',
+      ...withJsonBody({ name }),
+    },
+    { token },
+  );
 
 export const updateFolderRooms = (
   token: string,

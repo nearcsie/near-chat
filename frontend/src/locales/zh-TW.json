@@ -161,7 +161,8 @@
     "deleteAccountWarning": "刪除帳號後將無法復原，請確認後再操作。",
     "deleteAccountButton": "刪除帳號",
     "deleteAccountConfirm": "確定要刪除您的帳號嗎？此操作無法復原。",
-    "deleteAccountFailed": "刪除帳號失敗。"
+    "deleteAccountFailed": "刪除帳號失敗。",
+    "logoutWarning": "您將會登出目前的工作階段。您需要重新登入才能存取您的聊天室。"
   },
   "chatroom": {
     "notFound": "找不到此聊天室",

@@ -164,7 +164,8 @@
     "deleteAccountWarning": "Once you delete your account, there is no going back. Please be certain.",
     "deleteAccountButton": "Delete Account",
     "deleteAccountConfirm": "Are you sure you want to delete your account? This action cannot be undone.",
-    "deleteAccountFailed": "Failed to delete account."
+    "deleteAccountFailed": "Failed to delete account.",
+    "logoutWarning": "You will be logged out of your session. You will need to log back in to access your chats."
   },
   "chatroom": {
     "notFound": "Chat room not found",

@@ -19,7 +19,7 @@ const AVATAR_UPLOAD_MAX_BYTES = 2 * 1024 * 1024;
 
 export default function ProfileSettings() {
   const router = useRouter();
-  const { user, rooms, uiLanguage, handleUpdateProfile, handleUpdatePreferences, handleDeleteAccount, setHasUnsavedChanges } = useChat();
+  const { user, rooms, uiLanguage, handleUpdateProfile, handleUpdatePreferences, handleDeleteAccount, setHasUnsavedChanges, handleLogout } = useChat();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [personalUsername, setPersonalUsername] = useState("");
   const [personalEmail, setPersonalEmail] = useState("");
@@ -393,6 +393,21 @@ export default function ProfileSettings() {
           <option value="zh-TW">繁體中文</option>
           <option value="en">English</option>
         </select>
+      </div>
+
+      <div className="mt-12 max-w-4xl border border-border-primary rounded-lg p-6 bg-surface-card">
+        <h3 className="text-lg font-semibold text-foreground mb-2">{t("sidebar.logout")}</h3>
+        <p className="text-sm text-foreground/70 mb-4">
+          {t("profile.logoutWarning")}
+        </p>
+        <Button
+          type="button"
+          variant="secondary"
+          className="bg-primary/10 text-primary hover:bg-primary hover:text-white border-primary/20 transition-colors"
+          onClick={handleLogout}
+        >
+          {t("sidebar.logout")}
+        </Button>
       </div>
 
       <div className="mt-12 max-w-4xl border border-red-500/20 rounded-lg p-6 bg-red-500/5">

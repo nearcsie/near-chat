@@ -3,18 +3,23 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useChat } from "@/context/ChatContext";
+import { useIsMobile } from "@/hooks/useMediaQuery";
 import { useTranslation } from "@/hooks/useTranslation";
 
 export default function MainRedirectPage() {
   const router = useRouter();
   const { rooms, roomsInitialized } = useChat();
+  const isMobile = useIsMobile();
   const { t } = useTranslation();
 
   useEffect(() => {
-    if (roomsInitialized && rooms.length > 0) {
+    // On phones, `/` is the standalone chat-list screen (rendered by the
+    // sidebar), so we must not auto-open the first room. On tablet/desktop the
+    // list lives in the sidebar permanently, so jump straight into a chat.
+    if (!isMobile && roomsInitialized && rooms.length > 0) {
       router.replace(`/chat/${rooms[0].id}`);
     }
-  }, [rooms, roomsInitialized, router]);
+  }, [rooms, roomsInitialized, router, isMobile]);
 
   if (!roomsInitialized) {
     return (
