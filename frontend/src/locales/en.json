@@ -181,6 +181,7 @@
     "save": "Save",
     "noCategory": "Uncategorized",
     "leaveGroup": "Leave Chatroom",
+    "ownerCannotLeave": "Manager cannot leave chatroom",
     "leave": "leave",
     "unblock": "Unblock",
     "blockContact": "Block Contact",

@@ -95,6 +95,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
   const canManageMembers = currentMember?.role === "owner" || currentMember?.role === "admin";
   const isReadOnlyRoom = Boolean(activeRoom?.isArchived || activeRoom?.isReadonly);
   const isPending = Boolean(currentMember?.role === "pending");
+  const isOwner = activeRoom?.type === "group" && currentMember?.role === "owner";
   const mentionQuery = mentionDraft?.query.toLowerCase() ?? "";
   const memberMentionCandidates: MentionCandidate[] = mentionDraft
     ? (activeRoom?.members ?? [])
@@ -379,11 +380,14 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
               {
                 label:
                   activeRoom.type === "group"
-                    ? t("chatroom.leaveGroup")
+                    ? isOwner
+                      ? t("chatroom.ownerCannotLeave")
+                      : t("chatroom.leaveGroup")
                     : activeRoom.isReadonly
                       ? t("chatroom.unblock")
                       : t("chatroom.blockContact"),
-                onClick: handleLeaveOrBlockAction,
+                onClick: isOwner ? undefined : handleLeaveOrBlockAction,
+                disabled: isOwner,
                 variant: activeRoom.isReadonly ? "default" : "danger",
               },
             ]}
