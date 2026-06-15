@@ -1139,14 +1139,14 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       } else if (type === 'ROOM_DELETED') {
         setRooms((current) => current.filter((r) => r.id !== roomId));
         if (activeRoomIdRef.current === roomId) {
-          router.push("/chat");
+          router.push("/");
         }
       } else if (type === 'MEMBER_KICKED' || type === 'MEMBER_LEFT') {
         const { userId } = payload;
         if (userId === currentUserId) {
           setRooms((current) => current.filter((r) => r.id !== roomId));
           if (activeRoomIdRef.current === roomId) {
-            router.push("/chat");
+            router.push("/");
           }
         } else {
           void loadGroupMembers(roomId);
