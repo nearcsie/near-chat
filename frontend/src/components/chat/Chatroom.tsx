@@ -443,6 +443,13 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
               }
             }
 
+            const currentMember = activeRoom.members?.find((m) => m.userId === user.userId);
+            const isRoomOwner = currentMember?.role === "owner";
+            const isRoomAdmin = currentMember?.role === "admin";
+            const isSenderOwnerOrAdmin = senderMember?.role === "owner" || senderMember?.role === "admin";
+            const canAdminRecall = isRoomAdmin && !isSenderOwnerOrAdmin;
+            const canRecall = Boolean(msg.isOutgoing) || isRoomOwner || canAdminRecall;
+
             return (
               <div
                 key={msg.id}
@@ -471,7 +478,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
                   messageId={msg.id}
                   onReply={() => setReplyTarget(msg)}
                   onRecall={() => handleRecallMessage(msg.id)}
-                  canRecall={Boolean(msg.isOutgoing) || canManageMembers}
+                  canRecall={canRecall}
                   avatarName={
                     msg.isOutgoing
                       ? user.username
@@ -487,7 +494,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
                     >
                       {t("chatroom.reply")}
                     </button>
-                    {(Boolean(msg.isOutgoing) || canManageMembers) && (
+                    {canRecall && (
                       <button
                         onClick={() => handleRecallMessage(msg.id)}
                         className="hover:text-danger transition-colors cursor-pointer"

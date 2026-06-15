@@ -151,8 +151,18 @@ export const makeMessageService = (
       if (!existing || existing.roomId !== parsed.data.roomId) {
         throw new NotFoundError('message', parsed.data.messageId);
       }
-      if (existing.senderId !== userId && member.role !== 'owner' && member.role !== 'admin') {
-        throw new ForbiddenError('Only the original sender or an admin can recall this message');
+
+      if (existing.senderId !== userId) {
+        if (member.role !== 'owner' && member.role !== 'admin') {
+          throw new ForbiddenError('Only the original sender or an admin can recall this message');
+        }
+
+        if (member.role === 'admin' && existing.senderId) {
+          const senderMember = await roomMemberRepo.findMember(parsed.data.roomId, existing.senderId);
+          if (senderMember && (senderMember.role === 'owner' || senderMember.role === 'admin')) {
+            throw new ForbiddenError('Admins cannot recall messages from the room owner or other admins');
+          }
+        }
       }
 
       return messageRepo.markRecalled(parsed.data.messageId);
