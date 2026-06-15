@@ -180,6 +180,7 @@
     "save": "儲存",
     "noCategory": "無分類",
     "leaveGroup": "退出聊天室",
+    "ownerCannotLeave": "管理者不能離開聊天室",
     "leave": "退出",
     "unblock": "解除封鎖",
     "blockContact": "封鎖聯絡人",
