@@ -288,7 +288,9 @@
     "manageMember": "管理"
   },
   "mainRedirect": {
-    "emptyChats": "尚未建立聊天室"
+    "emptyChats": "尚未建立聊天室",
+    "emptyChatsDesc": "前往好友頁面，開始私人聊天；或透過側邊欄建立新群組",
+    "goToFriends": "前往好友"
   },
   "avatarUpload": {
     "requirements": "僅支援 PNG、JPG、GIF、WebP，且檔案需小於 2 MB。",
