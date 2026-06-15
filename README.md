@@ -54,8 +54,6 @@ flowchart LR
 4. **Repositories (Data Access Layer)**:
    Communicates directly with the database using raw SQL queries with parameterised placeholders via the `pg` driver.
 
-For details on this structure, refer to the development blueprint in [PLAN.md](PLAN.md).
-
 ## Tech Stack
 
 - **Frontend**: Next.js 16.2 (App Router), React 19, Tailwind CSS v4, Socket.IO Client.
