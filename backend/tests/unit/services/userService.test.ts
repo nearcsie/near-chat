@@ -42,6 +42,7 @@ describe('userService', () => {
       update: vi.fn(),
       delete: vi.fn(),
       findAllWarningEnabled: vi.fn(),
+      findAllDemoWarningEnabled: vi.fn(),
     };
     emergencyContactRepo = {
       findByUserId: vi.fn(),
@@ -189,6 +190,7 @@ describe('userService', () => {
         email: 'test@example.com',
         bio: 'Hello there',
         avatarUrl: 'https://example.com/avatar.png',
+        lastActivity: new Date('2026-01-01T00:00:00.000Z'),
       });
     });
 
@@ -216,6 +218,7 @@ describe('userService', () => {
         email: 'test@example.com',
         bio: 'Hello there',
         avatarUrl: 'https://example.com/new.png',
+        lastActivity: new Date('2026-01-01T00:00:00.000Z'),
       });
     });
 
@@ -507,6 +510,45 @@ describe('userService', () => {
 
       expect(result).toEqual({ alerted: false, recipients: [], reason: 'BELOW_THRESHOLD' });
       expect(emergencyContactRepo.recordAlertIfNew).not.toHaveBeenCalled();
+    });
+
+    it('checks demo inactivity threshold and suppresses duplicate alerts', async () => {
+      const demoUser = {
+        ...baseUser(),
+        demoWarningEnabled: true,
+        demoWarningSeconds: 15,
+        lastActivity: new Date('2026-01-01T00:00:00.000Z'),
+      };
+      mockRepo.findById.mockResolvedValue(demoUser);
+      emergencyContactRepo.recordAlertIfNew.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+      emergencyContactRepo.findByUserId.mockResolvedValue([
+        {
+          userId: 'u1',
+          contactId: 'u2',
+          message: 'inactive',
+          createdAt: new Date(),
+        },
+      ]);
+
+      const first = await userService.checkDemoInactivity('u1', new Date('2026-01-01T00:00:16.000Z'));
+      const second = await userService.checkDemoInactivity('u1', new Date('2026-01-01T00:00:16.000Z'));
+
+      expect(first.alerted).toBe(true);
+      expect(second).toEqual({ alerted: false, recipients: [], reason: 'ALREADY_ALERTED' });
+    });
+
+    it('does not alert below the demo inactivity threshold', async () => {
+      const demoUser = {
+        ...baseUser(),
+        demoWarningEnabled: true,
+        demoWarningSeconds: 15,
+        lastActivity: new Date('2026-01-01T00:00:00.000Z'),
+      };
+      mockRepo.findById.mockResolvedValue(demoUser);
+
+      const result = await userService.checkDemoInactivity('u1', new Date('2026-01-01T00:00:10.000Z'));
+
+      expect(result).toEqual({ alerted: false, recipients: [], reason: 'BELOW_THRESHOLD' });
     });
   });
 

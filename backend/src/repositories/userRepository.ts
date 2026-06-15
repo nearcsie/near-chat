@@ -4,7 +4,8 @@ import type { IUserRepository } from "./IUserRepository";
 
 const USER_COLUMNS =
   'user_id, name, email, password_hash, bio, avatar_url, lang_preference, app_theme, ' +
-  'notify_desktop, notify_sound, warning_enabled, warning_days, last_activity, created_at, deleted_at';
+  'notify_desktop, notify_sound, warning_enabled, warning_days, last_activity, created_at, deleted_at, ' +
+  'demo_warning_enabled, demo_warning_seconds';
 
 function mapRowToUser(row: any): User {
   return {
@@ -23,6 +24,8 @@ function mapRowToUser(row: any): User {
     lastActivity: row.last_activity,
     createdAt: row.created_at,
     deletedAt: row.deleted_at ?? null,
+    demoWarningEnabled: row.demo_warning_enabled ?? false,
+    demoWarningSeconds: row.demo_warning_seconds ?? 30,
   };
 }
 
@@ -85,6 +88,17 @@ export class UserRepository implements IUserRepository {
     }));
   }
 
+  async findAllDemoWarningEnabled(): Promise<{ userId: string; lastActivity: Date; demoWarningSeconds: number }[]> {
+    const res = await this.db.query(
+      `SELECT user_id, last_activity, demo_warning_seconds FROM users WHERE demo_warning_enabled = true AND deleted_at IS NULL`
+    );
+    return res.rows.map(row => ({
+      userId: row.user_id,
+      lastActivity: row.last_activity,
+      demoWarningSeconds: row.demo_warning_seconds,
+    }));
+  }
+
   async create(data: { name: string; email: string; passwordHash: string }): Promise<User> {
     const res = await this.db.query(
       `INSERT INTO users (name, email, password_hash)
@@ -113,6 +127,8 @@ export class UserRepository implements IUserRepository {
         | "warningDays"
         | "lastActivity"
         | "deletedAt"
+        | "demoWarningEnabled"
+        | "demoWarningSeconds"
       >
     >,
   ): Promise<User> {
@@ -167,6 +183,14 @@ export class UserRepository implements IUserRepository {
     if (data.lastActivity !== undefined) {
       fields.push(`last_activity = $${queryIdx++}`);
       values.push(data.lastActivity);
+    }
+    if (data.demoWarningEnabled !== undefined) {
+      fields.push(`demo_warning_enabled = $${queryIdx++}`);
+      values.push(data.demoWarningEnabled);
+    }
+    if (data.demoWarningSeconds !== undefined) {
+      fields.push(`demo_warning_seconds = $${queryIdx++}`);
+      values.push(data.demoWarningSeconds);
     }
     if (data.deletedAt !== undefined) {
       fields.push(`deleted_at = $${queryIdx++}`);

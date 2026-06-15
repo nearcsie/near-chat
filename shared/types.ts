@@ -30,6 +30,8 @@ export interface User {
   notifySound: boolean;
   warningEnabled: boolean;
   warningDays: number;
+  demoWarningEnabled: boolean;
+  demoWarningSeconds: number;
   lastActivity: Date;
   createdAt: Date;
   deletedAt?: Date | null;
@@ -57,11 +59,14 @@ export interface UserProfile {
 
 export interface MyProfile extends UserProfile {
   email: string;
+  lastActivity: Date;
 }
 
 export interface UserSettings {
   warningEnabled: boolean;
   warningDays: number;
+  demoWarningEnabled: boolean;
+  demoWarningSeconds: number;
   language: string;
   theme: 'light' | 'dark';
   notifyDesktop: boolean;
