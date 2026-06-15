@@ -37,6 +37,35 @@ function mapRowToRoomSummary(row: any): RoomSummary {
   return summary;
 }
 
+interface MemberRoomRow {
+  room_id: string;
+  type: Room['type'];
+  name?: string | null;
+  avatar_url?: string | null;
+  invite_code?: string | null;
+  require_approval: boolean;
+  view_history: boolean;
+  is_archived: boolean;
+  is_readonly?: boolean | null;
+  created_at: Date;
+  join_time: Date;
+  last_read_id?: string | null;
+  last_read_sent_at?: Date | null;
+}
+
+interface VisibleMessageRow {
+  room_id: string;
+  message_id: string;
+  sender_id?: string | null;
+  content: string;
+  sent_at: Date;
+}
+
+interface OtherMemberRow {
+  room_id: string;
+  user_id: string;
+}
+
 export class RoomRepository implements IRoomRepository {
   constructor(private db: Pool) {}
 
@@ -70,44 +99,95 @@ export class RoomRepository implements IRoomRepository {
   }
 
   async findByMember(userId: string): Promise<RoomSummary[]> {
-    const res = await this.db.query(
+    const roomRes = await this.db.query<MemberRoomRow>(
       `SELECT
          cr.*,
-         rm.last_read_id AS last_read_id,
-         latest.message_id AS latest_message_id,
-         latest.sender_id AS latest_sender_id,
-         latest.content AS latest_content,
-         latest.sent_at AS latest_sent_at,
-         COALESCE(unread.unread_count, 0) AS unread_count,
-         (SELECT rm2.user_id::text FROM room_members rm2 WHERE rm2.room_id = cr.room_id AND rm2.user_id != $1 LIMIT 1) AS other_member_id
+         rm.join_time,
+         rm.last_read_id,
+         last_read.sent_at AS last_read_sent_at
        FROM chat_rooms cr
        JOIN room_members rm ON rm.room_id = cr.room_id
        LEFT JOIN messages last_read ON last_read.message_id = rm.last_read_id
-       LEFT JOIN LATERAL (
-         SELECT m.message_id, m.sender_id, m.content, m.sent_at
-         FROM messages m
-         WHERE m.room_id = cr.room_id
-           AND (cr.view_history = true OR m.sent_at >= rm.join_time)
-         ORDER BY m.sent_at DESC
-         LIMIT 1
-       ) latest ON true
-       LEFT JOIN LATERAL (
-         SELECT COUNT(*)::int AS unread_count
-         FROM (
-           SELECT 1
-           FROM messages m
-           WHERE m.room_id = cr.room_id
-             AND (cr.view_history = true OR m.sent_at >= rm.join_time)
-             AND (last_read.sent_at IS NULL OR m.sent_at > last_read.sent_at)
-             AND (m.sender_id IS NULL OR m.sender_id != $1)
-           LIMIT 100
-         ) _sub
-       ) unread ON true
-       WHERE rm.user_id = $1
-       ORDER BY COALESCE(latest.sent_at, cr.created_at) DESC`,
+       WHERE rm.user_id = $1`,
       [userId]
     );
-    return res.rows.map(mapRowToRoomSummary);
+
+    if (roomRes.rows.length === 0) {
+      return [];
+    }
+
+    const roomIds = roomRes.rows.map((row) => row.room_id);
+    const [messageRes, privateRoomMemberRes] = await Promise.all([
+      this.db.query<VisibleMessageRow>(
+        `SELECT m.room_id, m.message_id, m.sender_id, m.content, m.sent_at
+         FROM messages m
+         JOIN chat_rooms cr ON cr.room_id = m.room_id
+         JOIN room_members rm ON rm.room_id = m.room_id AND rm.user_id = $1
+         WHERE m.room_id = ANY($2::uuid[])
+           AND (cr.view_history = true OR m.sent_at >= rm.join_time)
+         ORDER BY m.room_id ASC, m.sent_at DESC`,
+        [userId, roomIds]
+      ),
+      this.db.query<OtherMemberRow>(
+        `SELECT room_id, user_id
+         FROM room_members
+         WHERE room_id = ANY($1::uuid[])
+           AND user_id != $2`,
+        [roomIds, userId]
+      ),
+    ]);
+
+    const roomById = new Map(roomRes.rows.map((row) => [row.room_id, row]));
+    const latestMessageByRoom = new Map<string, VisibleMessageRow>();
+    const unreadCountByRoom = new Map<string, number>();
+    for (const message of messageRes.rows) {
+      if (!latestMessageByRoom.has(message.room_id)) {
+        latestMessageByRoom.set(message.room_id, message);
+      }
+    }
+
+    for (const room of roomRes.rows) {
+      unreadCountByRoom.set(room.room_id, 0);
+    }
+
+    for (const message of messageRes.rows) {
+      const room = roomById.get(message.room_id);
+      if (!room) continue;
+      if (message.sender_id && message.sender_id === userId) continue;
+      if (room.last_read_sent_at && message.sent_at <= room.last_read_sent_at) continue;
+      const currentCount = unreadCountByRoom.get(message.room_id) ?? 0;
+      if (currentCount >= 100) continue;
+      unreadCountByRoom.set(message.room_id, currentCount + 1);
+    }
+
+    const otherMemberByRoom = new Map<string, string>();
+    for (const row of privateRoomMemberRes.rows) {
+      if (!otherMemberByRoom.has(row.room_id)) {
+        otherMemberByRoom.set(row.room_id, row.user_id);
+      }
+    }
+
+    const summaries = roomRes.rows.map((room) => {
+      const latest = latestMessageByRoom.get(room.room_id);
+      const unreadCount = unreadCountByRoom.get(room.room_id) ?? 0;
+      return mapRowToRoomSummary({
+        ...room,
+        latest_message_id: latest?.message_id ?? null,
+        latest_sender_id: latest?.sender_id ?? null,
+        latest_content: latest?.content ?? null,
+        latest_sent_at: latest?.sent_at ?? null,
+        unread_count: unreadCount,
+        other_member_id: otherMemberByRoom.get(room.room_id) ?? null,
+      });
+    });
+
+    summaries.sort((a, b) => {
+      const aTime = a.latestMessage?.sentAt ?? a.createdAt;
+      const bTime = b.latestMessage?.sentAt ?? b.createdAt;
+      return bTime.getTime() - aTime.getTime();
+    });
+
+    return summaries;
   }
 
   async create(data: CreateRoomData): Promise<Room> {
