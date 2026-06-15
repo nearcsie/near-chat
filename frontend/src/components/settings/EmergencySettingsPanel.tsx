@@ -21,6 +21,8 @@ export default function EmergencySettingsPanel() {
   } = useChat();
   const [warningEnabled, setWarningEnabled] = useState(true);
   const [warningDays, setWarningDays] = useState(7);
+  const [demoWarningEnabled, setDemoWarningEnabled] = useState(false);
+  const [demoWarningSeconds, setDemoWarningSeconds] = useState(30);
   const [emergencyContacts, setEmergencyContacts] = useState<EmergencyContact[]>([]);
   const [defaultEmergencyMessage, setDefaultEmergencyMessage] = useState("");
   const [feedback, setFeedback] = useState<SettingsFeedback | null>(null);
@@ -38,6 +40,8 @@ export default function EmergencySettingsPanel() {
     setPrevSettingsSync({ settings: emergencySettings, locale });
     setWarningEnabled(emergencySettings.warningEnabled);
     setWarningDays(emergencySettings.warningDays);
+    setDemoWarningEnabled(emergencySettings.demoWarningEnabled);
+    setDemoWarningSeconds(emergencySettings.demoWarningSeconds);
     setEmergencyContacts(emergencySettings.contacts);
     setDefaultEmergencyMessage(emergencySettings.contacts[0]?.message || t("emergency.defaultMessage"));
   }
@@ -81,6 +85,8 @@ export default function EmergencySettingsPanel() {
     const settings: EmergencySettings = {
       warningEnabled,
       warningDays: Math.max(1, warningDays),
+      demoWarningEnabled,
+      demoWarningSeconds: Math.max(1, demoWarningSeconds),
       contacts: emergencyContacts,
     };
     try {
@@ -149,6 +155,29 @@ export default function EmergencySettingsPanel() {
               min={1}
               value={warningDays}
               onChange={(event) => setWarningDays(Number(event.target.value))}
+            />
+            <Input
+              label={t("emergency.defaultAlertMessage")}
+              value={defaultEmergencyMessage}
+              onChange={(event) => setDefaultEmergencyMessage(event.target.value)}
+            />
+          </div>
+        </div>
+
+        <SectionTitle title={"[Demo] 離線警示（秒數版）"} />
+        <div className="border border-border-primary rounded-sm bg-surface-card p-4 flex flex-col gap-4">
+          <Checkbox
+            label={"啟用示範離線警示"}
+            checked={demoWarningEnabled}
+            onChange={(event) => setDemoWarningEnabled(event.target.checked)}
+          />
+          <div className="grid grid-cols-1 md:grid-cols-[180px_minmax(0,1fr)] gap-4">
+            <Input
+              label={"警示秒數"}
+              type="number"
+              min={1}
+              value={demoWarningSeconds}
+              onChange={(event) => setDemoWarningSeconds(Number(event.target.value))}
             />
             <Input
               label={t("emergency.defaultAlertMessage")}

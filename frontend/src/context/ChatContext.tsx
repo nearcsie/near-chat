@@ -153,6 +153,9 @@ export interface User {
   notifySound?: boolean;
   warningEnabled?: boolean;
   warningDays?: number;
+  demoWarningEnabled?: boolean;
+  demoWarningSeconds?: number;
+  lastActivity?: Date | string;
 }
 
 type StoredUser = User;
@@ -192,6 +195,8 @@ export interface EmergencyContact {
 export interface EmergencySettings {
   warningEnabled: boolean;
   warningDays: number;
+  demoWarningEnabled: boolean;
+  demoWarningSeconds: number;
   contacts: EmergencyContact[];
 }
 
@@ -337,6 +342,9 @@ const toStoredUser = (
   notifySound: settings?.notifySound ?? true,
   warningEnabled: settings?.warningEnabled ?? false,
   warningDays: settings?.warningDays ?? 0,
+  demoWarningEnabled: settings?.demoWarningEnabled ?? false,
+  demoWarningSeconds: settings?.demoWarningSeconds ?? 30,
+  lastActivity: profile.lastActivity,
 });
 
 const formatMessageTime = (value: Date | string): string => {
@@ -654,6 +662,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const [emergencySettings, setEmergencySettings] = useState<EmergencySettings>({
     warningEnabled: false,
     warningDays: 0,
+    demoWarningEnabled: false,
+    demoWarningSeconds: 30,
     contacts: [],
   });
   const [selectedFriendForSidebar, setSelectedFriendForSidebar] = useState<Friend | null>(null);
@@ -803,6 +813,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         setEmergencySettings({
           warningEnabled: settings?.warningEnabled ?? user.warningEnabled ?? false,
           warningDays: settings?.warningDays ?? user.warningDays ?? 0,
+          demoWarningEnabled: settings?.demoWarningEnabled ?? user.demoWarningEnabled ?? false,
+          demoWarningSeconds: settings?.demoWarningSeconds ?? user.demoWarningSeconds ?? 30,
           contacts,
         });
       } catch (error) {
@@ -1246,6 +1258,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
             notifySound: user.notifySound ?? true,
             warningEnabled: user.warningEnabled ?? false,
             warningDays: user.warningDays ?? 14,
+            demoWarningEnabled: user.demoWarningEnabled ?? false,
+            demoWarningSeconds: user.demoWarningSeconds ?? 30,
           }),
         };
       };
@@ -1345,7 +1359,9 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         notifyDesktop: updatedSettings.notifyDesktop, 
         notifySound: updatedSettings.notifySound, 
         warningEnabled: updatedSettings.warningEnabled, 
-        warningDays: updatedSettings.warningDays 
+        warningDays: updatedSettings.warningDays,
+        demoWarningEnabled: updatedSettings.demoWarningEnabled,
+        demoWarningSeconds: updatedSettings.demoWarningSeconds,
       };
     }
 
@@ -1688,10 +1704,13 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const saveEmergencySettings = async (settings: EmergencySettings) => {
     if (!token) return;
     const nextWarningDays = settings.warningEnabled ? Math.max(1, settings.warningDays) : 0;
+    const nextDemoWarningSeconds = Math.max(1, settings.demoWarningSeconds);
 
     await updateMySettings(token, {
       warningEnabled: settings.warningEnabled,
       warningDays: nextWarningDays,
+      demoWarningEnabled: settings.demoWarningEnabled,
+      demoWarningSeconds: nextDemoWarningSeconds,
     });
 
     const nextContactIds = new Set(settings.contacts.map((contact) => contact.contactId));
@@ -1716,13 +1735,19 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       notifySound: user.notifySound ?? true,
       warningEnabled: settings.warningEnabled,
       warningDays: nextWarningDays,
+      demoWarningEnabled: settings.demoWarningEnabled,
+      demoWarningSeconds: nextDemoWarningSeconds,
     };
     await refreshSocialData(token, updatedSettings);
-    setUser((current) => ({
-      ...current,
+    const nextUser = {
+      ...user,
       warningEnabled: updatedSettings.warningEnabled,
       warningDays: updatedSettings.warningDays,
-    }));
+      demoWarningEnabled: updatedSettings.demoWarningEnabled,
+      demoWarningSeconds: updatedSettings.demoWarningSeconds,
+    };
+    localStorage.setItem("user", JSON.stringify(nextUser));
+    setUser(nextUser);
   };
 
   const triggerEmergencyAlertNow = async (message?: string): Promise<TriggerEmergencyAlertResult> => {

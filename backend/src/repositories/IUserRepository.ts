@@ -14,4 +14,5 @@ export interface IUserRepository {
   ): Promise<User>;
   delete(userId: string): Promise<void>;
   findAllWarningEnabled(): Promise<{ userId: string; lastActivity: Date; warningDays: number }[]>;
+  findAllDemoWarningEnabled(): Promise<{ userId: string; lastActivity: Date; demoWarningSeconds: number }[]>;
 }
