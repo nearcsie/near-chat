@@ -521,6 +521,16 @@ export const createFolder = (token: string, name: string): Promise<ApiFolder> =>
 export const deleteFolder = (token: string, folderId: string): Promise<void> =>
   requestJson<void>(`/folders/${folderId}`, { method: 'DELETE' }, { token });
 
+export const renameFolder = (token: string, folderId: string, name: string): Promise<ApiFolder> =>
+  requestJson<ApiFolder>(
+    `/folders/${folderId}`,
+    {
+      method: 'PATCH',
+      ...withJsonBody({ name }),
+    },
+    { token },
+  );
+
 export const updateFolderRooms = (
   token: string,
   folderId: string,

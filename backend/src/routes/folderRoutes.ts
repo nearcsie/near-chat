@@ -9,5 +9,6 @@ export const makeFolderRoutes = (ctrl: ReturnType<typeof makeFolderController>):
   router.post('/', ctrl.create.bind(ctrl));
   router.delete('/:id', ctrl.remove.bind(ctrl));
   router.put('/:id/rooms', ctrl.updateRooms.bind(ctrl));
+  router.patch('/:id', ctrl.rename.bind(ctrl));
   return router;
 };

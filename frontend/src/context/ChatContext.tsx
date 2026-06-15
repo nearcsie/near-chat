@@ -29,6 +29,7 @@ import {
   deleteEmergencyContact,
   deleteFriend,
   deleteFolder as deleteFolderApi,
+  renameFolder as renameFolderApi,
   deleteMe as deleteMeApi,
   deleteRoom as deleteRoomApi,
   getBlockedUsers,
@@ -285,6 +286,7 @@ interface ChatContextType {
   handleOpenPrivateRoom: (targetUserId: string) => Promise<string>;
   handleCreateFolder: (name: string) => Promise<void>;
   handleDeleteFolder: (folderId: string) => Promise<void>;
+  handleRenameFolder: (folderId: string, name: string) => Promise<void>;
   handleCategorizeRoom: (roomId: string, folderId: string | null) => Promise<void>;
   handleModifyNickname: (roomId: string, nickname: string) => Promise<void>;
   handleLeaveOrBlock: (roomId: string) => Promise<{ isDeleted: boolean; newActiveId?: string }>;
@@ -1408,6 +1410,16 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     );
   };
 
+  const handleRenameFolder = async (folderId: string, name: string) => {
+    if (!token) return;
+    const updated = await renameFolderApi(token, folderId, name);
+    setFolders((current) =>
+      current.map((folder) =>
+        folder.id === folderId ? { ...folder, name: updated.name } : folder,
+      ),
+    );
+  };
+
   const handleCategorizeRoom = async (roomId: string, folderId: string | null) => {
     if (!token) return;
 
@@ -1879,6 +1891,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         handleOpenPrivateRoom,
         handleCreateFolder,
         handleDeleteFolder,
+        handleRenameFolder,
         handleCategorizeRoom,
         handleModifyNickname,
         handleLeaveOrBlock,
