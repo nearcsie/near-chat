@@ -558,67 +558,67 @@ export default function GroupSettings({ roomId, onClose }: GroupSettingsProps) {
                 onChange={(event) => void handleViewHistoryChange(event.target.checked)}
               />
             </div>
-            <div className="flex items-center justify-between border border-border-secondary bg-surface-muted px-3 py-2 gap-3">
-              <div className="min-w-0">
-                <p className="text-xs font-semibold text-foreground">{t("groupSettings.inviteCode")}</p>
-                <p className="text-[10px] text-text-muted mt-1">{t("groupSettings.inviteCodeDesc")}</p>
-                <code className="text-xs font-mono text-primary mt-1 block">
-                  {activeRoom.inviteCode ?? t("groupSettings.inviteCodeNotGenerated")}
-                </code>
-              </div>
-              {activeRoom.inviteCode && (
-                <Button
-                  type="button"
-                  variant="secondary"
-                  className="text-xs py-1 px-3 shrink-0"
-                  onClick={() => void handleCopyInviteCode()}
-                >
-                  {t("groupSettings.copyInviteCode")}
-                </Button>
-              )}
-            </div>
           </section>
         )}
 
-        {canManageMembers && (
-          <div className="flex flex-col gap-2 border border-border-secondary bg-surface-muted px-3 py-3">
-            <p className="text-xs font-semibold text-foreground">{t("groupSettings.searchInviteTitle")}</p>
-            <p className="text-[10px] text-text-muted">{t("groupSettings.searchInviteDesc")}</p>
-            <div className="flex gap-2">
-              <Input
-                label=""
-                value={searchQuery}
-                onChange={(event) => handleSearchQueryChange(event.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") e.preventDefault(); }}
-                placeholder={t("groupSettings.searchPlaceholder")}
-              />
-            </div>
-            {isSearching && <p className="text-[10px] text-text-muted">{t("groupSettings.searching")}</p>}
-            {!isSearching && searchQuery.trim() && searchResults.length === 0 && (
-              <p className="text-[10px] text-text-muted">{t("groupSettings.noSearchResults")}</p>
-            )}
-            {searchResults.length > 0 && (
-              <div className="flex flex-col divide-y divide-border-secondary border border-border-secondary rounded-sm overflow-hidden">
-                {searchResults.map((candidate) => (
-                  <div
-                    key={candidate.userId}
-                    className="flex items-center justify-between px-3 py-2 text-xs bg-surface-card"
-                  >
-                    <span className="font-medium text-foreground">{candidate.name}</span>
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      className="text-[10px] py-1 px-2"
-                      onClick={() => void handleSendInviteMessage(candidate)}
-                    >
-                      {t("groupSettings.sendInvite")}
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            )}
+        <div className="flex items-center justify-between border border-border-secondary bg-surface-muted px-3 py-2 gap-3">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold text-foreground">{t("groupSettings.inviteCode")}</p>
+            <p className="text-[10px] text-text-muted mt-1">{t("groupSettings.inviteCodeDesc")}</p>
+            <code className="text-xs font-mono text-primary mt-1 block">
+              {activeRoom.inviteCode ?? t("groupSettings.inviteCodeNotGenerated")}
+            </code>
           </div>
-        )}
+          {activeRoom.inviteCode && (
+            <Button
+              type="button"
+              variant="secondary"
+              className="text-xs py-1 px-3 shrink-0"
+              onClick={() => void handleCopyInviteCode()}
+            >
+              {t("groupSettings.copyInviteCode")}
+            </Button>
+          )}
+        </div>
+
+        <div className="flex flex-col gap-2 border border-border-secondary bg-surface-muted px-3 py-3">
+          <p className="text-xs font-semibold text-foreground">{t("groupSettings.searchInviteTitle")}</p>
+          <p className="text-[10px] text-text-muted">{t("groupSettings.searchInviteDesc")}</p>
+          <div className="flex gap-2">
+            <Input
+              label=""
+              value={searchQuery}
+              onChange={(event) => handleSearchQueryChange(event.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") e.preventDefault(); }}
+              placeholder={t("groupSettings.searchPlaceholder")}
+            />
+          </div>
+          {isSearching && <p className="text-[10px] text-text-muted">{t("groupSettings.searching")}</p>}
+          {!isSearching && searchQuery.trim() && searchResults.length === 0 && (
+            <p className="text-[10px] text-text-muted">{t("groupSettings.noSearchResults")}</p>
+          )}
+          {searchResults.length > 0 && (
+            <div className="flex flex-col divide-y divide-border-secondary border border-border-secondary rounded-sm overflow-hidden">
+              {searchResults.map((candidate) => (
+                <div
+                  key={candidate.userId}
+                  className="flex items-center justify-between px-3 py-2 text-xs bg-surface-card"
+                >
+                  <span className="font-medium text-foreground">{candidate.name}</span>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="text-[10px] py-1 px-2"
+                    onClick={() => void handleSendInviteMessage(candidate)}
+                  >
+                    {t("groupSettings.sendInvite")}
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
 
         <section className="flex flex-col gap-3">
           <SectionTitle title={t("groupSettings.membersTitle", { count: String(members.length) })} />
