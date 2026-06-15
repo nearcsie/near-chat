@@ -6,7 +6,7 @@ import type { UpdateRoomInput } from '../validators/roomSchemas';
 interface RoomService {
   list(userId: string): Promise<RoomSummary[]>;
   create(creatorId: string, data: { type: 'group'; name: string; avatarUrl?: string; requireApproval?: boolean; viewHistory?: boolean }): Promise<Room>;
-  createPrivate(creatorId: string, targetUserId: string): Promise<{ room: Room; created: boolean }>;
+  createPrivate(creatorId: string, targetUserId: string, bypassFriendCheck?: boolean): Promise<{ room: Room; created: boolean }>;
   getById(roomId: string, callerId: string): Promise<Room>;
   listMembers(roomId: string, callerId: string): Promise<RoomMember[]>;
   update(roomId: string, callerId: string, data: UpdateRoomInput): Promise<Room>;

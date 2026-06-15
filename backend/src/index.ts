@@ -91,7 +91,7 @@ const userService = makeUserService(
     let room = await roomRepo.findPrivateRoomByMembers(payload.userId, contactId);
     if (!room) {
       try {
-        const result = await roomService.createPrivate(payload.userId, contactId);
+        const result = await roomService.createPrivate(payload.userId, contactId, true);
         room = result.room as any;
       } catch (err) {
         console.error('Failed to auto-create private room for emergency contact:', err);
@@ -154,7 +154,7 @@ const friendService = makeFriendService(friendRepo, (userId, eventName, payload)
   io.to(`user_${userId}`).emit(eventName as any, payload);
 }, {
   markPrivateReadOnly: roomService.markPrivateReadOnly,
-  createPrivate: (userA: string, userB: string) => roomService.createPrivate(userA, userB),
+  createPrivate: (userA: string, userB: string, bypassFriendCheck?: boolean) => roomService.createPrivate(userA, userB, bypassFriendCheck),
   reopenPrivateRoom: roomService.reopenPrivateRoom,
 });
 const friendController = makeFriendController(friendService);
