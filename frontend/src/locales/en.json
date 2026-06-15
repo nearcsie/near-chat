@@ -121,7 +121,9 @@
     "searchBtn": "Search",
     "searching": "Searching...",
     "noResults": "No matching users found.",
-    "requested": "Requested"
+    "requested": "Requested",
+    "blockConfirmTitle": "Block Friend Confirmation",
+    "blockEmergencyWarning": "This friend is your emergency contact. Blocking them will disable your emergency contact relationship. Are you sure you want to proceed?"
   },
   "profile": {
     "profile": "Profile",

@@ -164,6 +164,12 @@ export const makeFriendRepository = (db: Pool) => {
          ON CONFLICT DO NOTHING`,
         [blockerId, blockedId]
       );
+      await db.query(
+        `DELETE FROM emergency_contacts
+         WHERE (user_id = $1 AND contact_id = $2)
+            OR (user_id = $2 AND contact_id = $1)`,
+        [blockerId, blockedId]
+      );
     },
 
     async unblockUser(blockerId: string, blockedId: string): Promise<void> {

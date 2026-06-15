@@ -118,7 +118,9 @@
     "searchBtn": "查詢",
     "searching": "查詢中...",
     "noResults": "找不到符合的使用者。",
-    "requested": "已送出"
+    "requested": "已送出",
+    "blockConfirmTitle": "確認封鎖好友",
+    "blockEmergencyWarning": "此好友為您的緊急聯絡人，封鎖後緊急聯絡關係將會失效。確定要繼續封鎖嗎？"
   },
   "profile": {
     "profile": "個人資料",
