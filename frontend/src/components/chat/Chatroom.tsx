@@ -75,6 +75,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
     setShowRightPanel,
     typingUsers,
     groupReadStates,
+    markRoomAsRead,
   } = useChat();
 
   const [inputText, setInputText] = useState("");
@@ -86,6 +87,8 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
   const [pendingAttachment, setPendingAttachment] = useState<File | null>(null);
   const [isUploadingAttachment, setIsUploadingAttachment] = useState(false);
   const messageEndRef = useRef<HTMLDivElement>(null);
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const isAtBottomRef = useRef(true);
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { t } = useTranslation();
@@ -132,15 +135,60 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
     setSelectedMentionIndex(0);
   }
 
-  // Scroll to bottom when room or messages change
+  // Track whether the user is at the bottom of the message list
+  useEffect(() => {
+    const el = scrollAreaRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+      if (atBottom && !isAtBottomRef.current) {
+        isAtBottomRef.current = true;
+        markRoomAsRead(roomId);
+      } else if (!atBottom) {
+        isAtBottomRef.current = false;
+      }
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, [roomId, markRoomAsRead]);
+
+  // Scroll behavior: on room entry scroll to first unread or bottom; on new messages stay put unless already at bottom
   const lastScrolledRoomIdRef = useRef<string | null>(null);
   useLayoutEffect(() => {
     if (lastScrolledRoomIdRef.current !== roomId) {
-      messageEndRef.current?.scrollIntoView({ behavior: "auto" });
-      if (messages.length > 0) {
+      // Entering a new room
+      if (messages.filter((m) => m.roomId === roomId).length > 0) {
         lastScrolledRoomIdRef.current = roomId;
       }
-    } else {
+
+      const myLastReadId =
+        groupReadStates[roomId]?.[user.userId ?? ""] ??
+        rooms.find((r) => r.id === roomId)?.lastReadId ??
+        null;
+      const roomMsgs = [...messages.filter((m) => m.roomId === roomId)].sort((a, b) =>
+        a.id.localeCompare(b.id),
+      );
+      const lastReadIdx = myLastReadId ? roomMsgs.findIndex((m) => m.id === myLastReadId) : -1;
+      const firstUnreadIdx = lastReadIdx + 1;
+
+      if (firstUnreadIdx > 0 && firstUnreadIdx < roomMsgs.length) {
+        // There are unread messages — scroll to the first unread
+        const firstUnreadId = roomMsgs[firstUnreadIdx].id;
+        const target = scrollAreaRef.current?.querySelector(`[data-msg-id="${firstUnreadId}"]`);
+        if (target) {
+          target.scrollIntoView({ behavior: "auto", block: "start" });
+          isAtBottomRef.current = false;
+        } else {
+          messageEndRef.current?.scrollIntoView({ behavior: "auto" });
+          isAtBottomRef.current = true;
+        }
+      } else {
+        messageEndRef.current?.scrollIntoView({ behavior: "auto" });
+        isAtBottomRef.current = true;
+        markRoomAsRead(roomId);
+      }
+    } else if (isAtBottomRef.current) {
+      // Same room, new messages — auto-scroll only if already at bottom
       messageEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
   }, [roomId, messages]);
@@ -398,7 +446,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
       </div>
 
       {/* Chat Messages Area */}
-      <div className="flex-1 overflow-y-auto p-3 md:p-6 flex flex-col gap-4">
+      <div ref={scrollAreaRef} className="flex-1 overflow-y-auto p-3 md:p-6 flex flex-col gap-4">
         {messages
           .filter((m) => m.roomId === activeRoom.id)
           .map((msg) => {
@@ -406,6 +454,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
               return (
                 <div
                   key={msg.id}
+                  data-msg-id={msg.id}
                   className="w-full flex justify-center my-2 select-none"
                 >
                   <div className="bg-surface-card border border-border-secondary px-3 py-1 rounded-full text-xs text-text-muted">
@@ -436,6 +485,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
             return (
               <div
                 key={msg.id}
+                data-msg-id={msg.id}
                 className={`group/msg flex flex-col ${msg.isOutgoing ? "items-end" : "items-start"}`}
               >
                 <ChatBubble

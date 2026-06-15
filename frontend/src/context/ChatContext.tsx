@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { resolveAssetUrl } from "@/lib/assets";
 import type {
@@ -323,6 +323,7 @@ interface ChatContextType {
   activeProfilePopover: { instanceId: string; userId: string } | null;
   setActiveProfilePopover: React.Dispatch<React.SetStateAction<{ instanceId: string; userId: string } | null>>;
   refreshSocialData: () => Promise<void>;
+  markRoomAsRead: (roomId: string) => void;
 }
 
 const ChatContext = createContext<ChatContextType | undefined>(undefined);
@@ -1821,8 +1822,16 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     });
   }, [activeRoomId, currentUserId, groupReadStates, messages]);
 
+  const prevActiveRoomIdRef = useRef<string | null>(null);
+
   useEffect(() => {
     if (!socketRef.current || !activeRoomId || !currentUserId) return;
+
+    // Skip on room entry — Chatroom calls markRoomAsRead once the user scrolls to the bottom
+    if (prevActiveRoomIdRef.current !== activeRoomId) {
+      prevActiveRoomIdRef.current = activeRoomId;
+      return;
+    }
 
     const activeRoom = roomsRef.current.find((room) => room.id === activeRoomId);
     if (!activeRoom) return;
@@ -1851,6 +1860,32 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       },
     }));
   }, [activeRoomId, currentUserId, groupReadStates, messages]);
+
+  // Stable function for Chatroom to call when the user has scrolled to the bottom
+  const markRoomAsReadRef = useRef<((roomId: string) => void) | null>(null);
+  markRoomAsReadRef.current = (roomId: string) => {
+    if (!socketRef.current || !currentUserId) return;
+    const room = roomsRef.current.find((r) => r.id === roomId);
+    if (!room) return;
+    const roomMessages = sortMessages(messages.filter((m) => m.roomId === roomId));
+    const latestIncoming = [...roomMessages].reverse().find((m) => m.senderId !== currentUserId);
+    if (!latestIncoming) return;
+    const currentLastReadId =
+      groupReadStates[roomId]?.[currentUserId] ??
+      room.members?.find((m) => m.userId === currentUserId)?.lastReadId ??
+      null;
+    if (currentLastReadId === latestIncoming.id) return;
+    sendReadReceipt(socketRef.current, { roomId, messageId: latestIncoming.id });
+    setGroupReadStates((current) => ({
+      ...current,
+      [roomId]: { ...(current[roomId] ?? {}), [currentUserId]: latestIncoming.id },
+    }));
+  };
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const markRoomAsRead = useCallback((roomId: string) => {
+    markRoomAsReadRef.current?.(roomId);
+  }, []);
 
   const derivedRooms = useMemo(() => {
     return rooms.map((room) => {
@@ -1957,6 +1992,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         hasUnsavedChanges,
         setHasUnsavedChanges,
         refreshSocialData: handleRefreshSocialData,
+        markRoomAsRead,
       }}
     >
       {children}
