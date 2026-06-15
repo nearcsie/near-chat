@@ -174,7 +174,10 @@ export function ChatBubble({
     >
       {!isOutgoing && (
         <div
-          className="shrink-0 mt-1 relative cursor-pointer avatar-click-target"
+          className={cn(
+            "shrink-0 mt-1 relative cursor-pointer avatar-click-target",
+            showPopover && "z-20"
+          )}
           onClick={handleTogglePopover}
         >
           <Avatar name={avatarName || senderName} src={senderAvatar} size="sm" />
