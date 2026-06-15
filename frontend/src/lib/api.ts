@@ -54,7 +54,6 @@ export const getApiBaseUrl = (): string => {
   return envUrl ?? 'http://localhost:4000';
 };
 
-export const API_BASE_URL = getApiBaseUrl();
 const API_PREFIX = '/api/v1';
 
 type UpdateMeRequest = Partial<Pick<MyProfile, 'name' | 'email' | 'bio' | 'avatarUrl'>> & {
