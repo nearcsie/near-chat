@@ -5,7 +5,7 @@ const allowedDevOrigins = process.env.ALLOWED_DEV_ORIGINS
   : ["laptop.tail544a05.ts.net"];
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  output: 'standalone',
   allowedDevOrigins,
 };
 

@@ -44,8 +44,7 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    volumes:
-      - ${UPLOADS_MOUNT_SOURCE:-app_uploads}:/app/uploads
+    command: sh -c "pnpm run migrate:up && pnpm dev"
 
   frontend:
     build:
