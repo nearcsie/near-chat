@@ -228,7 +228,7 @@ export default function EmergencySettingsPanel() {
                 <option value="">{t("emergency.selectFriend")}</option>
                 {availableEmergencyFriends.map((friend) => (
                   <option key={friend.id} value={friend.id}>
-                    {friend.name} ({friend.email})
+                    {friend.name}{friend.email ? ` (${friend.email})` : ""}
                   </option>
                 ))}
               </select>
