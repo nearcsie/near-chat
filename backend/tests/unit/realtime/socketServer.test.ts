@@ -118,15 +118,16 @@ describe('attachSockets', () => {
     expect(roomEmit).toHaveBeenCalledWith('message_recalled', { messageId: 'msg-1' });
   });
 
-  it('emits ForbiddenError when recall_message caller is not the sender', async () => {
+  it('emits ForbiddenError when recallMessage fails with ForbiddenError', async () => {
     repo.findById.mockResolvedValue({ ...message, senderId: 'user-2' });
+    service.recallMessage.mockRejectedValue(new ForbiddenError('Only the original sender or an admin can recall this message'));
 
     await handlers.recall_message({ messageId: 'msg-1' });
 
-    expect(service.recallMessage).not.toHaveBeenCalled();
+    expect(service.recallMessage).toHaveBeenCalledWith('user-1', 'room-1', 'msg-1');
     expect(socket.emit).toHaveBeenCalledWith('error', {
       statusCode: 403,
-      message: 'Only the original sender can recall this message',
+      message: 'Only the original sender or an admin can recall this message',
       code: 'FORBIDDEN',
     });
   });

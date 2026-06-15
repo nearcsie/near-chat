@@ -78,9 +78,6 @@ export const attachSockets = (io: ChatServer, deps: SocketDeps): void => {
         if (!existing) {
           throw new NotFoundError('message', messageId);
         }
-        if (existing.senderId !== userId) {
-          throw new ForbiddenError('Only the original sender can recall this message');
-        }
 
         const recalled = await deps.messageService.recallMessage(userId, existing.roomId, messageId);
         io.to(`room_${existing.roomId}`).emit('message_recalled', {

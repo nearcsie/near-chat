@@ -331,6 +331,19 @@ describe('messageService', () => {
     expect(result).toBe(recalled);
   });
 
+  it('recallMessage allows room admin to recall any message', async () => {
+    const recalled: MessageWithSender = { ...messageWithSender, isRecalled: true };
+    roomRepo.findById.mockResolvedValue(room);
+    roomMemberRepo.findMember.mockResolvedValue({ ...member, role: 'admin' });
+    messageRepo.findById.mockResolvedValue({ ...message, senderId: 'user-2' });
+    messageRepo.markRecalled.mockResolvedValue(recalled);
+
+    const result = await messageService.recallMessage('user-1', 'room-1', 'message-1');
+
+    expect(messageRepo.markRecalled).toHaveBeenCalledWith('message-1');
+    expect(result).toBe(recalled);
+  });
+
   it('recallMessage throws NotFoundError when message does not exist', async () => {
     roomRepo.findById.mockResolvedValue(room);
     roomMemberRepo.findMember.mockResolvedValue(member);
