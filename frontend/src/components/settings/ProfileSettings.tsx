@@ -27,6 +27,7 @@ export default function ProfileSettings() {
   const [personalAvatarFile, setPersonalAvatarFile] = useState<File | null>(null);
   const [avatarPreviewUrl, setAvatarPreviewUrl] = useState<string | null>(null);
   const [personalBio, setPersonalBio] = useState("");
+  const [bioError, setBioError] = useState<string | null>(null);
   const [profileFeedback, setProfileFeedback] = useState<SettingsFeedback | null>(null);
 
   // Password change modal states
@@ -115,6 +116,16 @@ export default function ProfileSettings() {
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [hasUnsavedChanges]);
 
+  useEffect(() => {
+    if (personalBio.length > 100) {
+      setBioError(t("profile.bioTooLong"));
+    } else if (personalBio.split(/\r?\n/).length > 8) {
+      setBioError(t("profile.bioTooManyLines"));
+    } else {
+      setBioError(null);
+    }
+  }, [personalBio, t]);
+
   const [shouldAlertEffect, setShouldAlertEffect] = useState(false);
 
   useEffect(() => {
@@ -183,6 +194,7 @@ export default function ProfileSettings() {
 
   const handleProfileSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (bioError) return;
     setProfileFeedback(null);
 
     try {
@@ -312,6 +324,7 @@ export default function ProfileSettings() {
             label={t("profile.bio")} 
             value={personalBio} 
             onChange={(event) => setPersonalBio(event.target.value)} 
+            error={bioError || undefined}
           />
         </div>
 
@@ -327,7 +340,7 @@ export default function ProfileSettings() {
           <Button type="button" variant="secondary" onClick={handleCancel}>
             {t("profile.cancel")}
           </Button>
-          <Button type="submit" variant="primary">
+          <Button type="submit" variant="primary" disabled={!!bioError}>
             {t("profile.saveProfile")}
           </Button>
         </div>

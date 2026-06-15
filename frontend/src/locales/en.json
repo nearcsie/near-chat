@@ -160,6 +160,8 @@
     "passwordTooShort": "Password must be at least 8 characters.",
     "passwordMismatch": "Password confirmation does not match.",
     "bio": "Bio",
+    "bioTooLong": "Bio must be at most 100 characters.",
+    "bioTooManyLines": "Bio must be at most 8 lines.",
     "savePreferences": "Save Preferences",
     "preferencesSaved": "Preferences saved successfully",
     "deleteAccount": "Delete Account",

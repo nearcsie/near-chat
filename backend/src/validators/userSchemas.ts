@@ -17,7 +17,15 @@ export const updateMeSchema = z
     email: z.string().email('Invalid email format').optional(),
     password: z.string().min(8, 'Password must be at least 8 characters long').optional(),
     currentPassword: z.string().optional(),
-    bio: z.string().trim().optional(),
+    bio: z
+      .string()
+      .trim()
+      .max(100, 'Bio must be at most 100 characters')
+      .refine(
+        (val) => val.split(/\r?\n/).length <= 8,
+        'Bio must be at most 8 lines'
+      )
+      .optional(),
     avatarUrl: z.union([z.literal(''), z.string().url('Invalid avatar URL')]).optional(),
   })
   .refine((v) => Object.keys(v).length > 0, {

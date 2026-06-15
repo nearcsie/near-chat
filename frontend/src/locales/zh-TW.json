@@ -157,6 +157,8 @@
     "passwordTooShort": "密碼至少需要 8 個字元。",
     "passwordMismatch": "密碼確認不一致。",
     "bio": "個人簡介",
+    "bioTooLong": "個人簡介最多 100 個字元。",
+    "bioTooManyLines": "個人簡介最多 8 行。",
     "savePreferences": "儲存偏好設定",
     "preferencesSaved": "偏好設定已儲存。",
     "deleteAccount": "刪除帳號",

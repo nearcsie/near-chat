@@ -112,7 +112,7 @@ export function ChatBubble({
     if (scrollEl) {
       const parentRect = scrollEl.getBoundingClientRect();
       const relativeTop = rect.top - parentRect.top + rect.height / 2;
-      const halfPopover = 170;
+      const halfPopover = 200;
       const padding = 12;
       let topVal = relativeTop;
 

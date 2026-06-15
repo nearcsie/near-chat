@@ -41,7 +41,7 @@ export default function RoomMembersPanel({ room, members }: { room: ChatRoom; me
                 const parentEl = e.currentTarget.closest(".members-panel-root");
                 if (parentEl) {
                   const parentRect = parentEl.getBoundingClientRect();
-                  const halfPopover = 170; // Half of estimated popover height (340px)
+                  const halfPopover = 200; // Half of estimated popover height (400px)
                   const padding = 12;      // Top/bottom margins
                   let topVal = rect.top - parentRect.top + rect.height / 2;
 
