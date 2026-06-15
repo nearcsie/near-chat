@@ -197,7 +197,9 @@
     "membersList": "Members ({count})",
     "hideInfoPanel": "Hide Info Panel",
     "showInfoPanel": "Show Info Panel",
-    "muted": "Muted"
+    "muted": "Muted",
+    "pendingApproval": "Pending Approval",
+    "pendingApprovalBanner": "Your request to join this group is pending approval. You will be able to read and send messages once an owner or admin approves your request."
   },
   "profileCard": {
     "myInfo": "My Info",

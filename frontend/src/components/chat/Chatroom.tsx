@@ -94,6 +94,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
   const currentMember = activeRoom?.members?.find((m) => m.userId === user.userId || m.name === user.username);
   const canManageMembers = currentMember?.role === "owner" || currentMember?.role === "admin";
   const isReadOnlyRoom = Boolean(activeRoom?.isArchived || activeRoom?.isReadonly);
+  const isPending = Boolean(currentMember?.role === "pending");
   const mentionQuery = mentionDraft?.query.toLowerCase() ?? "";
   const memberMentionCandidates: MentionCandidate[] = mentionDraft
     ? (activeRoom?.members ?? [])
@@ -334,6 +335,11 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
               <h1 className="text-sm font-bold text-foreground truncate max-w-[200px]">
                 {activeRoom.name}
               </h1>
+              {isPending && (
+                <Badge className="bg-amber-500/10 border-amber-500 text-amber-500 normal-case shrink-0">
+                  {t("chatroom.pendingApproval")}
+                </Badge>
+              )}
               {isReadOnlyRoom && <Badge variant="danger">{t("chatroom.readOnly")}</Badge>}
             </div>
             {activeRoom.type === "group" && (
@@ -348,7 +354,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
         {/* Header Action Elements */}
         <div className="flex items-center gap-2 md:gap-3 shrink-0">
           {/* Group Settings Button */}
-          {activeRoom.type === "group" && onOpenGroupSettings && (
+          {activeRoom.type === "group" && onOpenGroupSettings && !isPending && (
             <Button
               variant="secondary"
               onClick={onOpenGroupSettings}
@@ -523,7 +529,11 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
 
       {/* Input Box Area */}
       <div className="border-t border-border-primary bg-surface-card px-3 py-3 md:px-6 md:py-4 shrink-0">
-        {isReadOnlyRoom ? (
+        {isPending ? (
+          <div className="w-full text-center py-2.5 bg-amber-500/10 text-xs text-amber-600 font-medium select-none border border-dashed border-amber-500/30 rounded-sm">
+            {t("chatroom.pendingApprovalBanner")}
+          </div>
+        ) : isReadOnlyRoom ? (
           <div className="w-full text-center py-2.5 bg-surface-muted text-xs text-text-muted uppercase tracking-wider select-none border border-dashed border-border-secondary rounded-sm">
             {t("chatroom.readOnlyOrBlocked")}
           </div>

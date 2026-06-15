@@ -193,7 +193,9 @@
     "membersList": "成員列表 ({count})",
     "hideInfoPanel": "隱藏資訊欄",
     "showInfoPanel": "顯示資訊欄",
-    "muted": "已靜音"
+    "muted": "已靜音",
+    "pendingApproval": "審核中",
+    "pendingApprovalBanner": "您加入此群組的申請正在審核中。在 owner 或 admin 核准您的申請後，您就可以閱讀與傳送訊息。"
   },
   "profileCard": {
     "myInfo": "我的資訊",
