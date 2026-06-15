@@ -44,12 +44,15 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    command: sh -c "pnpm run migrate:up && pnpm dev"
+    volumes:
+      - ${UPLOADS_MOUNT_SOURCE:-app_uploads}:/app/uploads
 
   frontend:
     build:
-      context: ./frontend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./frontend/Dockerfile
+      args:
+        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
     ports:
       - "3005:3000"
     environment:
@@ -63,6 +66,16 @@ services:
       - ./tsconfig.base.json:/tsconfig.base.json:ro
       - ./shared:/shared:ro
     depends_on:
+      - backend
+
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    restart: always
+    command: tunnel --no-autoupdate run
+    environment:
+      - TUNNEL_TOKEN=${TUNNEL_TOKEN}
+    depends_on:
+      - frontend
       - backend
 
 volumes:

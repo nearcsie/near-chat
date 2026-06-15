@@ -18,23 +18,43 @@ import type {
   UserSettings,
 } from '@shared/types';
 
-const getApiBaseUrl = (): string => {
-  if (typeof window !== 'undefined') {
-    const envUrl = process.env.NEXT_PUBLIC_API_URL;
-    let port = '4005';
-    if (envUrl) {
-      try {
-        const urlObj = new URL(envUrl);
-        if (urlObj.port) port = urlObj.port;
-      } catch (e) {
-        // ignore
-      }
+export const getApiBaseUrl = (): string => {
+  const envUrl = process.env.NEXT_PUBLIC_API_URL;
+  
+  // Use dynamic string lookup on globalThis to prevent the build-time compiler from
+  // statically evaluating and constant-folding the window checks.
+  const w = typeof globalThis !== 'undefined' ? (globalThis as any)['win' + 'dow'] : undefined;
+  
+  if (w && w.location) {
+    const hostname = w.location.hostname;
+    const protocol = w.location.protocol;
+    const port = w.location.port;
+    
+    // Prioritize dynamic resolution if we are on the standard ports.
+    // In Docker Compose, frontend is exposed at port 3005, backend is at port 4005.
+    // In local dev, frontend is exposed at port 3000, backend is at port 4000.
+    if (port === '3005') {
+      return `${protocol}//${hostname}:4005`;
+    } else if (port === '3000') {
+      return `${protocol}//${hostname}:4000`;
     }
-    return `${window.location.protocol}//${window.location.hostname}:${port}`;
+    
+    // If the envUrl is set and is NOT localhost, use it directly.
+    if (envUrl && !envUrl.includes('localhost') && !envUrl.includes('127.0.0.1')) {
+      return envUrl;
+    }
+    
+    // Fallback: if accessed via a custom domain/host (like Tailscale funnel or tailscale IP)
+    // and port is not 3005/3000, we check if it is not localhost.
+    if (hostname !== 'localhost' && hostname !== '127.0.0.1') {
+      return `${protocol}//${hostname}:4005`;
+    }
   }
-  return process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
+  
+  return envUrl ?? 'http://localhost:4000';
 };
-const API_BASE_URL = getApiBaseUrl();
+
+export const API_BASE_URL = getApiBaseUrl();
 const API_PREFIX = '/api/v1';
 
 type UpdateMeRequest = Partial<Pick<MyProfile, 'name' | 'email' | 'bio' | 'avatarUrl'>> & {
@@ -100,10 +120,10 @@ export const setActiveAccessToken = (token: string | null): void => {
   activeAccessToken = token;
 };
 
-const buildUrl = (path: string): string => `${API_BASE_URL}${API_PREFIX}${path}`;
+const buildUrl = (path: string): string => `${getApiBaseUrl()}${API_PREFIX}${path}`;
 const resolveRequestUrl = (path: string): string => {
   if (path.startsWith('http')) return path;
-  if (path.startsWith('/api/')) return `${API_BASE_URL}${path}`;
+  if (path.startsWith('/api/')) return `${getApiBaseUrl()}${path}`;
   return buildUrl(path);
 };
 
