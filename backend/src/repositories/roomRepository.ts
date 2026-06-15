@@ -51,13 +51,15 @@ interface MemberRoomRow {
   join_time: Date;
   last_read_id?: string | null;
   last_read_sent_at?: Date | null;
+  latest_message_id?: string | null;
+  latest_sender_id?: string | null;
+  latest_content?: string | null;
+  latest_sent_at?: Date | null;
 }
 
 interface VisibleMessageRow {
   room_id: string;
-  message_id: string;
   sender_id?: string | null;
-  content: string;
   sent_at: Date;
 }
 
@@ -104,10 +106,15 @@ export class RoomRepository implements IRoomRepository {
          cr.*,
          rm.join_time,
          rm.last_read_id,
-         last_read.sent_at AS last_read_sent_at
+         last_read.sent_at AS last_read_sent_at,
+         latest.message_id AS latest_message_id,
+         latest.sender_id AS latest_sender_id,
+         latest.content AS latest_content,
+         latest.sent_at AS latest_sent_at
        FROM chat_rooms cr
        JOIN room_members rm ON rm.room_id = cr.room_id
        LEFT JOIN messages last_read ON last_read.message_id = rm.last_read_id
+       LEFT JOIN room_last_message_view latest ON latest.room_id = cr.room_id
        WHERE rm.user_id = $1`,
       [userId]
     );
@@ -119,7 +126,7 @@ export class RoomRepository implements IRoomRepository {
     const roomIds = roomRes.rows.map((row) => row.room_id);
     const [messageRes, privateRoomMemberRes] = await Promise.all([
       this.db.query<VisibleMessageRow>(
-        `SELECT m.room_id, m.message_id, m.sender_id, m.content, m.sent_at
+        `SELECT m.room_id, m.sender_id, m.sent_at
          FROM messages m
          JOIN chat_rooms cr ON cr.room_id = m.room_id
          JOIN room_members rm ON rm.room_id = m.room_id AND rm.user_id = $1
@@ -138,13 +145,7 @@ export class RoomRepository implements IRoomRepository {
     ]);
 
     const roomById = new Map(roomRes.rows.map((row) => [row.room_id, row]));
-    const latestMessageByRoom = new Map<string, VisibleMessageRow>();
     const unreadCountByRoom = new Map<string, number>();
-    for (const message of messageRes.rows) {
-      if (!latestMessageByRoom.has(message.room_id)) {
-        latestMessageByRoom.set(message.room_id, message);
-      }
-    }
 
     for (const room of roomRes.rows) {
       unreadCountByRoom.set(room.room_id, 0);
@@ -168,14 +169,22 @@ export class RoomRepository implements IRoomRepository {
     }
 
     const summaries = roomRes.rows.map((room) => {
-      const latest = latestMessageByRoom.get(room.room_id);
+      const latestVisible =
+        room.latest_sent_at && (room.view_history || room.latest_sent_at >= room.join_time)
+          ? {
+              messageId: room.latest_message_id ?? null,
+              senderId: room.latest_sender_id ?? null,
+              content: room.latest_content ?? null,
+              sentAt: room.latest_sent_at,
+            }
+          : null;
       const unreadCount = unreadCountByRoom.get(room.room_id) ?? 0;
       return mapRowToRoomSummary({
         ...room,
-        latest_message_id: latest?.message_id ?? null,
-        latest_sender_id: latest?.sender_id ?? null,
-        latest_content: latest?.content ?? null,
-        latest_sent_at: latest?.sent_at ?? null,
+        latest_message_id: latestVisible?.messageId ?? null,
+        latest_sender_id: latestVisible?.senderId ?? null,
+        latest_content: latestVisible?.content ?? null,
+        latest_sent_at: latestVisible?.sentAt ?? null,
         unread_count: unreadCount,
         other_member_id: otherMemberByRoom.get(room.room_id) ?? null,
       });

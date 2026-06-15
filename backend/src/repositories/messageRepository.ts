@@ -52,8 +52,94 @@ function mapRowToMessageWithSender(row: any): MessageWithSender {
   return msg;
 }
 
+interface MessageWithSenderRow {
+  message_id: string;
+  room_id: string;
+  sender_id: string | null;
+  content: string;
+  reply_to_id?: string | null;
+  is_recalled: boolean;
+  sent_at: Date;
+  sender_user_id?: string | null;
+  sender_name?: string | null;
+  sender_avatar_url?: string | null;
+  sender_deleted_at?: Date | null;
+}
+
+interface MentionRow {
+  message_id: string;
+  user_id: string;
+}
+
+interface AttachmentRow {
+  attachment_id: string;
+  message_id?: string | null;
+  uploaded_by: string | null;
+  file_type: string;
+  original_name: string;
+  uploaded_at: Date;
+}
+
 export class MessageRepository implements IMessageRepository {
   constructor(private db: Pool) {}
+
+  private async fetchMessageWithSenderByIds(messageIds: string[]): Promise<MessageWithSender[]> {
+    if (messageIds.length === 0) {
+      return [];
+    }
+
+    const [messageRes, mentionRes, attachmentRes] = await Promise.all([
+      this.db.query<MessageWithSenderRow>(
+        `SELECT *
+         FROM message_with_sender_view
+         WHERE message_id = ANY($1::uuid[])`,
+        [messageIds],
+      ),
+      this.db.query<MentionRow>(
+        `SELECT message_id, user_id
+         FROM message_mentions
+         WHERE message_id = ANY($1::uuid[])`,
+        [messageIds],
+      ),
+      this.db.query<AttachmentRow>(
+        `SELECT attachment_id, message_id, uploaded_by, file_type, original_name, uploaded_at
+         FROM attachments
+         WHERE message_id = ANY($1::uuid[])
+         ORDER BY uploaded_at ASC`,
+        [messageIds],
+      ),
+    ]);
+
+    const mentionsByMessageId = new Map<string, string[]>();
+    for (const row of mentionRes.rows) {
+      const mentions = mentionsByMessageId.get(row.message_id) ?? [];
+      mentions.push(row.user_id);
+      mentionsByMessageId.set(row.message_id, mentions);
+    }
+
+    const attachmentsByMessageId = new Map<string, Attachment[]>();
+    for (const row of attachmentRes.rows) {
+      if (!row.message_id) continue;
+      const attachments = attachmentsByMessageId.get(row.message_id) ?? [];
+      attachments.push(mapRowToAttachment(row));
+      attachmentsByMessageId.set(row.message_id, attachments);
+    }
+
+    const messagesById = new Map(
+      messageRes.rows.map((row) => {
+        const message = mapRowToMessageWithSender({
+          ...row,
+          mentions: mentionsByMessageId.get(row.message_id) ?? [],
+          attachments: attachmentsByMessageId.get(row.message_id) ?? [],
+        });
+        return [row.message_id, message] as const;
+      }),
+    );
+
+    return messageIds
+      .map((messageId) => messagesById.get(messageId))
+      .filter((message): message is MessageWithSender => Boolean(message));
+  }
 
   async findById(messageId: string): Promise<Message | null> {
     const res = await this.db.query(
@@ -76,69 +162,29 @@ export class MessageRepository implements IMessageRepository {
       }
       const cursor = cursorRes.rows[0];
 
-      const res = await this.db.query(
-        `SELECT
-           m.*,
-           u.user_id AS sender_user_id,
-           u.name AS sender_name,
-           u.avatar_url AS sender_avatar_url,
-           u.deleted_at AS sender_deleted_at,
-           (SELECT array_agg(user_id) FROM message_mentions WHERE message_id = m.message_id) AS mentions,
-           (
-             SELECT COALESCE(jsonb_agg(jsonb_build_object(
-               'attachmentId', a.attachment_id,
-               'messageId', a.message_id,
-               'uploadedBy', a.uploaded_by,
-               'fileUrl', '/api/v1/attachments/' || a.attachment_id,
-               'fileType', a.file_type,
-               'originalName', a.original_name,
-               'uploadedAt', a.uploaded_at
-             ) ORDER BY a.uploaded_at), '[]'::jsonb)
-             FROM attachments a
-             WHERE a.message_id = m.message_id
-           ) AS attachments
-         FROM messages m
-         LEFT JOIN users u ON u.user_id = m.sender_id
-         WHERE m.room_id = $1
-           AND ($5::timestamptz IS NULL OR m.sent_at >= $5)
-           AND (m.sent_at, m.message_id) < ($2, $3)
-         ORDER BY m.sent_at DESC, m.message_id DESC
+      const res = await this.db.query<{ message_id: string }>(
+        `SELECT message_id
+         FROM messages
+         WHERE room_id = $1
+           AND ($5::timestamptz IS NULL OR sent_at >= $5)
+           AND (sent_at, message_id) < ($2, $3)
+         ORDER BY sent_at DESC, message_id DESC
          LIMIT $4`,
         [roomId, cursor.sent_at, cursor.message_id, limit, opts.after ?? null],
       );
-      return res.rows.map(mapRowToMessageWithSender);
+      return this.fetchMessageWithSenderByIds(res.rows.map((row) => row.message_id));
     }
 
-    const res = await this.db.query(
-      `SELECT
-         m.*,
-         u.user_id AS sender_user_id,
-         u.name AS sender_name,
-         u.avatar_url AS sender_avatar_url,
-         u.deleted_at AS sender_deleted_at,
-         (SELECT array_agg(user_id) FROM message_mentions WHERE message_id = m.message_id) AS mentions,
-         (
-           SELECT COALESCE(jsonb_agg(jsonb_build_object(
-             'attachmentId', a.attachment_id,
-             'messageId', a.message_id,
-             'uploadedBy', a.uploaded_by,
-             'fileUrl', '/api/v1/attachments/' || a.attachment_id,
-             'fileType', a.file_type,
-             'originalName', a.original_name,
-             'uploadedAt', a.uploaded_at
-           ) ORDER BY a.uploaded_at), '[]'::jsonb)
-           FROM attachments a
-           WHERE a.message_id = m.message_id
-         ) AS attachments
-       FROM messages m
-       LEFT JOIN users u ON u.user_id = m.sender_id
-       WHERE m.room_id = $1
-         AND ($3::timestamptz IS NULL OR m.sent_at >= $3)
-       ORDER BY m.sent_at DESC, m.message_id DESC
+    const res = await this.db.query<{ message_id: string }>(
+      `SELECT message_id
+       FROM messages
+       WHERE room_id = $1
+         AND ($3::timestamptz IS NULL OR sent_at >= $3)
+       ORDER BY sent_at DESC, message_id DESC
        LIMIT $2`,
       [roomId, limit, opts.after ?? null],
     );
-    return res.rows.map(mapRowToMessageWithSender);
+    return this.fetchMessageWithSenderByIds(res.rows.map((row) => row.message_id));
   }
 
   async create(data: Pick<Message, 'roomId' | 'senderId' | 'content' | 'replyToId'> & { mentions?: string[], attachmentIds?: string[] }): Promise<MessageWithSender> {
@@ -146,45 +192,32 @@ export class MessageRepository implements IMessageRepository {
     try {
       await client.query('BEGIN');
       const res = await client.query(
-        `WITH inserted AS (
-           INSERT INTO messages (room_id, sender_id, content, reply_to_id)
-           VALUES ($1, $2, $3, $4)
-           RETURNING *
-         )
-         SELECT
-           inserted.*,
-           u.user_id AS sender_user_id,
-           u.name AS sender_name,
-           u.avatar_url AS sender_avatar_url,
-           u.deleted_at AS sender_deleted_at,
-           '[]'::jsonb AS attachments
-         FROM inserted
-         LEFT JOIN users u ON u.user_id = inserted.sender_id`,
+        `INSERT INTO messages (room_id, sender_id, content, reply_to_id)
+         VALUES ($1, $2, $3, $4)
+         RETURNING message_id`,
         [data.roomId, data.senderId, data.content, data.replyToId ?? null],
       );
-      
-      const msg = mapRowToMessageWithSender(res.rows[0]);
+      const messageId = res.rows[0].message_id as string;
       
       if (data.mentions && data.mentions.length > 0) {
         const values = data.mentions.map((_, i) => `($1, $${i + 2})`).join(', ');
-        const params = [msg.messageId, ...data.mentions];
+        const params = [messageId, ...data.mentions];
         await client.query(`INSERT INTO message_mentions (message_id, user_id) VALUES ${values}`, params);
-        msg.mentions = data.mentions;
       }
       
       if (data.attachmentIds && data.attachmentIds.length > 0) {
         const attachmentRes = await client.query(
           'UPDATE attachments SET message_id = $1 WHERE attachment_id = ANY($2::uuid[]) AND message_id IS NULL RETURNING *',
-          [msg.messageId, data.attachmentIds],
+          [messageId, data.attachmentIds],
         );
         if (attachmentRes.rowCount !== new Set(data.attachmentIds).size) {
           throw new ValidationError('Attachments must exist and must not already belong to a message');
         }
-        msg.attachments = attachmentRes.rows.map(mapRowToAttachment);
       }
       
       await client.query('COMMIT');
-      return msg;
+      const [message] = await this.fetchMessageWithSenderByIds([messageId]);
+      return message;
     } catch (e) {
       await client.query('ROLLBACK');
       throw e;
@@ -195,37 +228,14 @@ export class MessageRepository implements IMessageRepository {
 
   async markRecalled(messageId: string): Promise<MessageWithSender> {
     const res = await this.db.query(
-      `WITH updated AS (
-         UPDATE messages
-         SET is_recalled = true
-         WHERE message_id = $1
-         RETURNING *
-       )
-       SELECT
-         updated.*,
-         u.user_id AS sender_user_id,
-         u.name AS sender_name,
-         u.avatar_url AS sender_avatar_url,
-         u.deleted_at AS sender_deleted_at,
-         (SELECT array_agg(user_id) FROM message_mentions WHERE message_id = updated.message_id) AS mentions,
-         (
-           SELECT COALESCE(jsonb_agg(jsonb_build_object(
-             'attachmentId', a.attachment_id,
-             'messageId', a.message_id,
-             'uploadedBy', a.uploaded_by,
-             'fileUrl', '/api/v1/attachments/' || a.attachment_id,
-             'fileType', a.file_type,
-             'originalName', a.original_name,
-             'uploadedAt', a.uploaded_at
-           ) ORDER BY a.uploaded_at), '[]'::jsonb)
-           FROM attachments a
-           WHERE a.message_id = updated.message_id
-         ) AS attachments
-       FROM updated
-       LEFT JOIN users u ON u.user_id = updated.sender_id`,
+      `UPDATE messages
+       SET is_recalled = true
+       WHERE message_id = $1
+       RETURNING message_id`,
       [messageId],
     );
     if (res.rows.length === 0) throw new Error('Message not found');
-    return mapRowToMessageWithSender(res.rows[0]);
+    const [message] = await this.fetchMessageWithSenderByIds([messageId]);
+    return message;
   }
 }
