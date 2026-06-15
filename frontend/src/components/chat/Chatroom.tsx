@@ -66,7 +66,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
     activeRoomNicknames,
     handleSendMessage,
     handleTyping,
-    handleUploadAttachment,
+    handleUploadAttachments,
     handleRecallMessage,
     handleModifyNickname,
     handleLeaveOrBlock,
@@ -83,7 +83,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
   const [replyTarget, setReplyTarget] = useState<Message | null>(null);
   const [isModifyNickOpen, setIsModifyNickOpen] = useState(false);
   const [nickInputValue, setNickInputValue] = useState("");
-  const [pendingAttachment, setPendingAttachment] = useState<File | null>(null);
+  const [pendingAttachments, setPendingAttachments] = useState<File[]>([]);
   const [isUploadingAttachment, setIsUploadingAttachment] = useState(false);
   const messageEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -151,7 +151,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
     // Reset the staged attachment when switching rooms so a file selected in one
     // chat is never sent from a different chat by accident.
     const resetId = window.setTimeout(() => {
-      setPendingAttachment(null);
+      setPendingAttachments([]);
       setIsUploadingAttachment(false);
     }, 0);
 
@@ -169,16 +169,16 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isUploadingAttachment) return;
-    if (!inputText.trim() && !pendingAttachment) return;
+    if (!inputText.trim() && pendingAttachments.length === 0) return;
 
     try {
-      if (pendingAttachment) {
+      if (pendingAttachments.length > 0) {
         setIsUploadingAttachment(true);
-        await handleUploadAttachment(activeRoom.id, pendingAttachment, {
+        await handleUploadAttachments(activeRoom.id, pendingAttachments, {
           content: inputText,
           replyTarget,
         });
-        setPendingAttachment(null);
+        setPendingAttachments([]);
       } else {
         handleSendMessage(activeRoom.id, inputText, replyTarget);
       }
@@ -199,15 +199,15 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
   };
 
   const handleFileSelected = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
+    const files = event.target.files ? Array.from(event.target.files) : [];
     event.target.value = "";
-    if (!file) return;
-    setPendingAttachment(file);
+    if (files.length === 0) return;
+    setPendingAttachments((prev) => [...prev, ...files]);
   };
 
-  const handleRemovePendingAttachment = () => {
+  const handleRemovePendingAttachment = (index: number) => {
     if (isUploadingAttachment) return;
-    setPendingAttachment(null);
+    setPendingAttachments((prev) => prev.filter((_, i) => i !== index));
   };
 
   const handleModifyNick = () => {
@@ -546,29 +546,36 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
             <input
               ref={fileInputRef}
               type="file"
+              multiple
               className="hidden"
               onChange={handleFileSelected}
             />
-            {pendingAttachment && (
-              <div className="bg-surface-muted border border-border-primary px-6 py-2 flex items-center justify-between text-xs select-none rounded-sm">
-                <div className="flex-1 min-w-0 border-l-2 border-primary pl-2">
-                  <span className="font-bold text-foreground block">{t("chatroom.attachmentPreview")}</span>
-                  <p className="text-foreground truncate mt-0.5">{pendingAttachment.name}</p>
-                  <p className="text-text-muted truncate mt-0.5 font-mono">
-                    {pendingAttachment.type || "application/octet-stream"} · {formatFileSize(pendingAttachment.size)}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleRemovePendingAttachment}
-                  disabled={isUploadingAttachment}
-                  className="text-text-muted hover:text-foreground cursor-pointer p-0.5 border border-transparent hover:border-border-primary rounded-sm disabled:opacity-50 disabled:cursor-not-allowed shrink-0 ml-4"
-                  title={t("chatroom.cancel")}
-                >
-                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
+            {pendingAttachments.length > 0 && (
+              <div className="flex flex-col gap-2 max-h-40 overflow-y-auto">
+                {pendingAttachments.map((file, index) => (
+                  <div key={index} className="bg-surface-muted border border-border-primary px-6 py-2 flex items-center justify-between text-xs select-none rounded-sm">
+                    <div className="flex-1 min-w-0 border-l-2 border-primary pl-2">
+                      <span className="font-bold text-foreground block">
+                        {t("chatroom.attachmentPreview")} ({index + 1}/{pendingAttachments.length})
+                      </span>
+                      <p className="text-foreground truncate mt-0.5">{file.name}</p>
+                      <p className="text-text-muted truncate mt-0.5 font-mono">
+                        {file.type || "application/octet-stream"} · {formatFileSize(file.size)}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleRemovePendingAttachment(index)}
+                      disabled={isUploadingAttachment}
+                      className="text-text-muted hover:text-foreground cursor-pointer p-0.5 border border-transparent hover:border-border-primary rounded-sm disabled:opacity-50 disabled:cursor-not-allowed shrink-0 ml-4"
+                      title={t("chatroom.cancel")}
+                    >
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                ))}
               </div>
             )}
 

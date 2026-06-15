@@ -190,6 +190,7 @@
     "replyTo": "回覆給 {name}",
     "readOnlyOrBlocked": "此聊天室已被封鎖或唯讀，無法發送訊息。",
     "uploadAttachment": "上傳附件檔案",
+    "attachmentPreview": "附件預覽",
     "inputPlaceholder": "輸入訊息...",
     "everyoneMention": "所有人",
     "send": "發送",

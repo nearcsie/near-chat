@@ -279,9 +279,9 @@ interface ChatContextType {
   handleLogout: () => void;
   handleSendMessage: (roomId: string, content: string, replyTarget: Message | null) => void;
   handleTyping: (roomId: string, isTyping: boolean) => void;
-  handleUploadAttachment: (
+  handleUploadAttachments: (
     roomId: string,
-    file: File,
+    files: File[],
     options?: { content?: string; replyTarget?: Message | null },
   ) => Promise<void>;
   handleRecallMessage: (msgId: string) => void;
@@ -534,8 +534,12 @@ const mapFolders = (apiFolders: ApiFolder[], currentFolders: Folder[]): Folder[]
 const normalizeLanguage = (language?: string): UiLanguage =>
   language === "zh-TW" || language === "en" ? language : "en";
 
-const formatUploadedAttachmentMessage = (language: UiLanguage, fileName: string) =>
-  language === "zh-TW" ? `已上傳附件：${fileName}` : `Shared attachment: ${fileName}`;
+const formatUploadedAttachmentsMessage = (language: UiLanguage, fileNames: string[]) => {
+  if (fileNames.length === 1) {
+    return language === "zh-TW" ? `已上傳附件：${fileNames[0]}` : `Shared attachment: ${fileNames[0]}`;
+  }
+  return language === "zh-TW" ? `已上傳了 ${fileNames.length} 個附件` : `Shared ${fileNames.length} attachments`;
+};
 
 const mapFriend = (item: FriendResponse, emergencyContactIds: Set<string>): Friend => ({
   id: item.friend.userId,
@@ -1233,22 +1237,27 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     sendTyping(socketRef.current, { roomId, isTyping });
   };
 
-  const handleUploadAttachment = async (
+  const handleUploadAttachments = async (
     roomId: string,
-    file: File,
+    files: File[],
     options?: { content?: string; replyTarget?: Message | null },
   ) => {
     if (!token || !socketRef.current) return;
-    const uploaded = await uploadAttachment(token, file);
+    const uploadedResults = await Promise.all(
+      files.map((file) => uploadAttachment(token, file))
+    );
+    const attachmentIds = uploadedResults.map((res) => res.attachmentId);
+
+    const fileNames = files.map((file) => file.name);
     const content = options?.content?.trim()
       ? options.content.trim()
-      : formatUploadedAttachmentMessage(uiLanguage, file.name);
+      : formatUploadedAttachmentsMessage(uiLanguage, fileNames);
 
     sendMessage(socketRef.current, {
       roomId,
       content,
       replyTo: options?.replyTarget?.id,
-      attachmentIds: [uploaded.attachmentId],
+      attachmentIds,
     });
   };
 
@@ -1928,7 +1937,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         handleLogout,
         handleSendMessage,
         handleTyping,
-        handleUploadAttachment,
+        handleUploadAttachments,
         handleRecallMessage,
         handleUpdateProfile,
         handleUpdatePreferences,
