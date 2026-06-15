@@ -8,6 +8,26 @@ export interface IFolderRepository {
   updateRooms(folderId: string, userId: string, roomIds: string[]): Promise<void>;
 }
 
+interface FolderRow {
+  folder_id: string;
+  user_id: string;
+  name: string;
+  created_at: Date;
+}
+
+interface FolderRoomRow {
+  folder_id: string;
+  room_id: string;
+}
+
+const mapFolderRow = (row: FolderRow, roomIds: string[]): Folder => ({
+  folderId: row.folder_id,
+  userId: row.user_id,
+  name: row.name,
+  createdAt: row.created_at,
+  roomIds,
+});
+
 export class FolderRepository implements IFolderRepository {
   constructor(private db: Pool) {}
 
@@ -26,22 +46,30 @@ export class FolderRepository implements IFolderRepository {
   }
 
   async findByUserId(userId: string): Promise<Folder[]> {
-    const res = await this.db.query(
-      `SELECT f.*, COALESCE(json_agg(fr.room_id) FILTER (WHERE fr.room_id IS NOT NULL), '[]') as room_ids
-       FROM folders f
-       LEFT JOIN folder_rooms fr ON f.folder_id = fr.folder_id
-       WHERE f.user_id = $1
-       GROUP BY f.folder_id
-       ORDER BY f.created_at ASC`,
-      [userId]
-    );
-    return res.rows.map(row => ({
-      folderId: row.folder_id,
-      userId: row.user_id,
-      name: row.name,
-      createdAt: row.created_at,
-      roomIds: row.room_ids,
-    }));
+    const [folderRes, folderRoomRes] = await Promise.all([
+      this.db.query<FolderRow>(
+        `SELECT folder_id, user_id, name, created_at
+         FROM folders
+         WHERE user_id = $1
+         ORDER BY created_at ASC`,
+        [userId]
+      ),
+      this.db.query<FolderRoomRow>(
+        `SELECT folder_id, room_id
+         FROM folder_rooms
+         WHERE user_id = $1`,
+        [userId]
+      ),
+    ]);
+
+    const roomIdsByFolder = new Map<string, string[]>();
+    for (const row of folderRoomRes.rows) {
+      const roomIds = roomIdsByFolder.get(row.folder_id) ?? [];
+      roomIds.push(row.room_id);
+      roomIdsByFolder.set(row.folder_id, roomIds);
+    }
+
+    return folderRes.rows.map((row) => mapFolderRow(row, roomIdsByFolder.get(row.folder_id) ?? []));
   }
 
   async delete(folderId: string, userId: string): Promise<void> {

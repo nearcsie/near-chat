@@ -22,6 +22,24 @@ interface FriendRequestResult {
   addressee?: { userId: string; name: string; avatarUrl?: string };
 }
 
+interface FriendRow {
+  friendship_created_at: Date;
+  user_id: string;
+  name: string;
+  email: string;
+  avatar_url?: string | null;
+}
+
+const mapFriendRow = (row: FriendRow) => ({
+  friend: {
+    userId: row.user_id,
+    name: row.name,
+    email: row.email,
+    avatarUrl: row.avatar_url ?? undefined
+  },
+  friendshipCreatedAt: row.friendship_created_at
+});
+
 export const makeFriendRepository = (db: Pool) => {
   return {
     async sendFriendRequest(requesterId: string, addresseeId: string): Promise<FriendRequestResult> {
@@ -106,39 +124,37 @@ export const makeFriendRepository = (db: Pool) => {
     },
 
     async getFriends(userId: string): Promise<any[]> {
-      const res = await db.query(
-        `SELECT f.created_at as friendship_created_at, u.user_id, u.name, u.email, u.avatar_url
-         FROM friendships f
-         JOIN users u ON u.user_id = f.addressee_id AND u.deleted_at IS NULL
-         WHERE f.requester_id = $1 AND f.status = 'accepted'
-           AND NOT EXISTS (
-             SELECT 1
-             FROM blocks b
-             WHERE (b.blocker_id = f.requester_id AND b.blocked_id = f.addressee_id)
-                OR (b.blocker_id = f.addressee_id AND b.blocked_id = f.requester_id)
-           )
-         UNION ALL
-         SELECT f.created_at as friendship_created_at, u.user_id, u.name, u.email, u.avatar_url
-         FROM friendships f
-         JOIN users u ON u.user_id = f.requester_id AND u.deleted_at IS NULL
-         WHERE f.addressee_id = $1 AND f.status = 'accepted'
-           AND NOT EXISTS (
-             SELECT 1
-             FROM blocks b
-             WHERE (b.blocker_id = f.requester_id AND b.blocked_id = f.addressee_id)
-                OR (b.blocker_id = f.addressee_id AND b.blocked_id = f.requester_id)
-           )`,
-        [userId]
-      );
-      return res.rows.map(row => ({
-        friend: {
-          userId: row.user_id,
-          name: row.name,
-          email: row.email,
-          avatarUrl: row.avatar_url ?? undefined
-        },
-        friendshipCreatedAt: row.friendship_created_at
-      }));
+      const [sentFriendships, receivedFriendships] = await Promise.all([
+        db.query<FriendRow>(
+          `SELECT f.created_at as friendship_created_at, u.user_id, u.name, u.email, u.avatar_url
+           FROM friendships f
+           JOIN users u ON u.user_id = f.addressee_id AND u.deleted_at IS NULL
+           WHERE f.requester_id = $1
+             AND f.status = 'accepted'
+             AND NOT EXISTS (
+               SELECT 1
+               FROM blocks b
+               WHERE (b.blocker_id = f.requester_id AND b.blocked_id = f.addressee_id)
+                  OR (b.blocker_id = f.addressee_id AND b.blocked_id = f.requester_id)
+             )`,
+          [userId]
+        ),
+        db.query<FriendRow>(
+          `SELECT f.created_at as friendship_created_at, u.user_id, u.name, u.email, u.avatar_url
+           FROM friendships f
+           JOIN users u ON u.user_id = f.requester_id AND u.deleted_at IS NULL
+           WHERE f.addressee_id = $1
+             AND f.status = 'accepted'
+             AND NOT EXISTS (
+               SELECT 1
+               FROM blocks b
+               WHERE (b.blocker_id = f.requester_id AND b.blocked_id = f.addressee_id)
+                  OR (b.blocker_id = f.addressee_id AND b.blocked_id = f.requester_id)
+             )`,
+          [userId]
+        ),
+      ]);
+      return [...sentFriendships.rows, ...receivedFriendships.rows].map(mapFriendRow);
     },
 
     async blockUser(blockerId: string, blockedId: string): Promise<void> {

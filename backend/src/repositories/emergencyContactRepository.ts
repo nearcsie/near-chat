@@ -26,22 +26,57 @@ export class EmergencyContactRepository implements IEmergencyContactRepository {
   }
 
   async upsert(userId: string, contactId: string, message: string): Promise<{ contact: EmergencyContact, isUpdate: boolean }> {
-    const res = await this.db.query(
-      `INSERT INTO emergency_contacts (user_id, contact_id, message)
-       VALUES ($1, $2, $3)
-       ON CONFLICT (user_id, contact_id) DO UPDATE SET message = EXCLUDED.message
-       RETURNING *, (xmax != 0) AS is_update`,
-      [userId, contactId, message]
-    );
-    return {
-      contact: {
-        userId: res.rows[0].user_id,
-        contactId: res.rows[0].contact_id,
-        message: res.rows[0].message,
-        createdAt: res.rows[0].created_at
-      },
-      isUpdate: res.rows[0].is_update
-    };
+    const client = await this.db.connect();
+    try {
+      await client.query('BEGIN');
+
+      const existingRes = await client.query(
+        `SELECT user_id, contact_id, message, created_at
+         FROM emergency_contacts
+         WHERE user_id = $1 AND contact_id = $2`,
+        [userId, contactId],
+      );
+
+      const isUpdate = (existingRes.rowCount ?? 0) > 0;
+      if (isUpdate) {
+        await client.query(
+          `UPDATE emergency_contacts
+           SET message = $3
+           WHERE user_id = $1 AND contact_id = $2`,
+          [userId, contactId, message],
+        );
+      } else {
+        await client.query(
+          `INSERT INTO emergency_contacts (user_id, contact_id, message)
+           VALUES ($1, $2, $3)`,
+          [userId, contactId, message],
+        );
+      }
+
+      const contactRes = await client.query(
+        `SELECT user_id, contact_id, message, created_at
+         FROM emergency_contacts
+         WHERE user_id = $1 AND contact_id = $2`,
+        [userId, contactId],
+      );
+
+      await client.query('COMMIT');
+
+      return {
+        contact: {
+          userId: contactRes.rows[0].user_id,
+          contactId: contactRes.rows[0].contact_id,
+          message: contactRes.rows[0].message,
+          createdAt: contactRes.rows[0].created_at
+        },
+        isUpdate,
+      };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async delete(userId: string, contactId: string): Promise<void> {
@@ -52,13 +87,22 @@ export class EmergencyContactRepository implements IEmergencyContactRepository {
   }
 
   async recordAlertIfNew(userId: string, lastActivity: Date): Promise<boolean> {
-    const res = await this.db.query(
-      `INSERT INTO emergency_alert_logs (user_id, last_activity_at)
-       VALUES ($1, $2)
-       ON CONFLICT DO NOTHING
-       RETURNING user_id`,
-      [userId, lastActivity]
+    const existingRes = await this.db.query(
+      `SELECT 1
+       FROM emergency_alert_logs
+       WHERE user_id = $1 AND last_activity_at = $2`,
+      [userId, lastActivity],
     );
-    return (res.rowCount ?? 0) > 0;
+
+    if ((existingRes.rowCount ?? 0) > 0) {
+      return false;
+    }
+
+    await this.db.query(
+      `INSERT INTO emergency_alert_logs (user_id, last_activity_at)
+       VALUES ($1, $2)`,
+      [userId, lastActivity],
+    );
+    return true;
   }
 }
