@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { ChatProvider, useChat } from "@/context/ChatContext";
 import Sidebar from "@/components/layout/Sidebar";
 import MobileNav from "@/components/layout/MobileNav";
@@ -11,10 +11,30 @@ function MainLayoutContent({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isMounted } = useChat();
   const { t } = useTranslation();
   const pathname = usePathname();
+  const router = useRouter();
+
+  React.useEffect(() => {
+    if (isAuthenticated && isMounted) {
+      const prefetchRoutes = () => {
+        const routes = ["/friends", "/emergency", "/settings"];
+        routes.forEach((route) => {
+          router.prefetch(route);
+        });
+      };
+
+      if (typeof window !== "undefined") {
+        if ("requestIdleCallback" in window) {
+          window.requestIdleCallback(() => prefetchRoutes());
+        } else {
+          setTimeout(prefetchRoutes, 1500);
+        }
+      }
+    }
+  }, [isAuthenticated, isMounted, router]);
 
   if (!isMounted || !isAuthenticated) {
     return (
-      <div className="flex h-screen w-full items-center justify-center bg-background text-foreground font-sans">
+      <div className="flex h-dvh w-full items-center justify-center bg-background text-foreground font-sans">
         {t("common.loading")}
       </div>
     );
@@ -26,7 +46,7 @@ function MainLayoutContent({ children }: { children: React.ReactNode }) {
   const isListRoot = pathname === "/";
 
   return (
-    <div className="flex flex-col md:flex-row h-screen w-full overflow-hidden bg-background text-foreground font-sans transition-colors">
+    <div className="flex flex-col md:flex-row h-dvh w-full overflow-hidden bg-background text-foreground font-sans transition-colors">
       <div className="flex flex-1 min-h-0 overflow-hidden">
         <div className={`${isListRoot ? "flex" : "hidden"} md:flex h-full w-full md:w-auto`}>
           <Sidebar />

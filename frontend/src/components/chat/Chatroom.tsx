@@ -544,7 +544,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
               </button>
               <div className="relative flex-1">
                 {mentionCandidates.length > 0 && (
-                  <div className="absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-sm border border-border-primary bg-surface-card shadow-lg">
+                  <div className="absolute bottom-full left-0 right-0 mb-2 max-h-48 overflow-y-auto rounded-sm border border-border-primary bg-surface-card shadow-lg">
                     {mentionCandidates.map((member) => (
                       <button
                         key={member.userId}

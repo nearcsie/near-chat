@@ -25,7 +25,7 @@ export default function FriendsPage() {
       {/* On phones the sidebar is hidden, so the selected friend's info opens
           as a full-screen overlay instead of in the sidebar pane. */}
       {selectedFriendForSidebar && (
-        <div className="absolute inset-0 z-40 flex flex-col bg-surface-card md:hidden">
+        <div className="absolute inset-0 z-40 flex flex-col bg-surface-card md:hidden animate-slide-in-right">
           <FriendInfoPanel
             friendName={selectedFriendForSidebar.name}
             showChatButton={true}

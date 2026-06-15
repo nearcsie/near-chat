@@ -60,11 +60,11 @@ export default function ChatroomPageContent() {
         <>
           {/* Below lg the panel floats over the conversation as a drawer. */}
           <div
-            className="fixed inset-0 z-30 bg-black/50 lg:hidden"
+            className="fixed inset-0 z-30 bg-black/50 lg:hidden animate-fade-in"
             onClick={() => setShowRightPanel(false)}
             aria-hidden
           />
-          <div className="absolute inset-y-0 right-0 z-40 flex h-full lg:static lg:z-auto">
+          <div className="absolute inset-y-0 right-0 z-40 flex h-full lg:static lg:z-auto animate-slide-in-right lg:animate-none">
             {rightPanel}
           </div>
         </>
