@@ -77,18 +77,20 @@ export const makeRoomService = (
       });
     },
 
-    async createPrivate(creatorId: string, targetUserId: string): Promise<{ room: Room; created: boolean }> {
+    async createPrivate(creatorId: string, targetUserId: string, bypassFriendCheck = false): Promise<{ room: Room; created: boolean }> {
       if (creatorId === targetUserId) {
         throw new ValidationError('Cannot create a private room with yourself');
       }
-      if (!socialRepo) {
-        throw new ForbiddenError('Private rooms require friendship validation');
-      }
-      if (await socialRepo.isBlocked(creatorId, targetUserId)) {
-        throw new ForbiddenError('Cannot create a private room with a blocked user');
-      }
-      if (!(await socialRepo.areFriends(creatorId, targetUserId))) {
-        throw new ForbiddenError('Private rooms require an accepted friendship');
+      if (!bypassFriendCheck) {
+        if (!socialRepo) {
+          throw new ForbiddenError('Private rooms require friendship validation');
+        }
+        if (await socialRepo.isBlocked(creatorId, targetUserId)) {
+          throw new ForbiddenError('Cannot create a private room with a blocked user');
+        }
+        if (!(await socialRepo.areFriends(creatorId, targetUserId))) {
+          throw new ForbiddenError('Private rooms require an accepted friendship');
+        }
       }
 
       const existing = await repo.findPrivateRoomByMembers(creatorId, targetUserId);
