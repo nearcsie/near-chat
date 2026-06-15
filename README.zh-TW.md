@@ -54,8 +54,6 @@ flowchart LR
 4. **資料存取層 (Repositories)**:
    使用 raw SQL 語法，透過 `pg` 驅動直接與 PostgreSQL 資料庫進行讀寫操作。
 
-詳細的架構說明與程式碼範例請參考後端開發藍圖：[PLAN.md](PLAN.md)。
-
 ## 技術棧
 
 - **前端**: Next.js 16.2 (App Router), React 19, Tailwind CSS v4, Socket.IO Client。
