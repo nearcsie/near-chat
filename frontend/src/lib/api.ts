@@ -18,11 +18,28 @@ import type {
   UserSettings,
 } from '@shared/types';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
+const getApiBaseUrl = (): string => {
+  if (typeof window !== 'undefined') {
+    const envUrl = process.env.NEXT_PUBLIC_API_URL;
+    let port = '4005';
+    if (envUrl) {
+      try {
+        const urlObj = new URL(envUrl);
+        if (urlObj.port) port = urlObj.port;
+      } catch (e) {
+        // ignore
+      }
+    }
+    return `${window.location.protocol}//${window.location.hostname}:${port}`;
+  }
+  return process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
+};
+const API_BASE_URL = getApiBaseUrl();
 const API_PREFIX = '/api/v1';
 
 type UpdateMeRequest = Partial<Pick<MyProfile, 'name' | 'email' | 'bio' | 'avatarUrl'>> & {
   password?: string;
+  currentPassword?: string;
 };
 type UpdateMySettingsRequest = Partial<
   Pick<UserSettings, 'warningEnabled' | 'warningDays' | 'language' | 'theme' | 'notifyDesktop' | 'notifySound'>
@@ -233,7 +250,7 @@ export const logout = (token: string): Promise<void> =>
 export const getMe = (token: string): Promise<MyProfile> =>
   requestJson<MyProfile>('/users/me', {}, { token });
 
-export const getUserProfile = (token: string, userId: string): Promise<UserProfile> =>
+export const getUserProfile = (userId: string, token?: string): Promise<UserProfile> =>
   requestJson<UserProfile>(`/users/${userId}`, {}, { token });
 
 export const updateMe = (token: string, data: UpdateMeRequest): Promise<MyProfile> =>
@@ -281,10 +298,11 @@ export const updateMySettings = (
 
 export const searchUsers = (
   token: string,
-  params: { query: string; mode?: 'name' | 'userId' | 'email' },
+  params: { query: string; mode?: 'name' | 'userId' | 'email'; friendsOnly?: boolean },
 ): Promise<SearchUserResult[]> => {
   const qs = new URLSearchParams({ q: params.query });
   if (params.mode) qs.set('mode', params.mode);
+  if (params.friendsOnly) qs.set('friendsOnly', 'true');
   return requestJson<SearchUserResult[]>(`/users?${qs.toString()}`, {}, { token });
 };
 
@@ -386,6 +404,20 @@ export const updateRoom = (
     },
     { token },
   );
+
+export const uploadRoomAvatar = (token: string, roomId: string, file: File): Promise<Room> => {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  return requestJson<Room>(
+    `/rooms/${roomId}/avatar`,
+    {
+      method: 'POST',
+      body: formData,
+    },
+    { token },
+  );
+};
 
 export const deleteRoom = (token: string, roomId: string): Promise<void> =>
   requestJson<void>(`/rooms/${roomId}`, { method: 'DELETE' }, { token });

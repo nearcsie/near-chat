@@ -17,6 +17,7 @@ interface RoomService {
   approveMember(roomId: string, callerId: string, targetUserId: string): Promise<void>;
   updateMember(roomId: string, callerId: string, targetUserId: string, data: { role?: string; nickname?: string; isMuted?: boolean }): Promise<void>;
   kickMember(roomId: string, callerId: string, targetUserId: string): Promise<void>;
+  uploadAvatar(roomId: string, callerId: string, file: Express.Multer.File): Promise<Room>;
 }
 
 export const makeRoomController = (service: RoomService) => ({
@@ -155,6 +156,18 @@ export const makeRoomController = (service: RoomService) => ({
     try {
       await service.kickMember(req.params.id, req.user!.userId, req.params.userId);
       res.status(204).send();
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async uploadAvatar(req: Request<{ id: string }>, res: Response, next: NextFunction): Promise<void> {
+    try {
+      if (!req.file) {
+        return next(new ValidationError('Avatar file is required'));
+      }
+      const room = await service.uploadAvatar(req.params.id, req.user!.userId, req.file);
+      res.status(200).json(room);
     } catch (err) {
       next(err);
     }

@@ -11,6 +11,7 @@ import { useTranslation } from "@/hooks/useTranslation";
 import { searchUsers, sendFriendRequest as sendFriendRequestApi } from "@/lib/api";
 import { getActiveAccessToken } from "@/lib/api";
 import type { SearchUserResult } from "@shared/types";
+import { resolveAssetUrl } from "@/lib/assets";
 
 type Tab = "friends" | "incoming" | "outgoing" | "blocked" | "add";
 type SearchMode = "name" | "userId" | "email";
@@ -26,6 +27,7 @@ export default function FriendsPanel() {
     blockFriend,
     unblockUser,
     setSelectedFriendForSidebar,
+    refreshSocialData,
   } = useChat();
   const { t } = useTranslation();
 
@@ -58,11 +60,12 @@ export default function FriendsPanel() {
   const outgoingRequests = friendRequests.filter((r) => r.direction === "outgoing");
 
   /** Convert any user with id/name/email into a Friend shape for the sidebar. */
-  const toFriendShape = (user: { id: string; name: string; email?: string }): Friend => ({
+  const toFriendShape = (user: { id: string; name: string; email?: string; avatarUrl?: string }): Friend => ({
     id: user.id,
     name: user.name,
     email: user.email ?? '',
     status: "offline",
+    avatarUrl: user.avatarUrl,
   });
 
   const handleSearch = async (event: React.FormEvent) => {
@@ -100,6 +103,7 @@ export default function FriendsPanel() {
     try {
       await sendFriendRequestApi(token, targetUserId);
       setSentIds((prev) => new Set(prev).add(targetUserId));
+      await refreshSocialData();
     } catch (err) {
       console.error(err);
       const msg = err instanceof Error ? err.message : "Failed";
@@ -174,7 +178,7 @@ export default function FriendsPanel() {
                     onClick={() => setSelectedFriendForSidebar(friend)}
                     className="flex items-center gap-3 min-w-0 cursor-pointer hover:opacity-85 active:scale-98 transition-all"
                   >
-                    <Avatar name={friend.name} size="sm" isOnline={friend.status === "online"} />
+                    <Avatar name={friend.name} src={friend.avatarUrl ? resolveAssetUrl(friend.avatarUrl) : undefined} size="sm" isOnline={friend.status === "online"} />
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
                         <p className="text-sm font-semibold text-foreground truncate">{friend.name}</p>
@@ -223,7 +227,7 @@ export default function FriendsPanel() {
                     onClick={() => setSelectedFriendForSidebar(toFriendShape(req))}
                     className="flex items-center gap-3 min-w-0 cursor-pointer hover:opacity-85 transition-all"
                   >
-                    <Avatar name={req.name} size="sm" />
+                    <Avatar name={req.name} src={req.avatarUrl ? resolveAssetUrl(req.avatarUrl) : undefined} size="sm" />
                     <div className="min-w-0">
                       <p className="text-sm font-semibold text-foreground truncate">{req.name}</p>
                       <p className="text-[10px] text-text-muted font-mono truncate">{req.email}</p>
@@ -267,7 +271,7 @@ export default function FriendsPanel() {
                     onClick={() => setSelectedFriendForSidebar(toFriendShape(req))}
                     className="flex items-center gap-3 min-w-0 cursor-pointer hover:opacity-85 transition-all"
                   >
-                    <Avatar name={req.name} size="sm" />
+                    <Avatar name={req.name} src={req.avatarUrl ? resolveAssetUrl(req.avatarUrl) : undefined} size="sm" />
                     <div className="min-w-0">
                       <p className="text-sm font-semibold text-foreground truncate">{req.name}</p>
                       <p className="text-[10px] text-text-muted font-mono truncate">{req.email}</p>
@@ -301,7 +305,7 @@ export default function FriendsPanel() {
                     onClick={() => setSelectedFriendForSidebar(toFriendShape(user))}
                     className="flex items-center gap-3 min-w-0 cursor-pointer hover:opacity-85 transition-all"
                   >
-                    <Avatar name={user.name} size="sm" />
+                    <Avatar name={user.name} src={user.avatarUrl ? resolveAssetUrl(user.avatarUrl) : undefined} size="sm" />
                     <div className="min-w-0">
                       <p className="text-sm font-semibold text-foreground truncate">{user.name}</p>
                       <p className="text-[10px] text-text-muted font-mono truncate">{user.email}</p>
@@ -413,11 +417,12 @@ export default function FriendsPanel() {
                               name: user.name,
                               email: user.email ?? '',
                               status: "offline",
+                              avatarUrl: user.avatarUrl,
                             })
                           }
                           className="flex items-center gap-3 min-w-0 cursor-pointer hover:opacity-85 transition-all"
                         >
-                          <Avatar name={user.name} size="sm" />
+                          <Avatar name={user.name} src={user.avatarUrl ? resolveAssetUrl(user.avatarUrl) : undefined} size="sm" />
                           <div className="min-w-0">
                             <p className="text-sm font-semibold text-foreground truncate">{user.name}</p>
                             <p className="text-[10px] text-text-muted font-mono truncate">{user.userId}</p>

@@ -17,7 +17,7 @@ export const mapErrorToApiShape = (err: unknown): ApiError => {
   if (err instanceof multer.MulterError) {
     return {
       statusCode: err.code === 'LIMIT_FILE_SIZE' ? 413 : 400,
-      message: err.code === 'LIMIT_FILE_SIZE' ? 'Avatar image must be 2 MB or smaller' : err.message,
+      message: err.code === 'LIMIT_FILE_SIZE' ? 'Attachment file exceeds the configured size limit' : err.message,
       code: err.code,
     };
   }

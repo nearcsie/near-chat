@@ -22,12 +22,25 @@ describe('friendService', () => {
 
   it('unblockUser calls repo.unblockUser', async () => {
     const mockRepo = {
-      unblockUser: vi.fn().mockResolvedValue(true)
+      unblockUser: vi.fn().mockResolvedValue(true),
+      areFriends: vi.fn().mockResolvedValue(false),
     } as any;
     const service = makeFriendService(mockRepo);
     const result = await service.unblockUser('u1', 'u2');
     expect(mockRepo.unblockUser).toHaveBeenCalledWith('u1', 'u2');
-    expect(result).toBe(true);
+    expect(mockRepo.areFriends).toHaveBeenCalledWith('u1', 'u2');
+    expect(result).toBeUndefined();
+  });
+
+  it('unblockUser reopens the private room when the users are still friends', async () => {
+    const mockRepo = {
+      unblockUser: vi.fn().mockResolvedValue(true),
+      areFriends: vi.fn().mockResolvedValue(true),
+    } as any;
+    const privateRooms = { markPrivateReadOnly: vi.fn(), reopenPrivateRoom: vi.fn() };
+    const service = makeFriendService(mockRepo, undefined, privateRooms as any);
+    await service.unblockUser('u1', 'u2');
+    expect(privateRooms.reopenPrivateRoom).toHaveBeenCalledWith('u1', 'u2');
   });
 
   it('sendFriendRequest throws when sending to yourself', async () => {
@@ -145,17 +158,15 @@ describe('friendService', () => {
     await expect(service.blockUser('u1', 'u1')).rejects.toThrow('Cannot block yourself');
   });
 
-  it('blockUser blocks, removes friendship and marks the room read-only', async () => {
+  it('blockUser blocks and marks the room read-only without deleting the friendship', async () => {
     const mockRepo = {
       blockUser: vi.fn().mockResolvedValue(undefined),
-      deleteFriendship: vi.fn().mockResolvedValue(undefined)
     } as any;
     const privateRooms = { markPrivateReadOnly: vi.fn() };
     const service = makeFriendService(mockRepo, undefined, privateRooms as any);
     const result = await service.blockUser('u1', 'u2');
     expect(result).toEqual({ status: 'blocked' });
     expect(mockRepo.blockUser).toHaveBeenCalledWith('u1', 'u2');
-    expect(mockRepo.deleteFriendship).toHaveBeenCalledWith('u1', 'u2');
     expect(privateRooms.markPrivateReadOnly).toHaveBeenCalledWith('u1', 'u2');
   });
 

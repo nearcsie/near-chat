@@ -7,7 +7,7 @@ import { useTranslation } from "@/hooks/useTranslation";
 
 export default function SettingsHeader({ title }: { title: string }) {
   const router = useRouter();
-  const { rooms } = useChat();
+  const { rooms, hasUnsavedChanges } = useChat();
   const { t } = useTranslation();
 
   return (
@@ -16,7 +16,15 @@ export default function SettingsHeader({ title }: { title: string }) {
       <Button
         type="button"
         variant="secondary"
-        onClick={() => router.push(rooms[0] ? `/chat/${rooms[0].id}` : "/")}
+        onClick={(e) => {
+          if (hasUnsavedChanges) {
+            e.preventDefault();
+            e.stopPropagation();
+            window.dispatchEvent(new CustomEvent("trigger-unsaved-alert"));
+            return;
+          }
+          router.push(rooms[0] ? `/chat/${rooms[0].id}` : "/");
+        }}
         className="text-xs py-1 px-3"
       >
         {t("settingsHeader.backToChat")}

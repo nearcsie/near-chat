@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
-import { Checkbox } from "@/components/ui/Checkbox";
 import { login } from "@/lib/api";
 
 const getFriendlyLoginError = (error: unknown) => {
@@ -30,7 +29,6 @@ export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -112,13 +110,6 @@ export default function LoginPage() {
             required
           />
 
-          <div className="flex items-center justify-between py-1">
-            <Checkbox
-              label="Remember me"
-              checked={rememberMe}
-              onChange={(e) => setRememberMe(e.target.checked)}
-            />
-          </div>
 
           {error && <p className="text-xs text-red-600 font-sans text-center">{error}</p>}
 

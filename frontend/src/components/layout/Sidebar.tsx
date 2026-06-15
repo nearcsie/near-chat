@@ -12,6 +12,7 @@ import { useTranslation } from "@/hooks/useTranslation";
 import ChatList from "./ChatList";
 import FriendInfoPanel from "@/components/chat/FriendInfoPanel";
 import { Icon } from "@iconify/react";
+import { resolveAssetUrl } from "@/lib/assets";
 
 export default function Sidebar() {
   const router = useRouter();
@@ -32,6 +33,7 @@ export default function Sidebar() {
     uiLanguage,
     selectedFriendForSidebar,
     setSelectedFriendForSidebar,
+    hasUnsavedChanges,
   } = useChat();
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -143,7 +145,16 @@ export default function Sidebar() {
   ];
 
   return (
-    <div className="w-full md:w-[260px] lg:w-[300px] shrink-0 border-r border-border-primary bg-surface-card flex flex-col h-full">
+    <div 
+      className="relative w-full md:w-[260px] lg:w-[300px] shrink-0 border-r border-border-primary bg-surface-card flex flex-col h-full"
+      onClickCapture={(e) => {
+        if (hasUnsavedChanges) {
+          e.stopPropagation();
+          e.preventDefault();
+          window.dispatchEvent(new CustomEvent("trigger-unsaved-alert"));
+        }
+      }}
+    >
       {isChatPage ? (
         <div className="h-14 border-b border-border-primary px-4 flex items-center justify-between select-none shrink-0 gap-2">
           {/* Search bar */}
@@ -192,6 +203,7 @@ export default function Sidebar() {
         ) : pathname === "/friends" ? (
           selectedFriendForSidebar ? (
             <FriendInfoPanel
+              userId={selectedFriendForSidebar.id}
               friendName={selectedFriendForSidebar.name}
               showChatButton={true}
               hideHeader={true}
@@ -207,7 +219,7 @@ export default function Sidebar() {
 
       <div className="border-t border-border-primary bg-surface-muted select-none shrink-0 flex flex-col">
         <div className="p-4 flex items-center gap-3">
-          <Avatar name={user.username} src={user.avatar} size="sm" isOnline />
+          <Avatar name={user.username} src={user.avatar ? resolveAssetUrl(user.avatar) : undefined} size="sm" isOnline />
           <div className="flex-1 min-w-0">
             <p className="text-xs font-bold text-foreground truncate leading-tight">{user.username}</p>
             <p className="text-[10px] text-text-muted truncate font-mono mt-0.5">{user.email}</p>

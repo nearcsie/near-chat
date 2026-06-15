@@ -99,6 +99,31 @@ docker compose up -d
 ```
 The backend container automatically runs all pending database migrations on startup before the dev server launches.
 
+### Attachment Upload Configuration
+Attachment uploads are type-open by default, with a default size cap of `10 MB`.
+
+If you want to enforce attachment type restrictions, edit `.env` and enable the toggle:
+
+```env
+ATTACHMENT_TYPE_RESTRICTION_ENABLED=true
+```
+
+When the toggle is enabled, the backend uses the configured MIME type and extension allowlists. The project ships with these reference values in `.env.example`:
+
+```env
+ATTACHMENT_ALLOWED_MIME_TYPES=image/jpeg,image/png,image/gif,application/pdf,application/zip,text/plain
+ATTACHMENT_ALLOWED_EXTENSIONS=.jpg,.jpeg,.png,.gif,.pdf,.zip,.txt
+ATTACHMENT_MAX_BYTES=10485760
+```
+
+You can either keep those defaults or replace them with deployment-specific values. When `ATTACHMENT_TYPE_RESTRICTION_ENABLED=false`, the allowlists are ignored and uploads remain type-open.
+
+After changing any of the attachment upload settings, rebuild or restart the backend container so the new environment variables are applied:
+
+```bash
+docker compose up -d --build backend
+```
+
 ### 3. Seed Mock Data
 Populate the database with pre-configured test users:
 ```bash
@@ -128,4 +153,4 @@ docker compose exec backend pnpm run test:unit
 docker compose exec backend pnpm run test:db:up
 docker compose exec backend pnpm run test:integration
 ```
-For more testing details, see [docs/TESTING.md](docs/TESTING.md).
+For more testing details, see [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).

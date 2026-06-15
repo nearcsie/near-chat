@@ -1,77 +1,51 @@
-<!-- Parent: ../AGENTS.md -->
-<!-- Updated: 2026-06-01 -->
+# Frontend Client Web App Directory Orientation for AI Agents
 
-# frontend
+<!-- Parent: ../AGENTS.md -->
+<!-- Generated: 2026-06-14 | Updated: 2026-06-14 -->
 
 ## Purpose
-The Next.js 16 / React 19 client application for the chat system. It is no longer a boilerplate app: it includes login/register flows, the main chat layout, chat rooms, personal settings, group settings, UI primitives, REST API wrappers, and Socket.IO helpers.
-
-Docker Compose exposes the frontend on host port 3005 while the container still listens on port 3000.
+This directory contains the Next.js 16 + React 19 client web application. It includes user authentication flows, chat rooms, settings panels, and Socket.IO real-time clients.
 
 ## Key Files
 
 | File | Description |
 |------|-------------|
-| `src/app/layout.tsx` | Root layout and global CSS import |
-| `src/app/(main)/layout.tsx` | Authenticated app shell with sidebar and chat/settings content |
-| `src/app/(main)/chat/[chatId]/page.tsx` | Chat room page and group member sidebar |
-| `src/app/(main)/settings/page.tsx` | Personal settings page |
-| `src/app/login/page.tsx` | Login form wired to the backend auth API |
-| `src/app/register/page.tsx` | Register form wired to the backend auth API |
-| `src/context/ChatContext.tsx` | Central client state for auth, rooms, messages, folders, sockets, and settings |
-| `src/lib/api.ts` | Typed REST API helpers |
-| `src/lib/socket.ts` | Socket.IO client helpers |
-| `src/components/chat/Chatroom.tsx` | Main chat room UI |
-| `src/components/settings/` | Personal and group settings components |
-| `src/components/ui/` | Reusable UI primitives |
+| [src/context/ChatContext.tsx](src/context/ChatContext.tsx) | Centralized React Context: Manages connection states, token storage, active chat rooms, messages feed, unread status counts, folders, and typing statuses |
+| [src/lib/api.ts](src/lib/api.ts) | HTTP REST API client wrappers. Converts responses into typed models matching `shared/types.ts` |
+| [src/lib/socket.ts](src/lib/socket.ts) | Socket.IO Client Wrapper: Sets up callbacks for incoming websocket message updates, typing indicators, and read receipts |
+| [src/app/globals.css](src/app/globals.css) | Global stylesheet utilizing Tailwind CSS v4 design tokens and layouts |
 
 ## Subdirectories
 
-| Directory | Purpose |
-|-----------|---------|
-| `src/app/` | Next.js App Router routes and layouts |
-| `src/components/` | Implemented React components used by the app |
-| `src/context/` | Client-side React context/state |
-| `src/lib/` | API, socket, and utility helpers |
-| `components/` | Legacy AGENTS metadata only; do not add production components there |
-| `public/` | Static assets served at `/` |
+| Directory | Purpose | Detail Orientation |
+|-----------|---------|--------------------|
+| [src/app/](src/app/) | Next.js App Router | Contains root layout, auth pages, chat room page, and settings panels |
+| [src/components/](src/components/) | Reusable React Components | Subdivided into `chat/` UI panels, `settings/` panels, and `ui/` primitive elements |
+| [src/locales/](src/locales/) | Internationalization | JSON key-value translation files for localization (`zh-TW.json`, `en.json`) |
 
 ## For AI Agents
 
-### Working In This Directory
-- Uses the App Router under `src/app/`.
-- Components that use hooks or browser APIs must include `"use client"`.
-- Browser-exposed environment variables must start with `NEXT_PUBLIC_`.
-- With Docker Compose, set `NEXT_PUBLIC_API_URL=http://localhost:4005` because the browser connects through the backend host port.
-- Socket.IO uses the same `NEXT_PUBLIC_API_URL` and passes JWT data in `auth: { token }`.
-- Package manager is pnpm; do not use npm or yarn.
-- Run dev server: `pnpm dev` (requires Node, or use `docker compose up frontend`).
-- No need to run Next.js production builds (`pnpm run build` or `next build`) during development. Verify via TypeScript checks (`pnpm exec tsc --noEmit`) and manual testing.
+### 1. App Router & Rendering Rules
+- This project utilizes Next.js App Router under `src/app/`.
+- All pages and components are Server Components by default.
+- If a component uses state (`useState`), effects (`useEffect`), browser APIs (`localStorage`), or UI context hooks, you **MUST** declare the `"use client"` directive at the very top of the file.
 
-### Testing Requirements
-- Run frontend type-checks with `pnpm exec tsc --noEmit` from `frontend/`, or through the frontend container.
-- Visual/functional testing requires a running frontend at `http://localhost:3005` when using Docker Compose.
+### 2. Centralized State Management
+- **DO NOT** instantiate raw API fetch calls or new Socket connections inside individual UI components.
+- Always use the state, REST methods, and Socket triggers exposed by the central [ChatContext.tsx](src/context/ChatContext.tsx).
 
-### Common Patterns
-- Import path alias `@/` maps to `frontend/src`.
-- UI styling uses Tailwind CSS classes and the project color tokens from `src/app/globals.css`.
-- Prefer existing UI primitives in `src/components/ui/` before adding new component styles.
-- Server Components by default; add `"use client"` directive for interactive components that use hooks or browser APIs.
-- Font setup uses `next/font/google` (Geist Sans + Geist Mono) with CSS variables.
-- Tailwind classes are the primary styling mechanism — no CSS modules or styled-components.
-- **Centralized i18n**: UI translation strings are stored in `src/locales/zh-TW.json` and `src/locales/en.json`. Use the `useTranslation` hook from `@/hooks/useTranslation` in Client Components to look up text (`t("namespace.key", replacements?)`). Do not hardcode UI text strings or define local translation copy constants. Keep native language labels (`繁體中文` and `English`) statically set in select dropdowns.
+### 3. Localization (i18n) Rules
+- **NEVER** hardcode Chinese or English text strings directly in component renders.
+- All UI text must be stored in [src/locales/zh-TW.json](src/locales/zh-TW.json) and [src/locales/en.json](src/locales/en.json).
+- Use the `useTranslation` hook from `@/hooks/useTranslation` to dynamically retrieve translated text in Client Components (e.g. `{t("sidebar.chats")}`).
 
-## Dependencies
+### 4. Styling & Typography
+- The layout is styled with Tailwind CSS v4 classes.
+- Use Geist Sans and Geist Mono configured via CSS variables for typography.
+- Refrain from writing custom CSS classes or module styles unless absolutely necessary; use Tailwind utilities instead.
 
-### Internal
-- Communicates with `backend/` via REST (`NEXT_PUBLIC_API_URL`) and Socket.IO.
-- Shares contracts from `shared/` through the root TypeScript config mount.
-
-### External
-- `next` 16.2.6
-- `react` / `react-dom` 19.2.6
-- `socket.io-client`
-- `tailwindcss` v4
-- `typescript` 6
+### 5. API Configuration
+- Any configuration exposed to the browser must be prefixed with `NEXT_PUBLIC_`.
+- Under Docker Compose, `NEXT_PUBLIC_API_URL` should point to `http://localhost:4005` (the host-facing backend port) to enable browser websocket and REST connections.
 
 <!-- MANUAL: Any manually added notes below this line are preserved on regeneration -->

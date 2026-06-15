@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import { resolveAssetUrl } from "@/lib/assets";
 import type {
   Attachment as ApiAttachment,
   EmergencyContactResponse,
@@ -59,6 +60,7 @@ import {
   upsertEmergencyContact,
   uploadAttachment,
   uploadAvatar as uploadAvatarApi,
+  uploadRoomAvatar as uploadRoomAvatarApi,
   getActiveAccessToken,
   setActiveAccessToken,
   refreshTokens,
@@ -103,9 +105,12 @@ export interface ChatRoom {
   viewHistory?: boolean;
   members?: Member[];
   isArchived?: boolean;
+  isReadonly?: boolean;
   unreadCount?: number;
   lastMessagePreview?: string;
   lastMessageAt?: string;
+  avatarUrl?: string;
+  lastReadId?: string | null;
 }
 
 export interface Message {
@@ -156,6 +161,7 @@ export interface Friend {
   email: string;
   status: "online" | "offline";
   isEmergencyContact?: boolean;
+  avatarUrl?: string;
 }
 
 export interface FriendRequest {
@@ -163,12 +169,14 @@ export interface FriendRequest {
   name: string;
   email: string;
   direction: "incoming" | "outgoing";
+  avatarUrl?: string;
 }
 
 export interface BlockedUser {
   id: string;
   name: string;
   email: string;
+  avatarUrl?: string;
 }
 
 export interface EmergencyContact {
@@ -199,7 +207,7 @@ export const getAvatarForUser = (
   currentUsername?: string,
 ) => {
   if (currentUsername && username === currentUsername) {
-    return currentUserAvatar || "";
+    return currentUserAvatar ? resolveAssetUrl(currentUserAvatar) : "";
   }
   return "";
 };
@@ -210,6 +218,7 @@ export interface ProfileInput {
   avatar: string;
   avatarFile?: File | null;
   password?: string;
+  currentPassword?: string;
   bio?: string;
 }
 
@@ -223,10 +232,11 @@ export interface PreferencesInput {
 }
 
 interface GroupSettingsInput {
-  name: string;
-  requireApproval: boolean;
-  viewHistory: boolean;
+  name?: string;
+  requireApproval?: boolean;
+  viewHistory?: boolean;
   isArchived?: boolean;
+  avatarFile?: File | null;
 }
 
 interface ChatContextType {
@@ -249,6 +259,8 @@ interface ChatContextType {
   setSelectedFriendForSidebar: React.Dispatch<React.SetStateAction<Friend | null>>;
   showRightPanel: boolean;
   setShowRightPanel: React.Dispatch<React.SetStateAction<boolean>>;
+  hasUnsavedChanges: boolean;
+  setHasUnsavedChanges: (val: boolean) => void;
 
   setRooms: React.Dispatch<React.SetStateAction<ChatRoom[]>>;
   setFolders: React.Dispatch<React.SetStateAction<Folder[]>>;
@@ -260,7 +272,11 @@ interface ChatContextType {
   handleLogout: () => void;
   handleSendMessage: (roomId: string, content: string, replyTarget: Message | null) => void;
   handleTyping: (roomId: string, isTyping: boolean) => void;
-  handleUploadAttachment: (roomId: string, file: File) => Promise<void>;
+  handleUploadAttachment: (
+    roomId: string,
+    file: File,
+    options?: { content?: string; replyTarget?: Message | null },
+  ) => Promise<void>;
   handleRecallMessage: (msgId: string) => void;
   handleUpdateProfile: (profile: ProfileInput) => Promise<User>;
   handleUpdatePreferences: (preferences: PreferencesInput) => Promise<void>;
@@ -283,7 +299,7 @@ interface ChatContextType {
   kickGroupMember: (roomId: string, userId: string) => Promise<Member[] | undefined>;
   transferGroupOwner: (roomId: string, userId: string) => Promise<Member[] | undefined>;
   handleDeleteGroupRoom: (roomId: string) => Promise<string | null>;
-  getReadAvatarsForMessage: (room: ChatRoom, msg: Message) => { name: string; avatarUrl: string }[];
+  getReadAvatarsForMessage: (room: ChatRoom, msg: Message) => { name: string; displayName?: string; avatarUrl: string }[];
 
   searchUsersForInvite: (query: string) => Promise<PublicUser[]>;
   handleJoinByInviteCode: (inviteCode: string) => Promise<string>;
@@ -296,6 +312,9 @@ interface ChatContextType {
   saveEmergencySettings: (settings: EmergencySettings) => Promise<void>;
   triggerEmergencyAlertNow: (message?: string) => Promise<TriggerEmergencyAlertResult>;
   setUiLanguage: (language: UiLanguage) => void;
+  activeProfilePopover: { instanceId: string; userId: string } | null;
+  setActiveProfilePopover: React.Dispatch<React.SetStateAction<{ instanceId: string; userId: string } | null>>;
+  refreshSocialData: () => Promise<void>;
 }
 
 const ChatContext = createContext<ChatContextType | undefined>(undefined);
@@ -345,6 +364,30 @@ const summarizeMessagePreview = (message: {
 
 const isPrivateRoomFallbackName = (roomName: string | undefined, roomId: string) =>
   roomName === `Private ${roomId.slice(0, 8)}`;
+
+const getPrivateRoomName = (
+  room: Pick<ChatRoom, "id" | "name" | "members" | "otherMemberId">,
+  currentUserId?: string,
+) => {
+  const otherMember =
+    room.members?.find((member) =>
+      currentUserId
+        ? member.userId !== currentUserId
+        : room.otherMemberId
+          ? member.userId === room.otherMemberId
+          : true,
+    ) ?? null;
+
+  if (otherMember?.name) {
+    return otherMember.name;
+  }
+
+  if (room.name && !isPrivateRoomFallbackName(room.name, room.id)) {
+    return room.name;
+  }
+
+  return "";
+};
 
 const mapMessage = (message: MessageWithSender, currentUserId?: string): Message => ({
   id: message.messageId,
@@ -407,6 +450,7 @@ const mapRooms = (
   apiRooms: RoomSummary[],
   apiFolders: ApiFolder[],
   currentRooms: ChatRoom[],
+  currentUserId?: string,
 ): ChatRoom[] => {
   const currentRoomById = new Map(currentRooms.map((room) => [room.id, room]));
   const folderByRoom = new Map<string, string>();
@@ -430,22 +474,33 @@ const mapRooms = (
     return {
       id: room.roomId,
       type: room.type === "group" ? "group" : "msg",
+      avatarUrl: room.avatarUrl,
       name:
         room.name ||
-        (currentRoom?.name && !isPrivateRoomFallbackName(currentRoom.name, room.roomId)
-          ? currentRoom.name
-          : room.type === "group"
-            ? `Group ${room.roomId.slice(0, 8)}`
-            : ""),
+        (room.type === "group"
+          ? (currentRoom?.name && !isPrivateRoomFallbackName(currentRoom.name, room.roomId)
+              ? currentRoom.name
+              : `Group ${room.roomId.slice(0, 8)}`)
+          : getPrivateRoomName(
+              {
+                id: room.roomId,
+                name: currentRoom?.name ?? "",
+                members: currentRoom?.members,
+                otherMemberId: room.otherMemberId ?? currentRoom?.otherMemberId,
+              },
+              currentUserId,
+            )),
       folderId: folderByRoom.get(room.roomId) ?? currentRoom?.folderId ?? null,
       inviteCode: room.inviteCode,
       requireApproval: room.requireApproval,
       viewHistory: room.viewHistory,
       isArchived: room.isArchived,
+      isReadonly: room.isReadonly,
       isOnline: room.isOnline ?? currentRoom?.isOnline,
       otherMemberId: room.otherMemberId ?? currentRoom?.otherMemberId,
       members: currentRoom?.members ?? (room.type === "group" ? [] : undefined),
       unreadCount: room.unreadCount ?? currentRoom?.unreadCount ?? 0,
+      lastReadId: room.lastReadId ?? currentRoom?.lastReadId ?? null,
       lastMessagePreview: latestMessage
         ? summarizeMessagePreview(latestMessage)
         : currentRoom?.lastMessagePreview,
@@ -477,6 +532,7 @@ const mapFriend = (item: FriendResponse, emergencyContactIds: Set<string>): Frie
   email: "",
   status: item.status || "offline",
   isEmergencyContact: emergencyContactIds.has(item.friend.userId),
+  avatarUrl: item.friend.avatarUrl,
 });
 
 const mapFriendRequest = (item: FriendRequestResponse, currentUserId: string): FriendRequest => {
@@ -486,6 +542,7 @@ const mapFriendRequest = (item: FriendRequestResponse, currentUserId: string): F
       name: item.addressee?.name ?? item.addresseeId,
       email: "",
       direction: "outgoing",
+      avatarUrl: item.addressee?.avatarUrl,
     };
   }
   return {
@@ -493,6 +550,7 @@ const mapFriendRequest = (item: FriendRequestResponse, currentUserId: string): F
     name: item.requester?.name ?? item.requesterId,
     email: "",
     direction: "incoming",
+    avatarUrl: item.requester?.avatarUrl,
   };
 };
 
@@ -518,7 +576,7 @@ const fetchRoomMembers = async (authToken: string, roomId: string): Promise<Memb
   const apiMembers = await listRoomMembers(authToken, roomId);
   const profiles = await Promise.all(
     apiMembers.map((member) =>
-      getUserProfile(authToken, member.userId).catch(() => undefined),
+      getUserProfile(member.userId, authToken).catch(() => undefined),
     ),
   );
 
@@ -595,8 +653,10 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     contacts: [],
   });
   const [selectedFriendForSidebar, setSelectedFriendForSidebar] = useState<Friend | null>(null);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [showRightPanel, setShowRightPanel] = useState<boolean>(true);
   const [typingUsers, setTypingUsers] = useState<Record<string, string[]>>({});
+  const [activeProfilePopover, setActiveProfilePopover] = useState<{ instanceId: string; userId: string } | null>(null);
   const typingTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   const activeRoomId = useMemo(() => {
@@ -630,7 +690,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
   const refreshRoomsAndFolders = async (authToken: string, userId = currentUserId) => {
     const [apiRooms, apiFolders] = await Promise.all([listRooms(authToken), listFolders(authToken)]);
-    const nextRooms = mapRooms(apiRooms, apiFolders, roomsRef.current);
+    const nextRooms = mapRooms(apiRooms, apiFolders, roomsRef.current, userId);
 
     setFolders((current) => mapFolders(apiFolders, current));
     setRooms(nextRooms);
@@ -675,7 +735,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
         setFriends(apiFriends.map((friend) => mapFriend(friend, emergencyContactIds)));
         setFriendRequests(apiRequests.map((req) => mapFriendRequest(req, effectiveUserId)));
-        setBlockedUsers(apiBlockedUsers.map(u => ({ id: u.userId, name: u.name, email: u.email })));
+        setBlockedUsers(apiBlockedUsers.map(u => ({ id: u.userId, name: u.name, email: u.email, avatarUrl: u.avatarUrl })));
         setEmergencySettings({
           warningEnabled: settings?.warningEnabled ?? user.warningEnabled ?? false,
           warningDays: settings?.warningDays ?? user.warningDays ?? 0,
@@ -981,12 +1041,21 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     sendTyping(socketRef.current, { roomId, isTyping });
   };
 
-  const handleUploadAttachment = async (roomId: string, file: File) => {
+  const handleUploadAttachment = async (
+    roomId: string,
+    file: File,
+    options?: { content?: string; replyTarget?: Message | null },
+  ) => {
     if (!token || !socketRef.current) return;
     const uploaded = await uploadAttachment(token, file);
+    const content = options?.content?.trim()
+      ? options.content.trim()
+      : formatUploadedAttachmentMessage(uiLanguage, file.name);
+
     sendMessage(socketRef.current, {
       roomId,
-      content: formatUploadedAttachmentMessage(uiLanguage, file.name),
+      content,
+      replyTo: options?.replyTarget?.id,
       attachmentIds: [uploaded.attachmentId],
     });
   };
@@ -1026,6 +1095,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         avatarUrl?: string;
         bio?: string;
         password?: string;
+        currentPassword?: string;
       } = {};
 
       if (profile.username !== user.username) {
@@ -1042,6 +1112,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       }
       if (profile.password) {
         updatePayload.password = profile.password;
+        updatePayload.currentPassword = profile.currentPassword;
       }
 
       if (Object.keys(updatePayload).length > 0) {
@@ -1057,6 +1128,29 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
     localStorage.setItem("user", JSON.stringify(nextUser));
     setUser(nextUser);
+
+    if (nextUser.userId) {
+      setRooms((current) =>
+        current.map((room) => {
+          if (!room.members) return room;
+          const updatedMembers = room.members.map((m) => {
+            if (m.userId === nextUser.userId) {
+              return {
+                ...m,
+                name: nextUser.username,
+                avatarUrl: nextUser.avatar,
+              };
+            }
+            return m;
+          });
+          return {
+            ...room,
+            members: updatedMembers,
+          };
+        })
+      );
+    }
+
     return nextUser;
   };
 
@@ -1197,25 +1291,20 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       return { isDeleted: true, newActiveId: remaining[0]?.id };
     }
 
-    const newArchived = !room.isArchived;
-    if (token) {
-      await updateRoom(token, roomId, { isArchived: newArchived });
-      const targetUserId = room.members?.find((m) => m.userId !== currentUserId)?.userId;
-      if (targetUserId) {
-        if (newArchived) {
-          await blockUserApi(token, targetUserId).catch(console.error);
-        } else {
-          await unblockUserApi(token, targetUserId).catch(console.error);
-        }
-        await refreshSocialData(token).catch(console.error);
-      }
+    const targetUserId =
+      room.otherMemberId ?? room.members?.find((member) => member.userId !== currentUserId)?.userId;
+    if (!targetUserId) return { isDeleted: false };
+
+    if (room.isReadonly) {
+      await unblockUserApi(token, targetUserId).catch(console.error);
+    } else {
+      await blockUserApi(token, targetUserId).catch(console.error);
     }
 
-    setRooms((current) =>
-      current.map((item) =>
-        item.id === roomId ? { ...item, isArchived: newArchived } : item,
-      ),
-    );
+    await Promise.all([
+      refreshRoomsAndFolders(token, currentUserId).catch(console.error),
+      refreshSocialData(token).catch(console.error),
+    ]);
     return { isDeleted: false };
   };
 
@@ -1295,23 +1384,29 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const saveGroupSettings = async (roomId: string, settings: GroupSettingsInput) => {
     if (!token) return;
 
-    const updated = await updateRoom(token, roomId, {
-      name: settings.name,
-      requireApproval: settings.requireApproval,
-      viewHistory: settings.viewHistory,
-      ...(settings.isArchived !== undefined && { isArchived: settings.isArchived }),
-    });
+    const payload: any = {};
+    if (settings.name !== undefined) payload.name = settings.name;
+    if (settings.requireApproval !== undefined) payload.requireApproval = settings.requireApproval;
+    if (settings.viewHistory !== undefined) payload.viewHistory = settings.viewHistory;
+    if (settings.isArchived !== undefined) payload.isArchived = settings.isArchived;
+
+    let updated = await updateRoom(token, roomId, payload);
+
+    if (settings.avatarFile) {
+      updated = await uploadRoomAvatarApi(token, roomId, settings.avatarFile);
+    }
 
     setRooms((current) =>
       current.map((room) =>
         room.id === roomId
           ? {
               ...room,
-              name: updated.name ?? settings.name,
-              inviteCode: updated.inviteCode,
-              requireApproval: updated.requireApproval,
-              viewHistory: updated.viewHistory,
-              isArchived: updated.isArchived,
+              name: updated.name ?? room.name,
+              inviteCode: updated.inviteCode ?? room.inviteCode,
+              requireApproval: updated.requireApproval !== undefined ? updated.requireApproval : room.requireApproval,
+              viewHistory: updated.viewHistory !== undefined ? updated.viewHistory : room.viewHistory,
+              isArchived: updated.isArchived !== undefined ? updated.isArchived : room.isArchived,
+              avatarUrl: updated.avatarUrl ?? room.avatarUrl,
             }
           : room,
       ),
@@ -1355,8 +1450,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     return remaining[0]?.id ?? null;
   };
 
-  const getReadAvatarsForMessage = (room: ChatRoom, msg: Message): { name: string; avatarUrl: string }[] => {
-    if (room.type !== "group") return [];
+  const getReadAvatarsForMessage = (room: ChatRoom, msg: Message): { name: string; displayName?: string; avatarUrl: string }[] => {
+    if (room.type !== "group" && room.type !== "msg") return [];
 
     const roomReads = groupReadStates[room.id];
     if (!roomReads) return [];
@@ -1365,7 +1460,11 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       .filter(([readerId, lastReadId]) => readerId !== currentUserId && lastReadId === msg.id)
       .map(([readerId]) => {
         const member = room.members?.find((m) => m.userId === readerId);
-        return { name: member?.nickname ?? member?.name ?? readerId, avatarUrl: member?.avatarUrl ?? "" };
+        return {
+          name: member?.name ?? readerId,
+          displayName: member?.nickname ?? member?.name ?? readerId,
+          avatarUrl: member?.avatarUrl ?? "",
+        };
       });
   };
 
@@ -1373,7 +1472,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     if (!token) throw new Error("Not authenticated");
     const trimmed = query.trim();
     if (!trimmed) return [];
-    return searchUsers(token, { query: trimmed });
+    return searchUsers(token, { query: trimmed, friendsOnly: true });
   };
 
   const handleJoinByInviteCode = async (inviteCode: string): Promise<string> => {
@@ -1437,13 +1536,16 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     if (request?.direction === "incoming") {
       await respondFriendRequest(token, requestId, "rejected");
     }
-    setFriendRequests((prev) => prev.filter((item) => item.id !== requestId));
+    await refreshSocialData(token);
   };
 
   const removeFriend = async (friendId: string) => {
     if (!token) return;
     await deleteFriend(token, friendId);
-    await refreshSocialData(token);
+    await Promise.all([
+      refreshRoomsAndFolders(token, currentUserId),
+      refreshSocialData(token),
+    ]);
   };
 
   const blockFriend = async (friendId: string) => {
@@ -1452,18 +1554,20 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     if (!friend) return;
 
     await blockUserApi(token, friendId);
-    setBlockedUsers((prev) => {
-      if (prev.some((item) => item.id === friendId)) return prev;
-      return [...prev, { id: friend.id, name: friend.name, email: friend.email }];
-    });
-    await refreshSocialData(token);
+    await Promise.all([
+      refreshRoomsAndFolders(token, currentUserId),
+      refreshSocialData(token),
+    ]);
   };
 
   const unblockUser = async (blockedId: string) => {
     if (token) {
       await unblockUserApi(token, blockedId);
+      await Promise.all([
+        refreshRoomsAndFolders(token, currentUserId),
+        refreshSocialData(token),
+      ]);
     }
-    setBlockedUsers((prev) => prev.filter((item) => item.id !== blockedId));
   };
 
   const saveEmergencySettings = async (settings: EmergencySettings) => {
@@ -1538,6 +1642,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         const latestMessage = roomMessages.at(-1);
         const roomLastReadId =
           groupReadStates[room.id]?.[currentUserId] ??
+          room.lastReadId ??
           room.members?.find((member) => member.userId === currentUserId)?.lastReadId ??
           null;
         const nextUnreadCount =
@@ -1604,11 +1709,19 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
       if (room.type === "msg") {
         const otherMemberId = room.otherMemberId || room.members?.find((m) => m.userId !== currentUserId)?.userId;
+        const blockedUser = otherMemberId ? blockedUsers.find((item) => item.id === otherMemberId) : undefined;
+        const privateRoomName = getPrivateRoomName(room, currentUserId);
+        if (privateRoomName) {
+          nextName = privateRoomName;
+        }
         if (otherMemberId) {
           const friend = friends.find((f) => f.id === otherMemberId);
           if (friend) {
             nextName = friend.name;
             nextIsOnline = friend.status === "online";
+          } else if (blockedUser) {
+            nextName = blockedUser.name;
+            nextIsOnline = false;
           }
         }
       }
@@ -1618,7 +1731,13 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         isOnline: nextIsOnline,
       };
     });
-  }, [rooms, friends, currentUserId]);
+  }, [rooms, friends, blockedUsers, currentUserId]);
+
+  const handleRefreshSocialData = async () => {
+    if (token) {
+      await refreshSocialData(token);
+    }
+  };
 
   return (
     <ChatContext.Provider
@@ -1682,6 +1801,11 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         triggerEmergencyAlertNow,
         setUiLanguage,
         typingUsers,
+        activeProfilePopover,
+        setActiveProfilePopover,
+        hasUnsavedChanges,
+        setHasUnsavedChanges,
+        refreshSocialData: handleRefreshSocialData,
       }}
     >
       {children}

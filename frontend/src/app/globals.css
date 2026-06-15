@@ -64,3 +64,19 @@ body {
   scrollbar-width: none;  /* Firefox */
 }
 
+@keyframes red-flash {
+  0% {
+    background-color: rgba(239, 68, 68, 0.25);
+    border-color: #ef4444;
+  }
+  100% {
+    background-color: transparent;
+    border-color: var(--color-border-primary);
+  }
+}
+
+.animate-red-flash {
+  animation: red-flash 1.5s ease-out;
+}
+
+

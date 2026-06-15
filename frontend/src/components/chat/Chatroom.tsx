@@ -2,7 +2,8 @@
 
 import React, { useState, useEffect, useLayoutEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { useChat, getAvatarForUser, Message } from "@/context/ChatContext";
+import { useChat, getAvatarForUser, Message, ChatRoom } from "@/context/ChatContext";
+import { resolveAssetUrl } from "@/lib/assets";
 import { Button } from "@/components/ui/Button";
 import { Dropdown } from "@/components/ui/Dropdown";
 import { Avatar } from "@/components/ui/Avatar";
@@ -53,6 +54,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
     rooms,
     messages,
     user,
+    friends,
     activeRoomNicknames,
     handleSendMessage,
     handleTyping,
@@ -64,13 +66,15 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
     showRightPanel,
     setShowRightPanel,
     typingUsers,
+    activeProfilePopover,
+    setActiveProfilePopover,
+    groupReadStates,
   } = useChat();
 
   const [inputText, setInputText] = useState("");
   const [mentionDraft, setMentionDraft] = useState<MentionDraft | null>(null);
   const [selectedMentionIndex, setSelectedMentionIndex] = useState(0);
   const [replyTarget, setReplyTarget] = useState<Message | null>(null);
-  const [showHeaderPopover, setShowHeaderPopover] = useState(false);
   const [isModifyNickOpen, setIsModifyNickOpen] = useState(false);
   const [nickInputValue, setNickInputValue] = useState("");
   const [pendingAttachment, setPendingAttachment] = useState<File | null>(null);
@@ -83,6 +87,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
   const activeRoom = rooms.find((r) => r.id === roomId);
   const currentMember = activeRoom?.members?.find((m) => m.userId === user.userId || m.name === user.username);
   const canManageMembers = currentMember?.role === "owner" || currentMember?.role === "admin";
+  const isReadOnlyRoom = Boolean(activeRoom?.isArchived || activeRoom?.isReadonly);
 
   const mentionCandidates =
     mentionDraft
@@ -134,14 +139,32 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
     );
   }
 
-  const handleSend = (e: React.FormEvent) => {
+  const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputText.trim()) return;
+    if (isUploadingAttachment) return;
+    if (!inputText.trim() && !pendingAttachment) return;
 
-    handleSendMessage(activeRoom.id, inputText, replyTarget);
-    handleTyping(activeRoom.id, false);
-    setInputText("");
-    setReplyTarget(null);
+    try {
+      if (pendingAttachment) {
+        setIsUploadingAttachment(true);
+        await handleUploadAttachment(activeRoom.id, pendingAttachment, {
+          content: inputText,
+          replyTarget,
+        });
+        setPendingAttachment(null);
+      } else {
+        handleSendMessage(activeRoom.id, inputText, replyTarget);
+      }
+
+      handleTyping(activeRoom.id, false);
+      setInputText("");
+      setReplyTarget(null);
+    } catch (error) {
+      console.error(error);
+      alert(error instanceof Error ? error.message : "Failed to send message");
+    } finally {
+      setIsUploadingAttachment(false);
+    }
   };
 
   const handleAttach = () => {
@@ -153,21 +176,6 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
     event.target.value = "";
     if (!file) return;
     setPendingAttachment(file);
-  };
-
-  const handleConfirmAttachmentUpload = async () => {
-    if (!pendingAttachment) return;
-
-    setIsUploadingAttachment(true);
-    try {
-      await handleUploadAttachment(activeRoom.id, pendingAttachment);
-      setPendingAttachment(null);
-    } catch (error) {
-      console.error(error);
-      alert(error instanceof Error ? error.message : "Failed to upload attachment");
-    } finally {
-      setIsUploadingAttachment(false);
-    }
   };
 
   const handleRemovePendingAttachment = () => {
@@ -196,7 +204,12 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
   };
 
   const handleLeaveOrBlockAction = async () => {
-    const action = activeRoom.type === "group" ? t("chatroom.leave") : activeRoom.isArchived ? t("chatroom.unblock") : t("chatroom.block");
+    const action =
+      activeRoom.type === "group"
+        ? t("chatroom.leave")
+        : activeRoom.isReadonly
+          ? t("chatroom.unblock")
+          : t("chatroom.block");
     if (confirm(t("chatroom.confirmLeaveOrBlock", { action, name: activeRoom.name }))) {
       const { isDeleted, newActiveId } = await handleLeaveOrBlock(activeRoom.id);
       if (isDeleted) {
@@ -269,19 +282,25 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
             <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
           </svg>
         </button>
-        <div
-          className={`flex items-center gap-3 relative avatar-click-target min-w-0 ${
-            activeRoom.type === "msg" ? "cursor-pointer hover:opacity-85 transition-opacity" : ""
-          }`}
-          onClick={() => {
-            if (activeRoom.type === "msg") {
-              setShowHeaderPopover(!showHeaderPopover);
-            }
-          }}
-        >
+        <div className="flex items-center gap-3 relative min-w-0">
           <Avatar
             name={activeRoom.name}
-            src={getAvatarForUser(activeRoom.name, user.avatar, user.username)}
+            src={(() => {
+              if (activeRoom.avatarUrl) {
+                return resolveAssetUrl(activeRoom.avatarUrl);
+              }
+              if (activeRoom.type === "msg") {
+                const otherMember = activeRoom.members?.find((m) => m.userId !== user.userId);
+                if (otherMember?.avatarUrl) {
+                  return resolveAssetUrl(otherMember.avatarUrl);
+                }
+                const friend = friends.find((f) => f.id === activeRoom.otherMemberId || f.name === activeRoom.name);
+                if (friend?.avatarUrl) {
+                  return resolveAssetUrl(friend.avatarUrl);
+                }
+              }
+              return getAvatarForUser(activeRoom.name, user.avatar, user.username);
+            })()}
             size="sm"
             isOnline={activeRoom.isOnline}
           />
@@ -290,7 +309,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
               <h1 className="text-sm font-bold text-foreground truncate max-w-[200px]">
                 {activeRoom.name}
               </h1>
-              {activeRoom.isArchived && <Badge variant="danger">{t("chatroom.readOnly")}</Badge>}
+              {isReadOnlyRoom && <Badge variant="danger">{t("chatroom.readOnly")}</Badge>}
             </div>
             {activeRoom.type === "group" && (
               <span className="text-[10px] text-text-muted font-mono leading-none">
@@ -298,17 +317,6 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
               </span>
             )}
           </div>
-
-          {showHeaderPopover && activeRoom.type === "msg" && (
-            <ProfilePopover
-              username={activeRoom.name}
-              onClose={(e) => {
-                e.stopPropagation();
-                setShowHeaderPopover(false);
-              }}
-              position="bottom"
-            />
-          )}
         </div>
         </div>
 
@@ -338,9 +346,14 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
             items={[
               { label: t("chatroom.modifyNickname"), onClick: handleModifyNick },
               {
-                label: activeRoom.type === "group" ? t("chatroom.leaveGroup") : activeRoom.isArchived ? t("chatroom.unblock") : t("chatroom.blockContact"),
+                label:
+                  activeRoom.type === "group"
+                    ? t("chatroom.leaveGroup")
+                    : activeRoom.isReadonly
+                      ? t("chatroom.unblock")
+                      : t("chatroom.blockContact"),
                 onClick: handleLeaveOrBlockAction,
-                variant: activeRoom.isArchived ? "default" : "danger",
+                variant: activeRoom.isReadonly ? "default" : "danger",
               },
             ]}
           />
@@ -364,8 +377,36 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
         {messages
           .filter((m) => m.roomId === activeRoom.id)
           .map((msg) => {
+            if (msg.content.startsWith("[System] ")) {
+              return (
+                <div
+                  key={msg.id}
+                  className="w-full flex justify-center my-2 select-none"
+                >
+                  <div className="bg-surface-card border border-border-secondary px-3 py-1 rounded-full text-xs text-text-muted">
+                    {msg.content.substring(9)}
+                  </div>
+                </div>
+              );
+            }
+
             const senderMember = activeRoom.members?.find((m) => m.userId === msg.senderId);
             const displayName = senderMember?.nickname || msg.senderName;
+
+            // Calculate isRead for private chats
+            let isRead = msg.isRead || false;
+            if (activeRoom.type === "msg" && msg.isOutgoing) {
+              const otherUserId = activeRoom.otherMemberId || activeRoom.members?.find((m) => m.userId !== user.userId)?.userId;
+              if (otherUserId) {
+                const otherLastReadId = groupReadStates[activeRoom.id]?.[otherUserId];
+                if (otherLastReadId) {
+                  const roomMessages = messages.filter((m) => m.roomId === activeRoom.id);
+                  const msgIndex = roomMessages.findIndex((m) => m.id === msg.id);
+                  const lastReadIndex = roomMessages.findIndex((m) => m.id === otherLastReadId);
+                  isRead = lastReadIndex !== -1 && msgIndex !== -1 && msgIndex <= lastReadIndex;
+                }
+              }
+            }
 
             return (
               <div
@@ -381,13 +422,26 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
                   isRecalled={msg.isRecalled}
                   replyTo={msg.replyTo || undefined}
                   attachments={msg.attachments}
-                  senderAvatar={msg.isOutgoing ? user.avatar : getAvatarForUser(msg.senderName, user.avatar, user.username)}
-                  isRead={msg.isRead}
+                  senderAvatar={
+                    msg.isOutgoing
+                      ? user.avatar
+                      : senderMember?.avatarUrl
+                      ? resolveAssetUrl(senderMember.avatarUrl)
+                      : undefined
+                  }
+                  isRead={isRead}
                   readByAvatars={getReadAvatarsForMessage(activeRoom, msg)}
                   roomType={activeRoom.type}
+                  senderId={msg.senderId || undefined}
+                  messageId={msg.id}
                   onReply={() => setReplyTarget(msg)}
                   onRecall={() => handleRecallMessage(msg.id)}
                   canRecall={Boolean(msg.isOutgoing) || canManageMembers}
+                  avatarName={
+                    msg.isOutgoing
+                      ? user.username
+                      : senderMember?.name || msg.senderName
+                  }
                 />
 
                 {!msg.isRecalled && (
@@ -444,7 +498,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
 
       {/* Input Box Area */}
       <div className="border-t border-border-primary bg-surface-card px-3 py-3 md:px-6 md:py-4 shrink-0">
-        {activeRoom.isArchived ? (
+        {isReadOnlyRoom ? (
           <div className="w-full text-center py-2.5 bg-surface-muted text-xs text-text-muted uppercase tracking-wider select-none border border-dashed border-border-secondary rounded-sm">
             {t("chatroom.readOnlyOrBlocked")}
           </div>
@@ -456,15 +510,6 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
               className="hidden"
               onChange={handleFileSelected}
             />
-            <button
-              type="button"
-              onClick={handleAttach}
-              title={t("chatroom.uploadAttachment")}
-              className="p-2.5 border border-border-secondary hover:border-border-primary rounded-sm text-text-muted hover:text-foreground transition-colors cursor-pointer shrink-0 mb-0.5"
-            >
-              <Icon icon="boxicons:paperclip" className="h-4 w-4" />
-            </button>
-
             {pendingAttachment && (
               <div className="bg-surface-muted border border-border-primary px-6 py-2 flex items-center justify-between text-xs select-none rounded-sm">
                 <div className="flex-1 min-w-0 border-l-2 border-primary pl-2">
@@ -474,31 +519,29 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
                     {pendingAttachment.type || "application/octet-stream"} · {formatFileSize(pendingAttachment.size)}
                   </p>
                 </div>
-                <div className="flex items-center gap-2 shrink-0 ml-4">
-                  <Button
-                    type="button"
-                    onClick={() => void handleConfirmAttachmentUpload()}
-                    disabled={isUploadingAttachment}
-                    className="py-1.5 px-3"
-                  >
-                    {isUploadingAttachment ? "Uploading..." : t("chatroom.send")}
-                  </Button>
-                  <button
-                    type="button"
-                    onClick={handleRemovePendingAttachment}
-                    disabled={isUploadingAttachment}
-                    className="text-text-muted hover:text-foreground cursor-pointer p-0.5 border border-transparent hover:border-border-primary rounded-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                    title={t("chatroom.cancel")}
-                  >
-                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={handleRemovePendingAttachment}
+                  disabled={isUploadingAttachment}
+                  className="text-text-muted hover:text-foreground cursor-pointer p-0.5 border border-transparent hover:border-border-primary rounded-sm disabled:opacity-50 disabled:cursor-not-allowed shrink-0 ml-4"
+                  title={t("chatroom.cancel")}
+                >
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
               </div>
             )}
 
             <form onSubmit={handleSend} className="flex gap-2 md:gap-4 items-end">
+              <button
+                type="button"
+                onClick={handleAttach}
+                title={t("chatroom.uploadAttachment")}
+                className="p-2.5 border border-border-secondary hover:border-border-primary rounded-sm text-text-muted hover:text-foreground transition-colors cursor-pointer shrink-0 mb-0.5"
+              >
+                <Icon icon="boxicons:paperclip" className="h-4 w-4" />
+              </button>
               <div className="relative flex-1">
                 {mentionCandidates.length > 0 && (
                   <div className="absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-sm border border-border-primary bg-surface-card shadow-lg">
@@ -553,8 +596,13 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
                 />
               </div>
 
-              <Button type="submit" variant="primary" className="py-2.5 px-4 md:px-5 shrink-0 select-none">
-                {t("chatroom.send")}
+              <Button
+                type="submit"
+                variant="primary"
+                disabled={isUploadingAttachment}
+                className="py-2.5 px-4 md:px-5 shrink-0 select-none"
+              >
+                {isUploadingAttachment ? "Uploading..." : t("chatroom.send")}
               </Button>
             </form>
           </div>
