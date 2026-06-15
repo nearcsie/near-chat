@@ -80,4 +80,14 @@ describe('mapErrorToApiShape', () => {
       code: 'LIMIT_FILE_SIZE',
     });
   });
+
+  it('maps non-size multer errors to 400', () => {
+    const err = new multer.MulterError('LIMIT_FILE_COUNT');
+
+    const result = mapErrorToApiShape(err);
+
+    expect(result.statusCode).toBe(400);
+    expect(result.code).toBe('LIMIT_FILE_COUNT');
+    expect(result.message).toBe(err.message);
+  });
 });

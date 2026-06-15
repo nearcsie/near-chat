@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useLayoutEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { useChat, getAvatarForUser, Message, ChatRoom } from "@/context/ChatContext";
+import { useChat, getAvatarForUser, Message } from "@/context/ChatContext";
 import { resolveAssetUrl } from "@/lib/assets";
 import { Button } from "@/components/ui/Button";
 import { Dropdown } from "@/components/ui/Dropdown";
@@ -12,7 +12,6 @@ import { ChatBubble } from "@/components/ui/ChatBubble";
 import { useTranslation } from "@/hooks/useTranslation";
 import { Modal } from "@/components/ui/Modal";
 import { Input } from "@/components/ui/Input";
-import ProfilePopover from "./ProfilePopover";
 import { Icon } from "@iconify/react";
 
 interface ChatroomProps {
@@ -25,6 +24,15 @@ interface MentionDraft {
   end: number;
   query: string;
 }
+
+interface MentionCandidate {
+  key: string;
+  label: string;
+  token: string;
+  detail: string;
+}
+
+const EVERYONE_MENTION = "everyone";
 
 const formatFileSize = (bytes: number) => {
   if (bytes < 1024) return `${bytes} B`;
@@ -66,8 +74,6 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
     showRightPanel,
     setShowRightPanel,
     typingUsers,
-    activeProfilePopover,
-    setActiveProfilePopover,
     groupReadStates,
   } = useChat();
 
@@ -88,17 +94,36 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
   const currentMember = activeRoom?.members?.find((m) => m.userId === user.userId || m.name === user.username);
   const canManageMembers = currentMember?.role === "owner" || currentMember?.role === "admin";
   const isReadOnlyRoom = Boolean(activeRoom?.isArchived || activeRoom?.isReadonly);
+  const mentionQuery = mentionDraft?.query.toLowerCase() ?? "";
+  const memberMentionCandidates: MentionCandidate[] = mentionDraft
+    ? (activeRoom?.members ?? [])
+        .filter((member) => member.userId !== user.userId)
+        .filter((member) =>
+          mentionQuery
+            ? member.name.toLowerCase().startsWith(mentionQuery)
+            : true,
+        )
+        .map((member) => ({
+          key: member.userId,
+          label: member.name,
+          token: member.name,
+          detail: `@${member.name}`,
+        }))
+    : [];
 
-  const mentionCandidates =
-    mentionDraft
-      ? (activeRoom?.members ?? [])
-          .filter((member) => member.userId !== user.userId)
-          .filter((member) =>
-            mentionDraft.query
-              ? member.name.toLowerCase().startsWith(mentionDraft.query.toLowerCase())
-              : true,
-          )
-      : [];
+  const mentionCandidates: MentionCandidate[] = mentionDraft
+    ? [
+        ...(EVERYONE_MENTION.startsWith(mentionQuery)
+          ? [{
+              key: "__everyone__",
+              label: t("chatroom.everyoneMention"),
+              token: EVERYONE_MENTION,
+              detail: "@everyone",
+            }]
+          : []),
+        ...memberMentionCandidates,
+      ]
+    : [];
 
   const mentionResetKey = `${roomId}|${mentionDraft ? `q:${mentionDraft.query}` : "none"}`;
   const [prevMentionResetKey, setPrevMentionResetKey] = useState(mentionResetKey);
@@ -222,12 +247,12 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
     }
   };
 
-  const handleMentionSelect = (memberName: string) => {
+  const handleMentionSelect = (mentionToken: string) => {
     if (!mentionDraft) return;
 
     const nextText =
-      `${inputText.slice(0, mentionDraft.start)}@${memberName} ${inputText.slice(mentionDraft.end)}`;
-    const nextCursorPosition = mentionDraft.start + memberName.length + 2;
+      `${inputText.slice(0, mentionDraft.start)}@${mentionToken} ${inputText.slice(mentionDraft.end)}`;
+    const nextCursorPosition = mentionDraft.start + mentionToken.length + 2;
 
     setInputText(nextText);
     setMentionDraft(null);
@@ -257,7 +282,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
 
     if (event.key === "Enter" || event.key === "Tab") {
       event.preventDefault();
-      handleMentionSelect(mentionCandidates[selectedMentionIndex]?.name ?? mentionCandidates[0].name);
+      handleMentionSelect(mentionCandidates[selectedMentionIndex]?.token ?? mentionCandidates[0].token);
       return;
     }
 
@@ -545,21 +570,21 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
               <div className="relative flex-1">
                 {mentionCandidates.length > 0 && (
                   <div className="absolute bottom-full left-0 right-0 mb-2 max-h-48 overflow-y-auto rounded-sm border border-border-primary bg-surface-card shadow-lg">
-                    {mentionCandidates.map((member) => (
+                    {mentionCandidates.map((candidate) => (
                       <button
-                        key={member.userId}
+                        key={candidate.key}
                         type="button"
                         onMouseDown={(event) => event.preventDefault()}
-                        onClick={() => handleMentionSelect(member.name)}
+                        onClick={() => handleMentionSelect(candidate.token)}
                         className={`flex w-full items-center justify-between gap-3 border-b border-border-secondary/40 px-3 py-2 text-left text-xs text-foreground transition-colors last:border-b-0 ${
-                          mentionCandidates[selectedMentionIndex]?.userId === member.userId
+                          mentionCandidates[selectedMentionIndex]?.key === candidate.key
                             ? "bg-primary/10 text-primary"
                             : "hover:bg-surface-muted"
                         }`}
                       >
-                        <span className="truncate font-semibold">{member.name}</span>
+                        <span className="truncate font-semibold">{candidate.label}</span>
                         <span className="shrink-0 text-[10px] uppercase tracking-wider text-text-muted">
-                          @{member.name}
+                          {candidate.detail}
                         </span>
                       </button>
                     ))}

@@ -65,8 +65,9 @@ This document defines the RESTful API and Socket.IO real-time communication inte
 | | `message_recalled` | Yes (On connection) | Message has been recalled by the sender |
 | | `user_typing` | Yes (On connection) | Typing state changes of other members |
 | | `read_update` | Yes (On connection) | Read receipt updates of other members |
-| | `room_update` | Yes (On connection) | Room settings changes, member changes, or kick notifications |
-| | `friend_request` | Yes (On connection) | Receive new friend request notification |
+| | `room_update` | Yes (On connection) | Room settings changes, member changes, or kick notifications. See [room_update subtypes](#room_update-subtypes). |
+| | `friend_request` | Yes (On connection) | Real-time notification for friend request status changes (sent, accepted, rejected) |
+| | `user_status` | Yes (On connection) | Online/offline presence change of a friend |
 | | `emergency_alert` | Yes (On connection) | Receive emergency alert notification from contact |
 | | `error` | Yes (On connection) | Error report for failed event processing |
 
@@ -1357,6 +1358,7 @@ All errors return the following JSON structure:
 - **URL**: Same host as REST API (default port `4000`)
 - **Namespace**: `/`
 - **Authentication**: Connection requires `auth_token` Cookie or `Authorization: Bearer <token>` Header
+- **Personal channel**: Upon connection, the server automatically adds the socket to `user_<userId>`. Targeted events (e.g., friend request notifications, room approval) are delivered via this personal channel. No client-side action is needed.
 
 ### Client-to-Server Events
 
@@ -1377,7 +1379,45 @@ All errors return the following JSON structure:
 | `message_recalled` | `{ messageId: string }` | Message has been recalled |
 | `user_typing` | `{ roomId: string, userId: string, isTyping: boolean }` | Typing status of other members |
 | `read_update` | `{ roomId: string, userId: string, messageId: string }` | Read receipt updates of other members |
-| `room_update` | `{ type: string, data: unknown }` | Room settings changes, member changes, or kick notifications |
-| `friend_request` | `{ requesterId: string, addresseeId: string, status: string, createdAt: string }` | Receive new friend request |
+| `room_update` | `{ type: string, roomId: string, data: unknown }` | Room or membership state change. `type` determines the subtype. See [`room_update` Subtypes](#room_update-subtypes). |
+| `friend_request` | `{ requesterId: string, addresseeId: string, status: 'pending' \| 'accepted' \| 'rejected', createdAt: string }` | Friend request status change notification. Delivered to **both** the addressee (new request) and the requester (accepted / rejected). The client should refresh friend and pending-request lists upon receiving this event regardless of `status`. |
+| `user_status` | `{ userId: string, status: 'online' \| 'offline' }` | Presence update for a friend. Delivered when a friend connects or disconnects. |
 | `emergency_alert` | `{ userId: string, message: string }` | Receive emergency alert from contact |
 | `error` | `ApiError` | Error report for failed event processing |
+
+---
+
+### `room_update` Subtypes
+
+All `room_update` events share the envelope `{ type: string, roomId: string, data: any }`. The `type` field determines how the payload should be handled.
+
+#### Room-level subtypes
+Broadcast to all current members of the room (`room_<roomId>` socket channel).
+
+| `type` | `data` shape | Trigger | Who receives it |
+| :--- | :--- | :--- | :--- |
+| `ROOM_SETTINGS_UPDATED` | `Room` object | `PATCH /rooms/:id` (name, avatar, settings) | All room members |
+| `ROOM_AVATAR_UPDATED` | `{ roomId: string, avatarUrl: string }` | Room avatar upload | All room members |
+| `ROOM_DELETED` | `{ roomId: string }` | `DELETE /rooms/:id` (archive/delete) | All room members |
+
+#### Member-level subtypes
+Broadcast to all current members of the room.
+
+| `type` | `data` shape | Trigger | Who receives it |
+| :--- | :--- | :--- | :--- |
+| `MEMBER_JOINED` | `{ userId: string }` | User joins via invite code (no approval required) | All existing room members |
+| `MEMBER_APPROVED` | `{ userId: string }` | Pending member approved by owner/admin | All existing room members |
+| `MEMBER_UPDATED` | `{ userId: string, role?: string, nickname?: string, isMuted?: boolean }` | Member role/nickname/mute changed | All room members |
+| `MEMBER_KICKED` | `{ userId: string }` | Member removed by owner/admin | All room members (including kicked user) |
+| `MEMBER_LEFT` | `{ userId: string }` | Member voluntarily left | All remaining room members |
+| `OWNERSHIP_TRANSFERRED` | `{ oldOwner: string, newOwner: string }` | Group ownership transferred | All room members |
+| `USER_UPDATED` | `{ userId: string, name?: string, avatarUrl?: string }` | Member updates their own profile | All rooms the user belongs to |
+
+#### Personal subtypes
+Sent **only** to the target user's personal socket channel (`user_<userId>`), not to the room.
+
+| `type` | `data` shape | Trigger | Who receives it |
+| :--- | :--- | :--- | :--- |
+| `ROOM_JOINED` | `{}` | User joins via invite code **or** pending member is approved | Only the joining / approved user |
+
+> **Client handling**: When `ROOM_JOINED` is received, the client should call `GET /rooms` to refresh the full room list. The client must then call `join_room` for the newly appeared room to begin receiving its broadcasts.

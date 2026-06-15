@@ -53,17 +53,20 @@ const toUserProfile = (user: Pick<User, 'userId' | 'name' | 'bio' | 'avatarUrl'>
 });
 
 const toMyProfile = (
-  user: Pick<User, 'userId' | 'name' | 'email' | 'bio' | 'avatarUrl'>,
+  user: Pick<User, 'userId' | 'name' | 'email' | 'bio' | 'avatarUrl' | 'lastActivity'>,
 ): MyProfile => ({
   ...toUserProfile(user),
   email: user.email,
+  lastActivity: user.lastActivity,
 });
 
 const toUserSettings = (
-  user: Pick<User, 'warningEnabled' | 'warningDays' | 'language' | 'theme' | 'notifyDesktop' | 'notifySound'>,
+  user: Pick<User, 'warningEnabled' | 'warningDays' | 'demoWarningEnabled' | 'demoWarningSeconds' | 'language' | 'theme' | 'notifyDesktop' | 'notifySound'>,
 ): UserSettings => ({
   warningEnabled: user.warningEnabled,
   warningDays: user.warningDays,
+  demoWarningEnabled: user.demoWarningEnabled,
+  demoWarningSeconds: user.demoWarningSeconds,
   language: user.language,
   theme: user.theme,
   notifyDesktop: user.notifyDesktop,
@@ -324,6 +327,31 @@ export const makeUserService = (
       }
 
       return notifyContacts(userId, 'User has exceeded their inactivity warning threshold');
+    },
+
+    async checkDemoInactivity(userId: string, now = new Date()): Promise<EmergencyAlertResult> {
+      const user = await repo.findById(userId);
+      if (!user) throw new NotFoundError('user', userId);
+
+      if (!user.demoWarningEnabled) {
+        return { alerted: false, recipients: [], reason: 'WARNING_DISABLED' };
+      }
+      if (user.demoWarningSeconds < 1) {
+        return { alerted: false, recipients: [], reason: 'INVALID_THRESHOLD' };
+      }
+
+      const inactiveMs = now.getTime() - user.lastActivity.getTime();
+      const thresholdMs = user.demoWarningSeconds * 1000;
+      if (inactiveMs < thresholdMs) {
+        return { alerted: false, recipients: [], reason: 'BELOW_THRESHOLD' };
+      }
+
+      const shouldAlert = await emergencyContactRepo.recordAlertIfNew(userId, user.lastActivity);
+      if (!shouldAlert) {
+        return { alerted: false, recipients: [], reason: 'ALREADY_ALERTED' };
+      }
+
+      return notifyContacts(userId, '(Demo) User has exceeded their demo inactivity warning threshold');
     },
 
     async search(query: string, mode?: 'name' | 'userId' | 'email', currentUserId?: string): Promise<SearchUserResult[]> {

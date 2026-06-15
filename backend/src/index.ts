@@ -29,7 +29,7 @@ import { makeRoomController } from "./controllers/roomController";
 import { makeMessageController } from "./controllers/messageController";
 import { makeFolderController } from "./controllers/folderController";
 import { makeFriendController } from "./controllers/friendController";
-import { startInactivityJob } from "./cron/inactivityJob";
+import { startInactivityJob, startDemoInactivityJob } from "./cron/inactivityJob";
 import { makeAuthRoutes } from "./routes/authRoutes";
 import { makeUserRoutes } from "./routes/userRoutes";
 import { makeRoomRoutes } from "./routes/roomRoutes";
@@ -132,6 +132,10 @@ const roomService = makeRoomService(
   friendRepo,
   userRepo,
   messageRepo,
+  // Emits directly to a user's personal socket room for targeted notifications.
+  (userId, eventName, payload) => {
+    io.to(`user_${userId}`).emit(eventName as any, payload);
+  },
 );
 const messageService = makeMessageService(messageRepo, roomRepo, roomMemberRepo);
 const folderService = makeFolderService(folderRepo, roomMemberRepo);
@@ -167,6 +171,7 @@ attachSockets(io, {
 
 if (require.main === module) {
   startInactivityJob(userRepo, userService);
+  startDemoInactivityJob(userRepo, userService);
   server.listen(PORT as number, "0.0.0.0", () =>
     console.log(`Backend server successfully listening on port ${PORT} (0.0.0.0)`),
   );

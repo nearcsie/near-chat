@@ -192,6 +192,7 @@
     "uploadAttachment": "Upload Attachment",
     "attachmentPreview": "Attachment preview",
     "inputPlaceholder": "Type a message...",
+    "everyoneMention": "Everyone",
     "send": "Send",
     "membersList": "Members ({count})",
     "hideInfoPanel": "Hide Info Panel",

@@ -157,6 +157,33 @@ describe('Socket.IO chat events E2E', () => {
     });
   });
 
+  it('broadcasts @everyone mention payloads returned by the message service', async () => {
+    const sender = await connectClient('user-1');
+    const receiver = await connectClient('user-2');
+    messageService.sendMessage.mockResolvedValue({
+      ...message,
+      content: 'hello @everyone',
+      mentions: ['user-2', 'user-3'],
+    });
+
+    receiver.emit('join_room', { roomId: 'room-1' });
+    await vi.waitFor(() => {
+      expect(ioServer.sockets.adapter.rooms.get('room_room-1')?.has(receiver.id!)).toBe(true);
+    });
+
+    const received = waitFor<MessageWithSender>(receiver, 'new_message');
+    sender.emit('send_message', { roomId: 'room-1', content: 'hello @everyone' });
+
+    await expect(received).resolves.toMatchObject({
+      content: 'hello @everyone',
+      mentions: ['user-2', 'user-3'],
+    });
+    expect(messageService.sendMessage).toHaveBeenCalledWith('user-1', 'room-1', 'hello @everyone', {
+      replyToId: undefined,
+      attachmentIds: undefined,
+    });
+  });
+
   it('emits typed error when send_message is denied', async () => {
     const sender = await connectClient('user-1');
     messageService.sendMessage.mockRejectedValue(new ForbiddenError('Muted members cannot send messages'));
