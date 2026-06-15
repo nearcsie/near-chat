@@ -1,5 +1,6 @@
 # Stage 1: Install dependencies
 FROM node:lts-slim AS deps
+ENV CI=true
 RUN corepack enable && corepack prepare pnpm@latest --activate
 WORKDIR /workspace
 
@@ -14,6 +15,7 @@ RUN pnpm install --no-frozen-lockfile --ignore-scripts
 
 # Stage 2: Build the frontend
 FROM node:lts-slim AS builder
+ENV CI=true
 ARG NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 RUN corepack enable && corepack prepare pnpm@latest --activate

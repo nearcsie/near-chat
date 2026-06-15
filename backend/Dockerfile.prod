@@ -1,5 +1,6 @@
 # Stage 1: Build the backend application
 FROM node:lts-slim AS builder
+ENV CI=true
 
 RUN apt-get update -y && apt-get install -y openssl
 RUN corepack enable && corepack prepare pnpm@latest --activate
@@ -22,6 +23,7 @@ RUN pnpm build
 
 # Stage 2: Create a production runner image
 FROM node:lts-slim AS runner
+ENV CI=true
 
 RUN apt-get update -y && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
 RUN corepack enable && corepack prepare pnpm@latest --activate
