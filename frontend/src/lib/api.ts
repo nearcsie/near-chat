@@ -133,6 +133,9 @@ const authHeaders = (token?: string): HeadersInit => {
 export const refreshTokens = (): Promise<AuthResponse> =>
   requestJson<AuthResponse>('/auth/refresh', {
     method: 'POST',
+  }).then((res) => {
+    setActiveAccessToken(res.token);
+    return res;
   });
 
 // The refresh cookie is shared across tabs; two concurrent refreshes would

@@ -916,6 +916,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         setCurrentUserId(profile.userId);
         setUiLanguageState(stored.language ?? "en");
         setToken(currentToken);
+        setActiveAccessToken(currentToken);
         setIsAuthenticated(true);
         await Promise.all([
           refreshRoomsAndFolders(currentToken, profile.userId),
