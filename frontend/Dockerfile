@@ -14,6 +14,8 @@ RUN pnpm install --no-frozen-lockfile --ignore-scripts
 
 # Stage 2: Build the frontend
 FROM node:lts-slim AS builder
+ARG NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 RUN corepack enable && corepack prepare pnpm@latest --activate
 WORKDIR /workspace
 
