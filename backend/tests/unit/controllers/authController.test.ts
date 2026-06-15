@@ -123,6 +123,35 @@ describe('authController', () => {
       expect(res.status).toHaveBeenCalledWith(204);
       expect(res.send).toHaveBeenCalled();
     });
+
+    it('skips revokeToken but still clears cookie and sends 204 when no cookie is present', async () => {
+      const req = { headers: {} } as Request;
+      const res = mockRes();
+      const next = vi.fn();
+
+      await ctrl.logout(req, res, next);
+
+      expect(service.revokeToken).not.toHaveBeenCalled();
+      expect(res.clearCookie).toHaveBeenCalledWith(
+        'refresh_token',
+        expect.objectContaining({ httpOnly: true, secure: false, sameSite: 'strict' }),
+      );
+      expect(res.status).toHaveBeenCalledWith(204);
+      expect(res.send).toHaveBeenCalled();
+    });
+
+    it('calls next with error when revokeToken throws', async () => {
+      const err = new Error('revoke failed');
+      service.revokeToken.mockRejectedValue(err);
+      const req = { headers: { cookie: 'refresh_token=some-token' } } as Request;
+      const res = mockRes();
+      const next = vi.fn();
+
+      await ctrl.logout(req, res, next);
+
+      expect(next).toHaveBeenCalledWith(err);
+      expect(res.status).not.toHaveBeenCalled();
+    });
   });
 
   describe('refresh', () => {

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { signToken, verifyToken } from '../../../src/auth/jwt';
+import { signToken, verifyToken, generateRefreshToken, hashToken } from '../../../src/auth/jwt';
 import type { JwtPayload } from '@shared/types';
 
 const payload: JwtPayload = { userId: 'u1', email: 'u1@test.example' } as JwtPayload;
@@ -34,5 +34,17 @@ describe('jwt', () => {
     const token = signToken(payload);
     vi.stubEnv('JWT_SECRET', 'secret-b');
     expect(() => verifyToken(token)).toThrow();
+  });
+
+  it('generateRefreshToken returns an 80-char hex string', () => {
+    const token = generateRefreshToken();
+    expect(token).toMatch(/^[0-9a-f]{80}$/);
+  });
+
+  it('hashToken returns a repeatable SHA-256 hex digest', () => {
+    const hash = hashToken('some-token');
+    expect(hash).toMatch(/^[0-9a-f]{64}$/);
+    expect(hashToken('same')).toBe(hashToken('same'));
+    expect(hashToken('a')).not.toBe(hashToken('b'));
   });
 });

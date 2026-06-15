@@ -1,11 +1,17 @@
 import bcrypt from 'bcryptjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ConflictError, ValidationError } from '../../../src/errors/AppError';
+import { ConflictError, NotFoundError, ValidationError } from '../../../src/errors/AppError';
 import type { IEmergencyContactRepository } from '../../../src/repositories/IEmergencyContactRepository';
 import type { IUserRepository } from '../../../src/repositories/IUserRepository';
 import { makeUserService } from '../../../src/services/userService';
 import { loginSchema, registerSchema } from '../../../src/validators/userSchemas';
 import type { User } from '../../../../shared/types';
+import { saveAvatarUpload, removeManagedAvatar } from '../../../src/lib/avatarUpload';
+
+vi.mock('../../../src/lib/avatarUpload', () => ({
+  saveAvatarUpload: vi.fn(),
+  removeManagedAvatar: vi.fn().mockResolvedValue(undefined),
+}));
 
 describe('userService', () => {
   let mockRepo: import('vitest').Mocked<IUserRepository>;
@@ -640,6 +646,340 @@ describe('userService', () => {
       } finally {
         process.env.JWT_REFRESH_EXPIRES_IN_DAYS = originalEnv;
       }
+    });
+  });
+
+  describe('login with soft-deleted user', () => {
+    it('throws ValidationError when user has deletedAt set', async () => {
+      mockRepo.findByEmail.mockResolvedValue({ ...baseUser(), deletedAt: new Date() });
+      await expect(userService.login({ email: 'test@example.com', password: 'password123' }))
+        .rejects.toThrow(ValidationError);
+    });
+  });
+
+  describe('notifyContacts additional branches', () => {
+    it('returns NO_CONTACTS when user has no emergency contacts', async () => {
+      mockRepo.findById.mockResolvedValue(baseUser());
+      emergencyContactRepo.findByUserId.mockResolvedValue([]);
+      const result = await userService.triggerEmergencyAlert('u1');
+      expect(result).toEqual({ alerted: false, recipients: [], reason: 'NO_CONTACTS' });
+    });
+
+    it('still resolves and tracks recipients when notifyEmergencyContact callback is absent', async () => {
+      const serviceNoCallback = makeUserService(mockRepo, emergencyContactRepo, mockRefreshTokenRepo, mockJwt);
+      mockRepo.findById.mockResolvedValue(baseUser());
+      emergencyContactRepo.findByUserId.mockResolvedValue([
+        { contactId: 'c1', userId: 'u1', contactUserId: 'c1', message: 'Call me' },
+      ] as any);
+      const result = await serviceNoCallback.triggerEmergencyAlert('u1');
+      expect(result.alerted).toBe(true);
+      expect(result.recipients).toContain('c1');
+    });
+
+    it('uses the fallback message when contact.message is an empty string', async () => {
+      mockRepo.findById.mockResolvedValue(baseUser());
+      emergencyContactRepo.findByUserId.mockResolvedValue([
+        { contactId: 'c1', userId: 'u1', contactUserId: 'c1', message: '' },
+      ] as any);
+      await userService.triggerEmergencyAlert('u1', 'Fallback message');
+      expect(notifyEmergencyContact).toHaveBeenCalledWith(
+        'c1',
+        expect.objectContaining({ message: expect.stringContaining('Fallback message') }),
+      );
+    });
+  });
+
+  describe('checkInactivity additional branches', () => {
+    it('returns WARNING_DISABLED when warningEnabled is false', async () => {
+      mockRepo.findById.mockResolvedValue({ ...baseUser(), warningEnabled: false });
+      const result = await userService.checkInactivity('u1');
+      expect(result).toEqual({ alerted: false, recipients: [], reason: 'WARNING_DISABLED' });
+    });
+
+    it('returns INVALID_THRESHOLD when warningEnabled is true but warningDays is 0', async () => {
+      mockRepo.findById.mockResolvedValue({ ...baseUser(), warningEnabled: true, warningDays: 0 });
+      const result = await userService.checkInactivity('u1');
+      expect(result).toEqual({ alerted: false, recipients: [], reason: 'INVALID_THRESHOLD' });
+    });
+  });
+
+  describe('updateMe additional branches', () => {
+    it('throws ValidationError when changing password without providing currentPassword', async () => {
+      await expect(userService.updateMe('u1', { password: 'NewPass123' }))
+        .rejects.toThrow(ValidationError);
+    });
+
+    it('throws ValidationError when currentPassword does not match stored hash', async () => {
+      mockRepo.findById.mockResolvedValue(baseUser());
+      await expect(userService.updateMe('u1', { password: 'NewPass123', currentPassword: 'wrongpassword' }))
+        .rejects.toThrow(ValidationError);
+    });
+
+    it('does not throw ConflictError when the email already belongs to the same user', async () => {
+      mockRepo.findByEmail.mockResolvedValue({ ...baseUser(), userId: 'u1' });
+      mockRepo.update.mockResolvedValue(baseUser());
+      await expect(userService.updateMe('u1', { email: 'test@example.com' })).resolves.toBeDefined();
+    });
+  });
+
+  describe('uploadAvatar', () => {
+    const fakeFile = { originalname: 'avatar.png', buffer: Buffer.from('data') } as Express.Multer.File;
+
+    beforeEach(() => {
+      vi.mocked(saveAvatarUpload).mockReset();
+      vi.mocked(removeManagedAvatar).mockReset();
+      vi.mocked(removeManagedAvatar).mockResolvedValue(undefined);
+    });
+
+    it('throws NotFoundError when user does not exist', async () => {
+      mockRepo.findById.mockResolvedValue(null);
+      await expect(userService.uploadAvatar('u1', fakeFile)).rejects.toThrow(NotFoundError);
+      expect(saveAvatarUpload).not.toHaveBeenCalled();
+    });
+
+    it('does not remove previous avatar when user had no avatarUrl', async () => {
+      const user = { ...baseUser(), avatarUrl: undefined };
+      const newUrl = '/uploads/avatars/u1-new.png';
+      mockRepo.findById.mockResolvedValue(user);
+      vi.mocked(saveAvatarUpload).mockResolvedValue(newUrl);
+      mockRepo.update.mockResolvedValue({ ...user, avatarUrl: newUrl });
+      await userService.uploadAvatar('u1', fakeFile);
+      expect(removeManagedAvatar).not.toHaveBeenCalledWith(undefined, 'u1');
+    });
+
+    it('removes newly uploaded avatar and rethrows when repo.update fails', async () => {
+      const user = { ...baseUser(), avatarUrl: '/old-avatar.png' };
+      const newUrl = '/uploads/avatars/u1-new.png';
+      mockRepo.findById.mockResolvedValue(user);
+      vi.mocked(saveAvatarUpload).mockResolvedValue(newUrl);
+      mockRepo.update.mockRejectedValue(new Error('DB failure'));
+      await expect(userService.uploadAvatar('u1', fakeFile)).rejects.toThrow('DB failure');
+      expect(removeManagedAvatar).toHaveBeenCalledWith(newUrl, 'u1');
+    });
+  });
+
+  describe('search with friendRepo', () => {
+    let friendRepo: any;
+
+    beforeEach(() => {
+      friendRepo = { getFriends: vi.fn() };
+      userService = makeUserService(mockRepo, emergencyContactRepo, mockRefreshTokenRepo, mockJwt, notifyEmergencyContact, friendRepo);
+      friendRepo.getFriends.mockResolvedValue([
+        { friend: { userId: 'friend-1', name: 'Alice', email: 'alice@example.com', avatarUrl: null } },
+        { friend: { userId: 'friend-2', name: 'Bob', email: null, avatarUrl: null } },
+      ]);
+    });
+
+    it('filters by exact userId when mode is userId', async () => {
+      const result = await userService.search('friend-1', 'userId', 'current-user');
+      expect(result).toHaveLength(1);
+      expect(result[0].userId).toBe('friend-1');
+      expect(result[0].email).toBe('alice@example.com');
+    });
+
+    it('filters by email when mode is email', async () => {
+      const result = await userService.search('alice@example.com', 'email', 'current-user');
+      expect(result).toHaveLength(1);
+      expect(result[0].userId).toBe('friend-1');
+    });
+
+    it('filters by name substring when no mode specified', async () => {
+      const result = await userService.search('alice', undefined, 'current-user');
+      expect(result).toHaveLength(1);
+      expect(result[0].userId).toBe('friend-1');
+    });
+
+    it('returns empty results for email search when friend has null email', async () => {
+      const result = await userService.search('bob@example.com', 'email', 'current-user');
+      expect(result).toHaveLength(0);
+    });
+  });
+
+  describe('revokeToken no-op', () => {
+    it('does nothing when the token hash is not found in the store', async () => {
+      mockRefreshTokenRepo.findByHash.mockResolvedValue(null);
+      await expect(userService.revokeToken('nonexistent-token')).resolves.toBeUndefined();
+      expect(mockRefreshTokenRepo.revoke).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('refresh with soft-deleted user', () => {
+    it('throws ValidationError when the associated user is soft-deleted', async () => {
+      mockRefreshTokenRepo.findByHash.mockResolvedValue({
+        tokenId: 'rt1',
+        userId: 'u1',
+        revokedAt: null,
+        replacedBy: null,
+        expiresAt: new Date(Date.now() + 86_400_000),
+      });
+      mockRepo.findById.mockResolvedValue({ ...baseUser(), deletedAt: new Date() });
+      await expect(userService.refresh('some-token')).rejects.toThrow(ValidationError);
+    });
+  });
+
+  describe('updateMe with onUserUpdated callback', () => {
+    it('calls onUserUpdated after successful update', async () => {
+      const onUserUpdated = vi.fn();
+      const serviceWithCb = makeUserService(
+        mockRepo, emergencyContactRepo, mockRefreshTokenRepo, mockJwt,
+        undefined, undefined, onUserUpdated,
+      );
+      const updated = baseUser();
+      mockRepo.update.mockResolvedValue(updated);
+      await serviceWithCb.updateMe('u1', { name: 'New Name' });
+      expect(onUserUpdated).toHaveBeenCalledWith('u1', { name: updated.name, avatarUrl: updated.avatarUrl });
+    });
+  });
+
+  describe('uploadAvatar with onUserUpdated and old avatar removal', () => {
+    const fakeFile = { originalname: 'avatar.png', buffer: Buffer.from('data') } as Express.Multer.File;
+
+    beforeEach(() => {
+      vi.mocked(saveAvatarUpload).mockReset();
+      vi.mocked(removeManagedAvatar).mockReset();
+      vi.mocked(removeManagedAvatar).mockResolvedValue(undefined);
+    });
+
+    it('calls onUserUpdated callback on successful upload', async () => {
+      const onUserUpdated = vi.fn();
+      const serviceWithCb = makeUserService(
+        mockRepo, emergencyContactRepo, mockRefreshTokenRepo, mockJwt,
+        undefined, undefined, onUserUpdated,
+      );
+      const user = { ...baseUser(), avatarUrl: undefined };
+      const newUrl = '/uploads/avatars/u1-new.png';
+      mockRepo.findById.mockResolvedValue(user);
+      vi.mocked(saveAvatarUpload).mockResolvedValue(newUrl);
+      mockRepo.update.mockResolvedValue({ ...user, avatarUrl: newUrl });
+      await serviceWithCb.uploadAvatar('u1', fakeFile);
+      expect(onUserUpdated).toHaveBeenCalledWith('u1', expect.objectContaining({ avatarUrl: newUrl }));
+    });
+
+    it('removes old avatar when user had a different previous avatarUrl', async () => {
+      const oldUrl = '/uploads/avatars/old.png';
+      const newUrl = '/uploads/avatars/new.png';
+      const user = { ...baseUser(), avatarUrl: oldUrl };
+      mockRepo.findById.mockResolvedValue(user);
+      vi.mocked(saveAvatarUpload).mockResolvedValue(newUrl);
+      mockRepo.update.mockResolvedValue({ ...user, avatarUrl: newUrl });
+      await userService.uploadAvatar('u1', fakeFile);
+      expect(removeManagedAvatar).toHaveBeenCalledWith(oldUrl, 'u1');
+    });
+  });
+
+  describe('updateMySettings', () => {
+    it('throws ValidationError when data fails schema validation', async () => {
+      await expect(userService.updateMySettings('u1', { warningDays: -1 } as any))
+        .rejects.toThrow(ValidationError);
+    });
+  });
+
+  describe('getEmergencyContacts', () => {
+    it('returns the list of emergency contacts for the user', async () => {
+      const contacts = [{ contactId: 'c1', userId: 'u1', contactUserId: 'c1', message: 'help' }] as any;
+      emergencyContactRepo.findByUserId.mockResolvedValue(contacts);
+      const result = await userService.getEmergencyContacts('u1');
+      expect(emergencyContactRepo.findByUserId).toHaveBeenCalledWith('u1');
+      expect(result).toBe(contacts);
+    });
+  });
+
+  describe('upsertEmergencyContact', () => {
+    it('throws ValidationError when userId equals contactId (self-add)', async () => {
+      await expect(userService.upsertEmergencyContact('u1', 'u1', 'help'))
+        .rejects.toThrow(ValidationError);
+    });
+
+    it('throws NotFoundError when the contact user does not exist', async () => {
+      mockRepo.findById.mockResolvedValue(null);
+      await expect(userService.upsertEmergencyContact('u1', 'c1', 'help'))
+        .rejects.toThrow(NotFoundError);
+    });
+
+    it('returns the upserted contact and isUpdate flag on success', async () => {
+      const contact = { contactId: 'c1', userId: 'u1', contactUserId: 'c1', message: 'help' };
+      mockRepo.findById.mockResolvedValue(baseUser());
+      emergencyContactRepo.upsert.mockResolvedValue({ contact, isUpdate: false });
+      const result = await userService.upsertEmergencyContact('u1', 'c1', 'help');
+      expect(emergencyContactRepo.upsert).toHaveBeenCalledWith('u1', 'c1', 'help');
+      expect(result).toEqual({ contact, isUpdate: false });
+    });
+  });
+
+  describe('deleteEmergencyContact', () => {
+    it('delegates to emergencyContactRepo.delete', async () => {
+      emergencyContactRepo.delete.mockResolvedValue(undefined);
+      await userService.deleteEmergencyContact('u1', 'c1');
+      expect(emergencyContactRepo.delete).toHaveBeenCalledWith('u1', 'c1');
+    });
+  });
+
+  describe('getMe user not found', () => {
+    it('throws NotFoundError when user does not exist', async () => {
+      mockRepo.findById.mockResolvedValue(null);
+      await expect(userService.getMe('u1')).rejects.toThrow(NotFoundError);
+    });
+  });
+
+  describe('getUserProfile user not found', () => {
+    it('throws NotFoundError when user does not exist', async () => {
+      mockRepo.findById.mockResolvedValue(null);
+      await expect(userService.getUserProfile('u1')).rejects.toThrow(NotFoundError);
+    });
+  });
+
+  describe('getMySettings user not found', () => {
+    it('throws NotFoundError when user does not exist', async () => {
+      mockRepo.findById.mockResolvedValue(null);
+      await expect(userService.getMySettings('u1')).rejects.toThrow(NotFoundError);
+    });
+  });
+
+  describe('updateMe user not found during password change', () => {
+    it('throws NotFoundError when user is not found while changing password', async () => {
+      mockRepo.findById.mockResolvedValue(null);
+      await expect(userService.updateMe('u1', { password: 'NewPass123', currentPassword: 'old' }))
+        .rejects.toThrow(NotFoundError);
+    });
+  });
+
+  describe('updateMySettings additional branches', () => {
+    it('throws NotFoundError when user does not exist after schema passes', async () => {
+      mockRepo.findById.mockResolvedValue(null);
+      await expect(userService.updateMySettings('u1', { warningDays: 5 }))
+        .rejects.toThrow(NotFoundError);
+    });
+
+    it('falls back to current.warningEnabled when warningEnabled is not provided', async () => {
+      mockRepo.findById.mockResolvedValue({ ...baseUser(), warningEnabled: false, warningDays: 3 });
+      mockRepo.update.mockResolvedValue(baseUser());
+      await expect(userService.updateMySettings('u1', { warningDays: 5 })).resolves.toBeDefined();
+    });
+  });
+
+  describe('triggerEmergencyAlert user not found', () => {
+    it('throws NotFoundError when user does not exist', async () => {
+      mockRepo.findById.mockResolvedValue(null);
+      await expect(userService.triggerEmergencyAlert('u1')).rejects.toThrow(NotFoundError);
+    });
+  });
+
+  describe('checkInactivity user not found', () => {
+    it('throws NotFoundError when user does not exist', async () => {
+      mockRepo.findById.mockResolvedValue(null);
+      await expect(userService.checkInactivity('u1')).rejects.toThrow(NotFoundError);
+    });
+  });
+
+  describe('search default mode null email friend', () => {
+    it('handles null email in default-mode search without error', async () => {
+      const fr = { getFriends: vi.fn() };
+      const svc = makeUserService(mockRepo, emergencyContactRepo, mockRefreshTokenRepo, mockJwt, undefined, fr);
+      fr.getFriends.mockResolvedValue([
+        { friend: { userId: 'f1', name: 'Nullemail', email: null, avatarUrl: null } },
+      ]);
+      const result = await svc.search('nomatch', undefined, 'me');
+      expect(result).toHaveLength(0);
     });
   });
 });

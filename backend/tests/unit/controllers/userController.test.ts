@@ -291,4 +291,87 @@ describe('userController', () => {
 
     expect(next).toHaveBeenCalledWith(err);
   });
+
+  const errorMethods: Array<[string, any, any]> = [
+    ['updateMe', (c: any) => c.updateMe, authedReq({ body: { name: 'A' } })],
+    ['uploadAvatar', (c: any) => c.uploadAvatar, authedReq({ file: { originalname: 'a.png' } as any })],
+    ['getUserProfile', (c: any) => c.getUserProfile, authedReq({ params: { id: 'u2' } })],
+    ['getMySettings', (c: any) => c.getMySettings, authedReq()],
+    ['updateMySettings', (c: any) => c.updateMySettings, authedReq({ body: { warningEnabled: true, warningDays: 1 } })],
+    ['deleteMe', (c: any) => c.deleteMe, authedReq()],
+    ['getEmergencyContacts', (c: any) => c.getEmergencyContacts, authedReq()],
+    ['triggerEmergencyAlert', (c: any) => c.triggerEmergencyAlert, authedReq({ body: { message: 'help' } })],
+    ['checkEmergencyInactivity', (c: any) => c.checkEmergencyInactivity, authedReq()],
+    ['search', (c: any) => c.search, authedReq({ query: { q: 'alice' } })],
+  ];
+
+  for (const [name, getMethod, req] of errorMethods) {
+    it(`passes service errors from ${name} to next`, async () => {
+      const err = new Error(`${name} failed`);
+      const key = name === 'getUserProfile' ? 'getUserProfile'
+        : name === 'getMySettings' ? 'getMySettings'
+        : name === 'updateMySettings' ? 'updateMySettings'
+        : name === 'deleteMe' ? 'deleteMe'
+        : name === 'getEmergencyContacts' ? 'getEmergencyContacts'
+        : name === 'triggerEmergencyAlert' ? 'triggerEmergencyAlert'
+        : name === 'checkEmergencyInactivity' ? 'checkInactivity'
+        : name === 'search' ? 'search'
+        : name === 'uploadAvatar' ? 'uploadAvatar'
+        : 'updateMe';
+      (service as any)[key].mockRejectedValue(err);
+      const res = mockRes();
+      const next = vi.fn();
+      await getMethod(ctrl)(req, res, next);
+      expect(next).toHaveBeenCalledWith(err);
+    });
+  }
+
+  it('passes service errors from addEmergencyContact to next', async () => {
+    const err = new Error('upsert failed');
+    service.upsertEmergencyContact.mockRejectedValue(err);
+    const res = mockRes();
+    const next = vi.fn();
+    await ctrl.addEmergencyContact(authedReq({ body: { contactId: '550e8400-e29b-41d4-a716-446655440000', message: 'help' } }), res, next);
+    expect(next).toHaveBeenCalledWith(err);
+  });
+
+  it('passes service errors from deleteEmergencyContact to next', async () => {
+    const err = new Error('delete failed');
+    service.deleteEmergencyContact.mockRejectedValue(err);
+    const res = mockRes();
+    const next = vi.fn();
+    await ctrl.deleteEmergencyContact(authedReq({ params: { contactId: 'c1' } }), res, next);
+    expect(next).toHaveBeenCalledWith(err);
+  });
+
+  it('sends undefined message to triggerEmergencyAlert when body.message is empty string', async () => {
+    service.triggerEmergencyAlert.mockResolvedValue({ alerted: false, recipients: [] });
+    const res = mockRes();
+    const next = vi.fn();
+    await ctrl.triggerEmergencyAlert(authedReq({ body: { message: '' } }), res, next);
+    expect(service.triggerEmergencyAlert).toHaveBeenCalledWith('user-1', undefined);
+  });
+
+  it('passes ValidationError to next when checkEmergencyInactivity receives invalid date string', async () => {
+    const res = mockRes();
+    const next = vi.fn();
+    await ctrl.checkEmergencyInactivity(authedReq({ body: { now: 'not-a-date' } }), res, next);
+    expect(next).toHaveBeenCalledWith(expect.any(ValidationError));
+  });
+
+  it('calls search without currentUserId when friendsOnly is not set', async () => {
+    service.search.mockResolvedValue([]);
+    const res = mockRes();
+    const next = vi.fn();
+    await ctrl.search(authedReq({ query: { q: 'alice' } }), res, next);
+    expect(service.search).toHaveBeenCalledWith('alice', undefined);
+  });
+
+  it('calls search with currentUserId when friendsOnly is set', async () => {
+    service.search.mockResolvedValue([]);
+    const res = mockRes();
+    const next = vi.fn();
+    await ctrl.search(authedReq({ query: { q: 'alice', friendsOnly: 'true' } }), res, next);
+    expect(service.search).toHaveBeenCalledWith('alice', undefined, 'user-1');
+  });
 });
