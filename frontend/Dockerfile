@@ -27,6 +27,10 @@ COPY frontend/ ./frontend/
 WORKDIR /workspace/frontend
 ENV NEXT_TELEMETRY_DISABLED=1
 
+# Pass API URL at build time for Next.js to inline into client bundles
+ARG NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+
 RUN pnpm build
 
 # Stage 3: Runner
