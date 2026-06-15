@@ -583,6 +583,12 @@ export const downloadAttachment = async (fileUrl: string, filename: string): Pro
   window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 0);
 };
 
+export const fetchAttachmentBlobUrl = async (fileUrl: string): Promise<string> => {
+  const response = await request(fileUrl);
+  const blob = await response.blob();
+  return URL.createObjectURL(blob);
+};
+
 export const triggerEmergencyAlert = (token: string, message?: string): Promise<EmergencyAlertResult> =>
   requestJson<EmergencyAlertResult>(
     '/users/me/emergency-alert',
