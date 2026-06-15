@@ -90,4 +90,23 @@ describe('authMiddleware', () => {
     expect(nextFunction).toHaveBeenCalledOnce();
     expect(nextFunction).toHaveBeenCalledWith();
   });
+
+  it('calls next with 401 when user is not found in the database', async () => {
+    mockRequest.headers = { authorization: 'Bearer valid-token' };
+    vi.spyOn(jwtHelper, 'verifyToken').mockReturnValue({ userId: '1', name: 'Test User' });
+    vi.mocked(pool.query).mockResolvedValueOnce({ rows: [] } as any);
+    await authMiddleware(mockRequest as Request, mockResponse as Response, nextFunction);
+    const arg = vi.mocked(nextFunction).mock.calls[0][0] as AppError;
+    expect(arg).toBeInstanceOf(AppError);
+    expect(arg.statusCode).toBe(401);
+    expect(arg.message).toMatch(/not found or deleted/);
+  });
+
+  it('calls next with the original AppError when verifyToken throws an AppError', async () => {
+    mockRequest.headers = { authorization: 'Bearer valid-token' };
+    const customErr = new AppError(403, 'Custom forbidden');
+    vi.spyOn(jwtHelper, 'verifyToken').mockImplementation(() => { throw customErr; });
+    await authMiddleware(mockRequest as Request, mockResponse as Response, nextFunction);
+    expect(nextFunction).toHaveBeenCalledWith(customErr);
+  });
 });

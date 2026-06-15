@@ -41,6 +41,35 @@ describe('presence tracker', () => {
     expect(roomEmit).toHaveBeenCalledWith('user_status', { userId: 'user-1', status: 'online' });
   });
 
+  it('handles trackUserDisconnection gracefully when userId was never tracked', async () => {
+    await expect(
+      trackUserDisconnection(io, 'unknown-user', 'socket-1', friendRepo)
+    ).resolves.toBeUndefined();
+  });
+
+  it('suppresses and logs errors from getFriends during trackUserConnection', async () => {
+    const errorRepo = { getFriends: vi.fn().mockRejectedValue(new Error('DB down')) };
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await expect(trackUserConnection(io, 'user-x', 'socket-1', errorRepo)).resolves.toBeUndefined();
+
+    expect(consoleSpy).toHaveBeenCalled();
+    consoleSpy.mockRestore();
+    clearPresence();
+  });
+
+  it('suppresses and logs errors from getFriends during trackUserDisconnection', async () => {
+    await trackUserConnection(io, 'user-y', 'socket-1', friendRepo);
+
+    const errorRepo = { getFriends: vi.fn().mockRejectedValue(new Error('DB down')) };
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await expect(trackUserDisconnection(io, 'user-y', 'socket-1', errorRepo)).resolves.toBeUndefined();
+
+    expect(consoleSpy).toHaveBeenCalled();
+    consoleSpy.mockRestore();
+  });
+
   it('handles multiple socket connections per user and tracks disconnection', async () => {
     // User connects on tab 1
     await trackUserConnection(io, 'user-1', 'socket-tab-1', friendRepo);

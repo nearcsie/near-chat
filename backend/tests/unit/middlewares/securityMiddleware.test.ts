@@ -46,6 +46,37 @@ describe('security middleware', () => {
     expect(limited.body.message).toBe('Too many requests, please try again later');
   });
 
+  it('uses cross-origin headers for /uploads/avatars exact path', async () => {
+    const app = express();
+    app.use(securityHeaders);
+    app.get('/uploads/avatars', (_req, res) => res.json({ ok: true }));
+
+    const res = await request(app).get('/uploads/avatars').expect(200);
+
+    expect(res.headers['cross-origin-resource-policy']).toBe('cross-origin');
+  });
+
+  it('uses cross-origin headers for /uploads/avatars/* subpaths', async () => {
+    const app = express();
+    app.use(securityHeaders);
+    app.get('/uploads/avatars/img.png', (_req, res) => res.json({ ok: true }));
+
+    const res = await request(app).get('/uploads/avatars/img.png').expect(200);
+
+    expect(res.headers['cross-origin-resource-policy']).toBe('cross-origin');
+  });
+
+  it('skips rate limiting when RATE_LIMIT_DISABLED=true regardless of NODE_ENV', async () => {
+    process.env.NODE_ENV = 'production';
+    process.env.RATE_LIMIT_DISABLED = 'true';
+    const app = express();
+    app.use(makeGlobalRateLimiter({ windowMs: 60_000, limit: 1 }));
+    app.get('/api/ping', (_req, res) => res.json({ ok: true }));
+
+    await request(app).get('/api/ping').expect(200);
+    await request(app).get('/api/ping').expect(200);
+  });
+
   it('uses a stricter auth limiter message when enabled', async () => {
     process.env.NODE_ENV = 'production';
     delete process.env.RATE_LIMIT_DISABLED;

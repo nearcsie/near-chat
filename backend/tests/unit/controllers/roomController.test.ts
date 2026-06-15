@@ -41,6 +41,8 @@ describe('roomController', () => {
     approveMember: vi.fn(),
     updateMember: vi.fn(),
     kickMember: vi.fn(),
+    transferOwnership: vi.fn(),
+    uploadAvatar: vi.fn(),
   };
   const ctrl = makeRoomController(service);
 
@@ -262,6 +264,251 @@ describe('roomController', () => {
       const next = vi.fn();
 
       await ctrl.deleteGroup(authedReq({ params: { id: 'room-1' } }), res, next);
+
+      expect(next).toHaveBeenCalledWith(expect.any(Error));
+    });
+  });
+
+  describe('create (private type branches)', () => {
+    it('returns ValidationError when private type missing targetUserId', async () => {
+      const res = mockRes();
+      const next = vi.fn();
+
+      await ctrl.create(authedReq({ body: { type: 'private' } }), res, next);
+
+      expect(next).toHaveBeenCalledWith(expect.any(ValidationError));
+    });
+
+    it('returns ValidationError for unknown room type', async () => {
+      const res = mockRes();
+      const next = vi.fn();
+
+      await ctrl.create(authedReq({ body: { type: 'unknown' } }), res, next);
+
+      expect(next).toHaveBeenCalledWith(expect.any(ValidationError));
+    });
+
+    it('creates private room and returns 201 when new', async () => {
+      service.createPrivate.mockResolvedValue({ room, created: true });
+      const res = mockRes();
+      const next = vi.fn();
+
+      await ctrl.create(authedReq({ body: { type: 'private', targetUserId: 'user-2' } }), res, next);
+
+      expect(service.createPrivate).toHaveBeenCalledWith('user-1', 'user-2');
+      expect(res.status).toHaveBeenCalledWith(201);
+    });
+
+    it('creates private room and returns 200 when existing', async () => {
+      service.createPrivate.mockResolvedValue({ room, created: false });
+      const res = mockRes();
+      const next = vi.fn();
+
+      await ctrl.create(authedReq({ body: { type: 'private', targetUserId: 'user-2' } }), res, next);
+
+      expect(res.status).toHaveBeenCalledWith(200);
+    });
+  });
+
+  describe('listMembers', () => {
+    it('returns 200 with members', async () => {
+      const members = [{ userId: 'user-1', role: 'owner' }];
+      service.listMembers.mockResolvedValue(members);
+      const res = mockRes();
+      const next = vi.fn();
+
+      await ctrl.listMembers(authedReq({ params: { id: 'room-1' } }), res, next);
+
+      expect(service.listMembers).toHaveBeenCalledWith('room-1', 'user-1');
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith(members);
+    });
+
+    it('passes errors to next', async () => {
+      service.listMembers.mockRejectedValue(new Error('forbidden'));
+      const res = mockRes();
+      const next = vi.fn();
+
+      await ctrl.listMembers(authedReq({ params: { id: 'room-1' } }), res, next);
+
+      expect(next).toHaveBeenCalledWith(expect.any(Error));
+    });
+  });
+
+  describe('update (transferOwnership path)', () => {
+    it('delegates to transferOwnership when ownerId is present in body', async () => {
+      service.transferOwnership.mockResolvedValue(undefined);
+      const res = mockRes();
+      const next = vi.fn();
+
+      await ctrl.update(authedReq({ params: { id: 'room-1' }, body: { ownerId: 'user-2' } }), res, next);
+
+      expect(service.transferOwnership).toHaveBeenCalledWith('room-1', 'user-1', 'user-2');
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith({ message: 'Ownership transferred' });
+    });
+  });
+
+  describe('transferOwnership handler', () => {
+    it('returns 200 on success', async () => {
+      service.transferOwnership.mockResolvedValue(undefined);
+      const res = mockRes();
+      const next = vi.fn();
+
+      await ctrl.transferOwnership(authedReq({ params: { id: 'room-1' }, body: { targetUserId: 'user-2' } }), res, next);
+
+      expect(service.transferOwnership).toHaveBeenCalledWith('room-1', 'user-1', 'user-2');
+      expect(res.status).toHaveBeenCalledWith(200);
+    });
+
+    it('passes ValidationError to next when targetUserId is missing', async () => {
+      const res = mockRes();
+      const next = vi.fn();
+
+      await ctrl.transferOwnership(authedReq({ params: { id: 'room-1' }, body: {} }), res, next);
+
+      expect(next).toHaveBeenCalledWith(expect.any(ValidationError));
+    });
+
+    it('passes service errors to next', async () => {
+      service.transferOwnership.mockRejectedValue(new Error('forbidden'));
+      const res = mockRes();
+      const next = vi.fn();
+
+      await ctrl.transferOwnership(authedReq({ params: { id: 'room-1' }, body: { targetUserId: 'user-2' } }), res, next);
+
+      expect(next).toHaveBeenCalledWith(expect.any(Error));
+    });
+  });
+
+  describe('approveMember', () => {
+    it('returns 200 on success', async () => {
+      service.approveMember.mockResolvedValue(undefined);
+      const res = mockRes();
+      const next = vi.fn();
+
+      await ctrl.approveMember(authedReq({ params: { id: 'room-1', userId: 'user-2' } }), res, next);
+
+      expect(service.approveMember).toHaveBeenCalledWith('room-1', 'user-1', 'user-2');
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith({ message: 'Member approved' });
+    });
+
+    it('passes service errors to next', async () => {
+      service.approveMember.mockRejectedValue(new Error('forbidden'));
+      const res = mockRes();
+      const next = vi.fn();
+
+      await ctrl.approveMember(authedReq({ params: { id: 'room-1', userId: 'user-2' } }), res, next);
+
+      expect(next).toHaveBeenCalledWith(expect.any(Error));
+    });
+  });
+
+  describe('updateMember handler', () => {
+    it('delegates to approveMember and returns 200 when status is approved', async () => {
+      service.approveMember.mockResolvedValue(undefined);
+      const res = mockRes();
+      const next = vi.fn();
+
+      await ctrl.updateMember(
+        authedReq({ params: { id: 'room-1', userId: 'user-2' }, body: { status: 'approved' } }),
+        res,
+        next,
+      );
+
+      expect(service.approveMember).toHaveBeenCalledWith('room-1', 'user-1', 'user-2');
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith({ message: 'Member approved' });
+    });
+
+    it('delegates to updateMember and returns 200 when status is not approved', async () => {
+      service.updateMember.mockResolvedValue(undefined);
+      const res = mockRes();
+      const next = vi.fn();
+
+      await ctrl.updateMember(
+        authedReq({ params: { id: 'room-1', userId: 'user-2' }, body: { nickname: 'Bob' } }),
+        res,
+        next,
+      );
+
+      expect(service.updateMember).toHaveBeenCalledWith('room-1', 'user-1', 'user-2', { nickname: 'Bob' });
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith({ message: 'Member updated' });
+    });
+
+    it('passes service errors to next', async () => {
+      service.updateMember.mockRejectedValue(new Error('forbidden'));
+      const res = mockRes();
+      const next = vi.fn();
+
+      await ctrl.updateMember(
+        authedReq({ params: { id: 'room-1', userId: 'user-2' }, body: {} }),
+        res,
+        next,
+      );
+
+      expect(next).toHaveBeenCalledWith(expect.any(Error));
+    });
+  });
+
+  describe('kickMember handler', () => {
+    it('returns 204 on success', async () => {
+      service.kickMember.mockResolvedValue(undefined);
+      const res = mockRes();
+      const next = vi.fn();
+
+      await ctrl.kickMember(authedReq({ params: { id: 'room-1', userId: 'user-2' } }), res, next);
+
+      expect(service.kickMember).toHaveBeenCalledWith('room-1', 'user-1', 'user-2');
+      expect(res.status).toHaveBeenCalledWith(204);
+      expect(res.send).toHaveBeenCalled();
+    });
+
+    it('passes service errors to next', async () => {
+      service.kickMember.mockRejectedValue(new Error('forbidden'));
+      const res = mockRes();
+      const next = vi.fn();
+
+      await ctrl.kickMember(authedReq({ params: { id: 'room-1', userId: 'user-2' } }), res, next);
+
+      expect(next).toHaveBeenCalledWith(expect.any(Error));
+    });
+  });
+
+  describe('uploadAvatar handler (room)', () => {
+    it('returns 200 with updated room on success', async () => {
+      const updatedRoom = { ...room, avatarUrl: '/uploads/avatars/room-1.png' };
+      service.uploadAvatar.mockResolvedValue(updatedRoom);
+      const res = mockRes();
+      const next = vi.fn();
+      const file = { originalname: 'room.png', buffer: Buffer.from([]) } as Express.Multer.File;
+
+      await ctrl.uploadAvatar(authedReq({ params: { id: 'room-1' }, file }), res, next);
+
+      expect(service.uploadAvatar).toHaveBeenCalledWith('room-1', 'user-1', file);
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith(updatedRoom);
+    });
+
+    it('passes ValidationError to next when no file is provided', async () => {
+      const res = mockRes();
+      const next = vi.fn();
+
+      await ctrl.uploadAvatar(authedReq({ params: { id: 'room-1' } }), res, next);
+
+      expect(next).toHaveBeenCalledWith(expect.any(ValidationError));
+      expect(service.uploadAvatar).not.toHaveBeenCalled();
+    });
+
+    it('passes service errors to next', async () => {
+      service.uploadAvatar.mockRejectedValue(new Error('storage error'));
+      const res = mockRes();
+      const next = vi.fn();
+      const file = { originalname: 'room.png', buffer: Buffer.from([]) } as Express.Multer.File;
+
+      await ctrl.uploadAvatar(authedReq({ params: { id: 'room-1' }, file }), res, next);
 
       expect(next).toHaveBeenCalledWith(expect.any(Error));
     });

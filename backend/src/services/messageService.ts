@@ -12,6 +12,19 @@ import {
 const validationMessage = (issues: { message: string }[]) =>
   issues[0]?.message ?? 'Invalid message payload';
 
+const EVERYONE_MENTION = 'everyone';
+
+const parseMentionNames = (content: string): string[] => {
+  const mentionMatches = [...content.matchAll(/@([^\s@]+)/g)];
+  return Array.from(
+    new Set(
+      mentionMatches
+        .map((match) => match[1].replace(/[.,!?;:]+$/, ''))
+        .filter(Boolean),
+    ),
+  );
+};
+
 export const makeMessageService = (
   messageRepo: IMessageRepository,
   roomRepo: IRoomRepository,
@@ -61,13 +74,25 @@ export const makeMessageService = (
       if (member.isMuted) {
         throw new ForbiddenError('Muted members cannot send messages');
       }
-      
-      const mentionMatches = [...parsed.data.content.matchAll(/@([^\s@]+)/g)];
-      const mentionNames = Array.from(new Set(mentionMatches.map(m => m[1])));
-      
-      const mentionedUserIds = mentionNames.length > 0
-        ? await roomMemberRepo.resolveMentions(parsed.data.roomId, mentionNames)
+      const mentionNames = parseMentionNames(parsed.data.content);
+      const mentionsEveryone = mentionNames.some(
+        (name) => name.toLowerCase() === EVERYONE_MENTION,
+      );
+      const directMentionNames = mentionNames.filter(
+        (name) => name.toLowerCase() !== EVERYONE_MENTION,
+      );
+
+      const directMentionedUserIds = directMentionNames.length > 0
+        ? await roomMemberRepo.resolveMentions(parsed.data.roomId, directMentionNames)
         : [];
+      const everyoneMentionedUserIds = mentionsEveryone
+        ? (await roomMemberRepo.findByRoom(parsed.data.roomId))
+            .filter((roomMember) => roomMember.role !== 'pending' && roomMember.userId !== userId)
+            .map((roomMember) => roomMember.userId)
+        : [];
+      const mentionedUserIds = Array.from(
+        new Set([...directMentionedUserIds, ...everyoneMentionedUserIds]),
+      );
 
       const messageData: Parameters<IMessageRepository['create']>[0] = {
         roomId: parsed.data.roomId,

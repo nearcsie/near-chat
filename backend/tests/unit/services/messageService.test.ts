@@ -109,6 +109,60 @@ describe('messageService', () => {
     expect(result.mentions).toEqual(['user-2']);
   });
 
+  it('sendMessage expands @everyone to all other active room members', async () => {
+    roomRepo.findById.mockResolvedValue(room);
+    roomMemberRepo.findMember.mockResolvedValue(member);
+    roomMemberRepo.findByRoom.mockResolvedValue([
+      member,
+      { ...member, userId: 'user-2' },
+      { ...member, userId: 'user-3' },
+      { ...member, userId: 'user-4', role: 'pending' },
+    ]);
+    messageRepo.create.mockResolvedValue({
+      ...messageWithSender,
+      content: 'hello @everyone',
+      mentions: ['user-2', 'user-3'],
+    });
+
+    const result = await messageService.sendMessage('user-1', 'room-1', 'hello @everyone');
+
+    expect(roomMemberRepo.resolveMentions).not.toHaveBeenCalled();
+    expect(roomMemberRepo.findByRoom).toHaveBeenCalledWith('room-1');
+    expect(messageRepo.create).toHaveBeenCalledWith({
+      roomId: 'room-1',
+      senderId: 'user-1',
+      content: 'hello @everyone',
+      mentions: ['user-2', 'user-3'],
+    });
+    expect(result.mentions).toEqual(['user-2', 'user-3']);
+  });
+
+  it('sendMessage deduplicates @everyone and direct mentions', async () => {
+    roomRepo.findById.mockResolvedValue(room);
+    roomMemberRepo.findMember.mockResolvedValue(member);
+    roomMemberRepo.resolveMentions.mockResolvedValue(['user-2']);
+    roomMemberRepo.findByRoom.mockResolvedValue([
+      member,
+      { ...member, userId: 'user-2' },
+      { ...member, userId: 'user-3' },
+    ]);
+    messageRepo.create.mockResolvedValue({
+      ...messageWithSender,
+      content: 'hello @everyone @Bob',
+      mentions: ['user-2', 'user-3'],
+    });
+
+    await messageService.sendMessage('user-1', 'room-1', 'hello @everyone @Bob');
+
+    expect(roomMemberRepo.resolveMentions).toHaveBeenCalledWith('room-1', ['Bob']);
+    expect(messageRepo.create).toHaveBeenCalledWith({
+      roomId: 'room-1',
+      senderId: 'user-1',
+      content: 'hello @everyone @Bob',
+      mentions: ['user-2', 'user-3'],
+    });
+  });
+
   it('sendMessage rejects empty content before touching repositories', async () => {
     await expect(messageService.sendMessage('user-1', 'room-1', '   ')).rejects.toThrow(ValidationError);
     expect(roomRepo.findById).not.toHaveBeenCalled();
@@ -243,6 +297,46 @@ describe('messageService', () => {
     messageRepo.findById.mockResolvedValue({ ...message, senderId: 'user-2' });
 
     await expect(messageService.recallMessage('user-1', 'room-1', 'message-1')).rejects.toThrow(ForbiddenError);
+    expect(messageRepo.markRecalled).not.toHaveBeenCalled();
+  });
+
+  it('sendMessage rejects isReadonly rooms', async () => {
+    roomRepo.findById.mockResolvedValue({ ...room, isReadonly: true });
+    roomMemberRepo.findMember.mockResolvedValue(member);
+
+    await expect(messageService.sendMessage('user-1', 'room-1', 'hello')).rejects.toThrow(ForbiddenError);
+    expect(messageRepo.create).not.toHaveBeenCalled();
+  });
+
+  it('sendMessage includes replyToId when provided', async () => {
+    roomRepo.findById.mockResolvedValue(room);
+    roomMemberRepo.findMember.mockResolvedValue(member);
+    messageRepo.create.mockResolvedValue(messageWithSender);
+
+    await messageService.sendMessage('user-1', 'room-1', 'reply', { replyToId: 'msg-0' });
+
+    expect(messageRepo.create).toHaveBeenCalledWith(expect.objectContaining({ replyToId: 'msg-0' }));
+  });
+
+  it('recallMessage allows room owner to recall any message', async () => {
+    const recalled: MessageWithSender = { ...messageWithSender, isRecalled: true };
+    roomRepo.findById.mockResolvedValue(room);
+    roomMemberRepo.findMember.mockResolvedValue({ ...member, role: 'owner' });
+    messageRepo.findById.mockResolvedValue({ ...message, senderId: 'user-2' });
+    messageRepo.markRecalled.mockResolvedValue(recalled);
+
+    const result = await messageService.recallMessage('user-1', 'room-1', 'message-1');
+
+    expect(messageRepo.markRecalled).toHaveBeenCalledWith('message-1');
+    expect(result).toBe(recalled);
+  });
+
+  it('recallMessage throws NotFoundError when message does not exist', async () => {
+    roomRepo.findById.mockResolvedValue(room);
+    roomMemberRepo.findMember.mockResolvedValue(member);
+    messageRepo.findById.mockResolvedValue(null);
+
+    await expect(messageService.recallMessage('user-1', 'room-1', 'missing')).rejects.toThrow(NotFoundError);
     expect(messageRepo.markRecalled).not.toHaveBeenCalled();
   });
 });
