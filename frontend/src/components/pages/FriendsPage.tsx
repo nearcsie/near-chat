@@ -10,6 +10,11 @@ export default function FriendsPage() {
   const { t } = useTranslation();
   const { setSelectedFriendForSidebar } = useChat();
 
+  const pageTitle = t("friendsPage.title");
+  useEffect(() => {
+    document.title = `Near | ${pageTitle}`;
+  }, [pageTitle]);
+
   useEffect(() => {
     setSelectedFriendForSidebar(null);
   }, [setSelectedFriendForSidebar]);

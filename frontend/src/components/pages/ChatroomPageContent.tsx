@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import { useChat } from "@/context/ChatContext";
 import Chatroom from "@/components/chat/Chatroom";
@@ -15,6 +15,12 @@ export default function ChatroomPageContent() {
 
   const chatId = params?.chatId as string;
   const activeRoom = rooms.find((room) => room.id === chatId);
+
+  useEffect(() => {
+    if (activeRoom) {
+      document.title = `Near | ${activeRoom.name}`;
+    }
+  }, [activeRoom]);
 
   // Reset the settings view when switching rooms (adjust state during render).
   const [prevChatId, setPrevChatId] = useState(chatId);

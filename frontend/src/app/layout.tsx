@@ -13,8 +13,11 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "DB-9CHAT",
-  description: "NTNU Database Chat Application",
+  title: "Near",
+  description: "Near Chat Application",
+  icons: {
+    icon: "/near.png",
+  },
 };
 
 export default function RootLayout({

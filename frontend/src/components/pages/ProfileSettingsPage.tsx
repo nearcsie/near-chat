@@ -1,11 +1,17 @@
 "use client";
 
+import { useEffect } from "react";
 import ProfileSettings from "@/components/settings/ProfileSettings";
 import SettingsHeader from "@/components/settings/SettingsHeader";
 import { useTranslation } from "@/hooks/useTranslation";
 
 export default function ProfileSettingsPage() {
   const { t } = useTranslation();
+  const pageTitle = t("profilePage.title");
+
+  useEffect(() => {
+    document.title = `Near | ${pageTitle}`;
+  }, [pageTitle]);
 
   return (
     <div className="flex-1 flex flex-col bg-background h-full overflow-hidden">

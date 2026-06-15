@@ -1,8 +1,9 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { login } from "@/lib/api";
@@ -31,6 +32,10 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    document.title = "Near | 登入";
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -67,23 +72,20 @@ export default function LoginPage() {
   return (
     <div className="flex min-h-screen flex-col items-center justify-center p-4 bg-background transition-colors">
       <div className="w-full max-w-sm border border-border-primary rounded-sm bg-surface-card p-8 flex flex-col items-center">
-        <div className="h-16 w-16 border border-border-primary bg-surface-muted rounded-sm flex items-center justify-center mb-6">
-          <svg
-            className="h-8 w-8 text-foreground"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            strokeWidth="1.5"
-          >
-            <rect x="3" y="3" width="18" height="14" rx="2" strokeLinejoin="round" />
-            <path d="M7 21h10M12 17v4" />
-          </svg>
+        <div className="h-16 w-16 border border-border-primary bg-surface-muted rounded-sm flex items-center justify-center mb-6 overflow-hidden">
+          <Image
+            src="/near.png"
+            alt="Near logo"
+            width={64}
+            height={64}
+            className="object-contain size-full"
+          />
         </div>
 
         <h1 className="text-xl font-bold uppercase tracking-wider text-foreground mb-1 select-none font-sans">
-          DB-9CHAT
+          Near
         </h1>
-        <p className="text-xs text-text-muted select-none font-sans mb-8">Sign in to chat</p>
+        <p className="text-xs text-text-muted select-none font-sans mb-8">Sign in to Near</p>
 
         <form onSubmit={handleSubmit} className="w-full flex flex-col gap-5">
           <Input
