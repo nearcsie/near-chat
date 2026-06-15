@@ -12,7 +12,7 @@
 
 ---
 
-## 1. 訊息管理 (MessageRepository)
+## 1. 訊息管理 (MessageRepository) - Ray
 本模組在最新 Commit 中重構幅度最大。原本大量使用 Nest/Lateral Join 的 SQL，目前均已簡化。
 
 ### 核心私有方法：`fetchMessageWithSenderByIds`
@@ -37,7 +37,7 @@
   WHERE message_id = ANY($1::uuid[])
   ORDER BY uploaded_at ASC;
   ```
-* **後端用途**：當其他公開方法獲取訊息 ID 後，後端呼叫此方法，將這三部分數據在 Node.js 內用 `Map` 合併，組裝成完整的 `MessageWithSender` 物件（包含 `sender` 物件、`mentions` 陣列、`attachments` 陣列），並將軟刪除用戶的名稱格式化為 `"Deleted User"`。
+* **後端用途**：當其他公開方法獲取訊息 ID 後，後端呼叫此方法，將這三部分數據在 Node.js 內用 `Map` 合併，組裝成完整的 `MessageWithSender` 物件（包含 `sender` 物件、`mentions` 陣列、`attachments` 陣列），並將軟刪除用戶的名稱格式化為 `"Deleted User"`。聊天訊息
 
 ---
 
@@ -114,9 +114,8 @@
 * **後端用途**：**收回訊息**。後端在此處捨棄了原本長達數十行的 `WITH...SELECT` 合併查詢，改為執行此最簡單的 Update。更新完成後再呼叫 `fetchMessageWithSenderByIds` 獲取最新的收回訊息狀態，並對前端廣播收回事件。
 
 ---
----
 
-## 2. 聊天室管理 (RoomRepository)
+## 2. 聊天室管理 (RoomRepository) - Mahiro
 
 ### 查詢 (Read / Select)
 
@@ -232,7 +231,7 @@
 ---
 ---
 
-## 3. 使用者管理 (UserRepository)
+## 3. 使用者管理 (UserRepository) - Hank
 
 ### 查詢 (Read / Select)
 
@@ -301,7 +300,7 @@
 ---
 ---
 
-## 4. 刷新憑證管理 (RefreshTokenRepository)
+## 4. 刷新憑證管理 (RefreshTokenRepository) - Ray
 
 ### 新增/修改 (RTR 與 Token 吊銷)
 
@@ -335,7 +334,7 @@
 ---
 ---
 
-## 5. 好友與封鎖關係 (FriendRepository)
+## 5. 好友與封鎖關係 (FriendRepository) - Blade
 
 ### 查詢 (Read / Select)
 
@@ -396,7 +395,7 @@
 ---
 ---
 
-## 6. 聊天室成員管理 (RoomMemberRepository)
+## 6. 聊天室成員管理 (RoomMemberRepository) - Mahiro
 
 ### 查詢 (Read / Select)
 
@@ -431,7 +430,7 @@
 ---
 ---
 
-## 7. 附件管理 (AttachmentRepository)
+## 7. 附件管理 (AttachmentRepository) - Hank
 
 ### 新增/查詢 (Create / Read)
 * **建立上傳紀錄**：
@@ -458,7 +457,7 @@
 ---
 ---
 
-## 9. 緊急聯絡人與警報監控 (EmergencyContactRepository)
+## 9. 緊急聯絡人與警報監控 (EmergencyContactRepository) - Hank
 
 ### 查詢 (Read / Select)
 
