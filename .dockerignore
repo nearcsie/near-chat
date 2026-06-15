@@ -1,0 +1,28 @@
+# Root .dockerignore — used when frontend build context is the monorepo root
+.git
+.github
+.vscode
+.claude
+.claire
+.omc
+.agents
+.gemini
+docs
+reference
+
+# Node
+**/node_modules
+**/.pnpm-store
+
+# Next.js build artifacts
+frontend/.next
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Miscellaneous
+**/.DS_Store
+*.md
+LICENSE
