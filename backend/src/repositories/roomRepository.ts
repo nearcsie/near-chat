@@ -124,15 +124,28 @@ export class RoomRepository implements IRoomRepository {
     }
 
     const roomIds = roomRes.rows.map((row) => row.room_id);
-    const [messageRes, privateRoomMemberRes] = await Promise.all([
-      this.db.query<VisibleMessageRow>(
-        `SELECT m.room_id, m.sender_id, m.sent_at
-         FROM messages m
-         JOIN chat_rooms cr ON cr.room_id = m.room_id
-         JOIN room_members rm ON rm.room_id = m.room_id AND rm.user_id = $1
-         WHERE m.room_id = ANY($2::uuid[])
-           AND (cr.view_history = true OR m.sent_at >= rm.join_time)
-         ORDER BY m.room_id ASC, m.sent_at DESC`,
+    const [unreadRes, privateRoomMemberRes] = await Promise.all([
+      this.db.query<{ room_id: string; unread_count: number }>(
+        `WITH filtered_unread_messages AS (
+           SELECT 
+             m.room_id,
+             ROW_NUMBER() OVER (
+               PARTITION BY m.room_id 
+               ORDER BY m.sent_at DESC
+             ) as rn
+           FROM messages m
+           JOIN chat_rooms cr ON cr.room_id = m.room_id
+           JOIN room_members rm ON rm.room_id = m.room_id AND rm.user_id = $1
+           LEFT JOIN messages last_read ON last_read.message_id = rm.last_read_id
+           WHERE m.room_id = ANY($2::uuid[])
+             AND (m.sender_id IS NULL OR m.sender_id != $1)
+             AND (last_read.sent_at IS NULL OR m.sent_at > last_read.sent_at)
+             AND (cr.view_history = true OR m.sent_at >= rm.join_time)
+         )
+         SELECT room_id, COUNT(*)::int AS unread_count
+         FROM filtered_unread_messages
+         WHERE rn <= 100
+         GROUP BY room_id`,
         [userId, roomIds]
       ),
       this.db.query<OtherMemberRow>(
@@ -144,22 +157,9 @@ export class RoomRepository implements IRoomRepository {
       ),
     ]);
 
-    const roomById = new Map(roomRes.rows.map((row) => [row.room_id, row]));
-    const unreadCountByRoom = new Map<string, number>();
-
-    for (const room of roomRes.rows) {
-      unreadCountByRoom.set(room.room_id, 0);
-    }
-
-    for (const message of messageRes.rows) {
-      const room = roomById.get(message.room_id);
-      if (!room) continue;
-      if (message.sender_id && message.sender_id === userId) continue;
-      if (room.last_read_sent_at && message.sent_at <= room.last_read_sent_at) continue;
-      const currentCount = unreadCountByRoom.get(message.room_id) ?? 0;
-      if (currentCount >= 100) continue;
-      unreadCountByRoom.set(message.room_id, currentCount + 1);
-    }
+    const unreadCountByRoom = new Map<string, number>(
+      unreadRes.rows.map((row) => [row.room_id, row.unread_count])
+    );
 
     const otherMemberByRoom = new Map<string, string>();
     for (const row of privateRoomMemberRes.rows) {

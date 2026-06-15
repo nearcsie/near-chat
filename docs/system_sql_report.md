@@ -8,7 +8,7 @@
 在最新的 `refactor-basic-sql-queries` 分支中，系統進行了關鍵的 SQL 語法簡化：
 1. **移除複雜的巢狀子查詢與 Lateral Join**：原本在 SQL 中大量使用的 Lateral Join（如拉取訊息的附件、提及名單、聊天室的最新訊息與未讀數等）已被完全拆除。
 2. **引進資料庫視圖 (Views)**：建立如 `message_with_sender_view` 與 `room_last_message_view` 等視圖，將基本的 Table Join 移至視圖處理，讓 Repository 代碼中的查詢極簡化。
-3. **分解查詢並由 JavaScript 進行關聯處理**：將原先龐大、難以優化的單一 SQL 拆解成多個平行且簡單的基礎查詢，隨後在 Node.js 後端記憶體中透過 Map 進行關聯拼接，減輕資料庫的 CPU 負載。
+3. **分解查詢並由 JavaScript 與輕量 SQL 進行關聯處理**：將原先龐大、難以優化的單一 SQL 拆解成多個平行且簡單的基礎查詢。其中，未讀訊息計數在 SQL 端透過 CTE 配合視窗函數（限制每個房間最高統計 100 筆）與 `COUNT(*)` 直接分組統計，而 Node.js 端僅以 Map 做數值對照與關聯拼接，最小化網路頻寬、資料庫 I/O 與 Node.js 的記憶體 CPU 開銷。
 
 ---
 
@@ -160,15 +160,28 @@
   LEFT JOIN room_last_message_view latest ON latest.room_id = cr.room_id
   WHERE rm.user_id = $1;
   ```
-* **SQL 語句 2 (拉取相關訊息，用於在後端計算未讀訊息數)**：
+* **SQL 語句 2 (分組統計各聊天室的未讀訊息數量 - 使用視窗函數與 COUNT(*) 限制上限 100)**：
   ```sql
-  SELECT m.room_id, m.sender_id, m.sent_at
-  FROM messages m
-  JOIN chat_rooms cr ON cr.room_id = m.room_id
-  JOIN room_members rm ON rm.room_id = m.room_id AND rm.user_id = $1
-  WHERE m.room_id = ANY($2::uuid[])
-    AND (cr.view_history = true OR m.sent_at >= rm.join_time)
-  ORDER BY m.room_id ASC, m.sent_at DESC;
+  WITH filtered_unread_messages AS (
+    SELECT 
+      m.room_id,
+      ROW_NUMBER() OVER (
+        PARTITION BY m.room_id 
+        ORDER BY m.sent_at DESC
+      ) as rn
+    FROM messages m
+    JOIN chat_rooms cr ON cr.room_id = m.room_id
+    JOIN room_members rm ON rm.room_id = m.room_id AND rm.user_id = $1
+    LEFT JOIN messages last_read ON last_read.message_id = rm.last_read_id
+    WHERE m.room_id = ANY($2::uuid[])
+      AND (m.sender_id IS NULL OR m.sender_id != $1)
+      AND (last_read.sent_at IS NULL OR m.sent_at > last_read.sent_at)
+      AND (cr.view_history = true OR m.sent_at >= rm.join_time)
+  )
+  SELECT room_id, COUNT(*)::int AS unread_count
+  FROM filtered_unread_messages
+  WHERE rn <= 100
+  GROUP BY room_id;
   ```
 * **SQL 語句 3 (拉取私聊中的對方成員 ID)**：
   ```sql
@@ -176,7 +189,7 @@
   FROM room_members
   WHERE room_id = ANY($1::uuid[]) AND user_id != $2;
   ```
-* **後端用途**：**載入聊天列表**。後端將聊天室基本資訊、最新消息、在 JS 記憶體中累加出來的未讀數（小於等於 100 筆）、以及對方的成員 ID 合併包裝成 `RoomSummary` 陣列，排序後回傳給前端。
+* **後端用途**：**載入聊天列表**。後端將聊天室基本資訊、最新消息、直接由 SQL 統計出的未讀數（小於等於 100 筆）、以及對方的成員 ID 合併包裝成 `RoomSummary` 陣列，排序後回傳給前端。
 
 ---
 
