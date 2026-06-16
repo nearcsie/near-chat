@@ -85,9 +85,12 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
   const [nickInputValue, setNickInputValue] = useState("");
   const [pendingAttachments, setPendingAttachments] = useState<File[]>([]);
   const [isUploadingAttachment, setIsUploadingAttachment] = useState(false);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [msgSearchQuery, setMsgSearchQuery] = useState("");
   const messageEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const { t } = useTranslation();
 
   const activeRoom = rooms.find((r) => r.id === roomId);
@@ -157,6 +160,21 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
 
     return () => window.clearTimeout(resetId);
   }, [roomId]);
+
+  useEffect(() => {
+    setIsSearchOpen(false);
+    setMsgSearchQuery("");
+  }, [roomId]);
+
+  const handleToggleSearch = () => {
+    if (isSearchOpen) {
+      setIsSearchOpen(false);
+      setMsgSearchQuery("");
+    } else {
+      setIsSearchOpen(true);
+      requestAnimationFrame(() => searchInputRef.current?.focus());
+    }
+  };
 
   if (!activeRoom) {
     return (
@@ -366,6 +384,18 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
             </Button>
           )}
 
+          <button
+            onClick={handleToggleSearch}
+            className={`p-1.5 border rounded-sm transition-colors cursor-pointer ${
+              isSearchOpen
+                ? "bg-primary/10 border-primary/30 text-primary"
+                : "border-border-secondary hover:border-border-primary text-text-muted hover:text-foreground"
+            }`}
+            title={isSearchOpen ? t("chatroom.closeSearch") : t("chatroom.searchMessages")}
+          >
+            <Icon icon="boxicons:search" className="h-4 w-4" />
+          </button>
+
           <Dropdown
             trigger={
               <button
@@ -407,10 +437,43 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
         </div>
       </div>
 
+      {/* Search Bar */}
+      {isSearchOpen && (
+        <div className="border-b border-border-primary bg-surface-card px-3 md:px-6 py-2 flex items-center gap-2 shrink-0">
+          <Icon icon="boxicons:search" className="h-4 w-4 text-text-muted shrink-0" />
+          <input
+            ref={searchInputRef}
+            type="text"
+            value={msgSearchQuery}
+            onChange={(e) => setMsgSearchQuery(e.target.value)}
+            placeholder="搜尋訊息..."
+            className="flex-1 bg-transparent text-sm text-foreground placeholder:text-text-muted outline-none"
+            onKeyDown={(e) => { if (e.key === "Escape") handleToggleSearch(); }}
+          />
+          {msgSearchQuery.trim() && (
+            <span className="text-[10px] text-text-muted font-mono shrink-0">
+              {messages.filter((m) => m.roomId === activeRoom.id && !m.content.startsWith("[System] ") && m.content.toLowerCase().includes(msgSearchQuery.toLowerCase().trim())).length} 筆結果
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={handleToggleSearch}
+            className="p-0.5 text-text-muted hover:text-foreground transition-colors cursor-pointer shrink-0"
+          >
+            <Icon icon="boxicons:x" className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
       {/* Chat Messages Area */}
       <div className="flex-1 overflow-y-auto p-3 md:p-6 flex flex-col gap-4">
         {messages
-          .filter((m) => m.roomId === activeRoom.id)
+          .filter((m) => {
+            if (m.roomId !== activeRoom.id) return false;
+            const q = msgSearchQuery.trim().toLowerCase();
+            if (!q) return true;
+            return !m.content.startsWith("[System] ") && m.content.toLowerCase().includes(q);
+          })
           .map((msg) => {
             if (msg.content.startsWith("[System] ")) {
               return (
@@ -484,6 +547,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
                       ? user.username
                       : senderMember?.name || msg.senderName
                   }
+                  searchHighlight={msgSearchQuery.trim() || undefined}
                 />
 
                 {!msg.isRecalled && (

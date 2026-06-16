@@ -204,6 +204,8 @@
     "membersList": "Members ({count})",
     "hideInfoPanel": "Hide Info Panel",
     "showInfoPanel": "Show Info Panel",
+    "searchMessages": "Search Messages",
+    "closeSearch": "Close Search",
     "muted": "Muted",
     "pendingApproval": "Pending Approval",
     "pendingApprovalBanner": "Your request to join this group is pending approval. You will be able to read and send messages once an owner or admin approves your request."
