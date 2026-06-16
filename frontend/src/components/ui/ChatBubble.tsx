@@ -35,12 +35,35 @@ export interface ChatBubbleProps {
   senderId?: string;
   messageId?: string;
   avatarName?: string;
+  searchHighlight?: string;
 }
+
+const highlightText = (text: string, query: string): React.ReactNode => {
+  const lowerText = text.toLowerCase();
+  const lowerQuery = query.toLowerCase();
+  if (!lowerText.includes(lowerQuery)) return text;
+  const nodes: React.ReactNode[] = [];
+  let last = 0;
+  let idx = lowerText.indexOf(lowerQuery);
+  while (idx !== -1) {
+    if (idx > last) nodes.push(text.slice(last, idx));
+    nodes.push(
+      <mark key={idx} className="bg-amber-300/60 dark:bg-amber-600/50 text-foreground not-italic rounded-[2px] px-0.5">
+        {text.slice(idx, idx + query.length)}
+      </mark>,
+    );
+    last = idx + query.length;
+    idx = lowerText.indexOf(lowerQuery, last);
+  }
+  if (last < text.length) nodes.push(text.slice(last));
+  return <>{nodes}</>;
+};
 
 const renderMentionContent = (
   content: string,
   isOutgoing: boolean,
   isHighEmphasis: boolean,
+  searchHighlight?: string,
 ) => {
   const parts = content.split(/(@[^\s@]+)/g);
   const mentionClass = isOutgoing && isHighEmphasis
@@ -53,7 +76,9 @@ const renderMentionContent = (
         {part}
       </span>
     ) : (
-      <React.Fragment key={`${part}-${index}`}>{part}</React.Fragment>
+      <React.Fragment key={`${part}-${index}`}>
+        {searchHighlight ? highlightText(part, searchHighlight) : part}
+      </React.Fragment>
     ),
   );
 };
@@ -78,6 +103,7 @@ export function ChatBubble({
   senderId,
   messageId,
   avatarName,
+  searchHighlight,
 }: ChatBubbleProps) {
   const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null>(null);
   const [popoverStyle, setPopoverStyle] = useState<React.CSSProperties>({});
@@ -250,7 +276,7 @@ export function ChatBubble({
                 isRecalled && "italic text-text-muted/70",
               )}
             >
-              {isRecalled ? "訊息已收回" : renderMentionContent(content, isOutgoing, isHighEmphasis)}
+              {isRecalled ? "訊息已收回" : renderMentionContent(content, isOutgoing, isHighEmphasis, searchHighlight)}
             </div>
 
             {attachments.length > 0 && (
