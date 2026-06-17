@@ -82,6 +82,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
   const [mentionDraft, setMentionDraft] = useState<MentionDraft | null>(null);
   const [selectedMentionIndex, setSelectedMentionIndex] = useState(0);
   const [replyTarget, setReplyTarget] = useState<Message | null>(null);
+  const [editingMessage, setEditingMessage] = useState<Message | null>(null);
   const [isModifyNickOpen, setIsModifyNickOpen] = useState(false);
   const [nickInputValue, setNickInputValue] = useState("");
   const [pendingAttachments, setPendingAttachments] = useState<File[]>([]);
@@ -189,6 +190,18 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
     e.preventDefault();
     if (isUploadingAttachment) return;
     if (!inputText.trim() && pendingAttachments.length === 0) return;
+
+    if (editingMessage) {
+      try {
+        handleUpdateMessage(activeRoom.id, editingMessage.id, inputText);
+        setEditingMessage(null);
+        setInputText("");
+      } catch (error) {
+        console.error(error);
+        alert(error instanceof Error ? error.message : "Failed to update message");
+      }
+      return;
+    }
 
     try {
       if (pendingAttachments.length > 0) {
@@ -542,7 +555,13 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
                   messageId={msg.id}
                   onReply={() => setReplyTarget(msg)}
                   onRecall={() => handleRecallMessage(msg.id)}
-                  onEdit={(newContent) => handleUpdateMessage(activeRoom.id, msg.id, newContent)}
+                  onEdit={() => {
+                    setEditingMessage(msg);
+                    setInputText(msg.content);
+                    requestAnimationFrame(() => {
+                      inputRef.current?.focus();
+                    });
+                  }}
                   canRecall={canRecall}
                   canEdit={msg.isOutgoing && !msg.isRecalled}
                   avatarName={
@@ -665,6 +684,23 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
                 <Icon icon="boxicons:paperclip" className="h-4 w-4" />
               </button>
               <div className="relative flex-1">
+                {editingMessage && (
+                  <div className="flex items-center justify-between bg-primary/10 border-l-4 border-primary px-3 py-1.5 text-xs text-foreground select-none rounded-sm mb-2">
+                    <span className="flex items-center gap-1.5 truncate">
+                      {t("chatroom.editingMessageBanner")}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingMessage(null);
+                        setInputText("");
+                      }}
+                      className="text-text-muted hover:text-foreground cursor-pointer font-bold px-1"
+                    >
+                      {t("chatroom.cancel")}
+                    </button>
+                  </div>
+                )}
                 {mentionCandidates.length > 0 && (
                   <div className="absolute bottom-full left-0 right-0 mb-2 max-h-48 overflow-y-auto rounded-sm border border-border-primary bg-surface-card shadow-lg">
                     {mentionCandidates.map((candidate) => (
@@ -722,6 +758,10 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
                     if (e.key === "Enter" && !e.shiftKey) {
                       e.preventDefault();
                       void handleSend(e);
+                    } else if (e.key === "Escape" && editingMessage) {
+                      e.preventDefault();
+                      setEditingMessage(null);
+                      setInputText("");
                     }
                   }}
                   className="w-full bg-surface-card border border-border-secondary hover:border-border-primary focus:border-primary focus:outline-none rounded-sm px-3.5 py-2.5 text-sm text-foreground transition-colors resize-none min-h-[38px] max-h-[120px] overflow-y-auto no-scrollbar"

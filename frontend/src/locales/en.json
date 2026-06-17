@@ -208,7 +208,15 @@
     "closeSearch": "Close Search",
     "muted": "Muted",
     "pendingApproval": "Pending Approval",
-    "pendingApprovalBanner": "Your request to join this group is pending approval. You will be able to read and send messages once an owner or admin approves your request."
+    "pendingApprovalBanner": "Your request to join this group is pending approval. You will be able to read and send messages once an owner or admin approves your request.",
+    "editingMessageBanner": "Editing message (Press Esc to cancel)",
+    "replyMessage": "Reply Message",
+    "editMessage": "Edit Message",
+    "recallMessage": "Recall Message",
+    "copyText": "Copy Text",
+    "messageRecalled": "Message recalled",
+    "downloadingAttachment": "Downloading attachment",
+    "downloadAttachment": "Download attachment"
   },
   "profileCard": {
     "myInfo": "My Info",
