@@ -68,6 +68,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
     handleTyping,
     handleUploadAttachments,
     handleRecallMessage,
+    handleUpdateMessage,
     handleModifyNickname,
     handleLeaveOrBlock,
     getReadAvatarsForMessage,
@@ -88,7 +89,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [msgSearchQuery, setMsgSearchQuery] = useState("");
   const messageEndRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const { t } = useTranslation();
@@ -283,7 +284,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
     });
   };
 
-  const handleMentionKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+  const handleMentionKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement | HTMLInputElement>) => {
     if (!mentionDraft || mentionCandidates.length === 0) return;
 
     if (event.key === "ArrowDown") {
@@ -541,7 +542,9 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
                   messageId={msg.id}
                   onReply={() => setReplyTarget(msg)}
                   onRecall={() => handleRecallMessage(msg.id)}
+                  onEdit={(newContent) => handleUpdateMessage(activeRoom.id, msg.id, newContent)}
                   canRecall={canRecall}
+                  canEdit={msg.isOutgoing && !msg.isRecalled}
                   avatarName={
                     msg.isOutgoing
                       ? user.username
@@ -685,11 +688,11 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
                   </div>
                 )}
 
-                <input
+                <textarea
                   ref={inputRef}
-                  type="text"
                   placeholder={t("chatroom.inputPlaceholder")}
                   value={inputText}
+                  rows={1}
                   onChange={(e) => {
                     const nextText = e.target.value;
                     const nextCursorPosition = e.target.selectionStart ?? nextText.length;
@@ -710,8 +713,18 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
                     handleTyping(activeRoom.id, false);
                     setMentionDraft(null);
                   }}
-                  onKeyDown={handleMentionKeyDown}
-                  className="w-full bg-surface-card border border-border-secondary hover:border-border-primary focus:border-primary focus:outline-none rounded-sm px-3.5 py-2.5 text-sm text-foreground transition-colors"
+                  onKeyDown={(e) => {
+                    if (mentionDraft && mentionCandidates.length > 0) {
+                      handleMentionKeyDown(e);
+                      if (e.defaultPrevented) return;
+                    }
+
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      void handleSend(e);
+                    }
+                  }}
+                  className="w-full bg-surface-card border border-border-secondary hover:border-border-primary focus:border-primary focus:outline-none rounded-sm px-3.5 py-2.5 text-sm text-foreground transition-colors resize-none min-h-[38px] max-h-[120px] overflow-y-auto no-scrollbar"
                 />
               </div>
 

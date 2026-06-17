@@ -72,6 +72,7 @@ import {
   onEmergencyAlert,
   onFriendRequest,
   onMessageRecalled,
+  onMessageUpdated,
   onNewMessage,
   onReadUpdate,
   onSocketError,
@@ -82,6 +83,7 @@ import {
   sendMessage,
   sendReadReceipt,
   sendTyping,
+  updateMessage,
   type ChatSocket,
 } from "@/lib/socket";
 
@@ -287,6 +289,7 @@ interface ChatContextType {
     options?: { content?: string; replyTarget?: Message | null },
   ) => Promise<void>;
   handleRecallMessage: (msgId: string) => void;
+  handleUpdateMessage: (roomId: string, messageId: string, content: string) => void;
   handleUpdateProfile: (profile: ProfileInput) => Promise<User>;
   handleUpdatePreferences: (preferences: PreferencesInput) => Promise<void>;
   handleCreateRoom: (name: string, type: "msg" | "group", folderId: string) => Promise<string>;
@@ -1012,6 +1015,17 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         ),
       );
     });
+    const cleanupUpdate = onMessageUpdated(socket, (updatedMessage) => {
+      setMessages((current) =>
+        hydrateReplyTargets(
+          current.map((message) =>
+            message.id === updatedMessage.messageId
+              ? mapMessage(updatedMessage, currentUserId)
+              : message,
+          ),
+        ),
+      );
+    });
     const cleanupRead = onReadUpdate(socket, ({ roomId, userId, messageId }) => {
       setGroupReadStates((current) => ({
         ...current,
@@ -1206,6 +1220,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     return () => {
       cleanupNewMessage();
       cleanupRecall();
+      cleanupUpdate();
       cleanupRead();
       cleanupTyping();
       cleanupError();
@@ -1280,6 +1295,11 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const handleRecallMessage = (msgId: string) => {
     if (!socketRef.current) return;
     recallMessage(socketRef.current, msgId);
+  };
+
+  const handleUpdateMessage = (roomId: string, messageId: string, content: string) => {
+    if (!socketRef.current) return;
+    updateMessage(socketRef.current, { roomId, messageId, content });
   };
 
   const handleUpdateProfile = async (profile: ProfileInput) => {
@@ -1966,6 +1986,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         handleTyping,
         handleUploadAttachments,
         handleRecallMessage,
+        handleUpdateMessage,
         handleUpdateProfile,
         handleUpdatePreferences,
         handleCreateRoom,

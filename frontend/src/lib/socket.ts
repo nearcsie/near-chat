@@ -114,3 +114,18 @@ export const onRoomUpdate = (
   socket.on('room_update', handler);
   return () => socket.off('room_update', handler);
 };
+
+export const updateMessage = (
+  socket: ChatSocket,
+  payload: Parameters<ClientToServerEvents['update_message']>[0],
+): void => {
+  socket.emit('update_message', payload);
+};
+
+export const onMessageUpdated = (
+  socket: ChatSocket,
+  handler: ServerToClientEvents['message_updated'],
+): (() => void) => {
+  socket.on('message_updated', handler);
+  return () => socket.off('message_updated', handler);
+};

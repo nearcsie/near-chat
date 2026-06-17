@@ -30,6 +30,7 @@ export interface ChatBubbleProps {
   roomType?: "msg" | "group";
   onReply?: () => void;
   onRecall?: () => void;
+  onEdit?: (newContent: string) => void;
   canRecall?: boolean;
   canEdit?: boolean;
   senderId?: string;
@@ -98,6 +99,7 @@ export function ChatBubble({
   roomType = "msg",
   onReply,
   onRecall,
+  onEdit,
   canRecall = false,
   canEdit = false,
   senderId,
@@ -109,6 +111,21 @@ export function ChatBubble({
   const [popoverStyle, setPopoverStyle] = useState<React.CSSProperties>({});
   const [downloadingUrl, setDownloadingUrl] = useState<string | null>(null);
   const [downloadError, setDownloadError] = useState("");
+  const [isEditing, setIsEditing] = useState(false);
+  const [editVal, setEditVal] = useState(content);
+
+  useEffect(() => {
+    setEditVal(content);
+  }, [content]);
+
+  const handleSaveEdit = () => {
+    const trimmed = editVal.trim();
+    if (!trimmed) return;
+    if (trimmed !== content) {
+      onEdit?.(trimmed);
+    }
+    setIsEditing(false);
+  };
 
   const { activeProfilePopover, setActiveProfilePopover } = useChat();
   const showPopover = messageId ? activeProfilePopover?.instanceId === messageId : false;
@@ -270,14 +287,53 @@ export function ChatBubble({
               </div>
             )}
 
-            <div
-              className={cn(
-                "text-sm break-words whitespace-pre-wrap",
-                isRecalled && "italic text-text-muted/70",
-              )}
-            >
-              {isRecalled ? "訊息已收回" : renderMentionContent(content, isOutgoing, isHighEmphasis, searchHighlight)}
-            </div>
+            {isEditing ? (
+              <div className="flex flex-col gap-1.5 w-full min-w-[220px] max-w-full">
+                <textarea
+                  value={editVal}
+                  onChange={(e) => setEditVal(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSaveEdit();
+                    } else if (e.key === "Escape") {
+                      setIsEditing(false);
+                      setEditVal(content);
+                    }
+                  }}
+                  className="w-full bg-surface-card border border-border-primary rounded-sm p-2 text-sm text-foreground focus:border-primary focus:outline-none resize-none min-h-[50px] font-sans"
+                  autoFocus
+                />
+                <div className="flex justify-end gap-2 select-none">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsEditing(false);
+                      setEditVal(content);
+                    }}
+                    className="px-2.5 py-1 text-xs border border-border-secondary text-text-muted hover:text-foreground rounded-sm transition-colors cursor-pointer bg-transparent"
+                  >
+                    取消
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveEdit}
+                    className="px-2.5 py-1 text-xs bg-primary text-white hover:bg-[#0066d6] rounded-sm transition-colors cursor-pointer"
+                  >
+                    儲存
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div
+                className={cn(
+                  "text-sm break-words whitespace-pre-wrap",
+                  isRecalled && "italic text-text-muted/70",
+                )}
+              >
+                {isRecalled ? "訊息已收回" : renderMentionContent(content, isOutgoing, isHighEmphasis, searchHighlight)}
+              </div>
+            )}
 
             {attachments.length > 0 && (
               <div className="flex flex-col gap-1.5 mt-1 border-t border-border-secondary/40 pt-2">
@@ -367,7 +423,10 @@ export function ChatBubble({
                 type="button"
                 className={menuItemClass}
                 disabled={!canEdit}
-                title={canEdit ? undefined : "目前尚未支援修改訊息"}
+                onClick={() => {
+                  setIsEditing(true);
+                  setMenuPosition(null);
+                }}
               >
                 修改訊息
               </button>
