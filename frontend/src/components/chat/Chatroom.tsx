@@ -94,6 +94,8 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
   const fileInputRef = useRef<HTMLInputElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const { t } = useTranslation();
+  const [isMultiLine, setIsMultiLine] = useState(false);
+  const maxMessageLength = Number(process.env.NEXT_PUBLIC_MAX_MESSAGE_LENGTH || 1000);
 
   const activeRoom = rooms.find((r) => r.id === roomId);
   const currentMember = activeRoom?.members?.find((m) => m.userId === user.userId || m.name === user.username);
@@ -167,6 +169,23 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
     setIsSearchOpen(false);
     setMsgSearchQuery("");
   }, [roomId]);
+
+  // Auto-resize the textarea height based on content
+  useEffect(() => {
+    const textarea = inputRef.current;
+    if (!textarea) return;
+
+    textarea.style.height = "auto";
+    const maxHeight = window.innerHeight * 0.5;
+    if (textarea.scrollHeight > maxHeight) {
+      textarea.style.height = `${maxHeight}px`;
+      textarea.style.overflowY = "auto";
+    } else {
+      textarea.style.height = `${textarea.scrollHeight}px`;
+      textarea.style.overflowY = "hidden";
+    }
+    setIsMultiLine(inputText.includes("\n") || textarea.scrollHeight > 48);
+  }, [inputText]);
 
   const handleToggleSearch = () => {
     if (isSearchOpen) {
@@ -764,10 +783,16 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
                       setInputText("");
                     }
                   }}
-                  className="w-full bg-surface-card border border-border-secondary hover:border-border-primary focus:border-primary focus:outline-none rounded-sm px-3.5 py-2.5 text-sm text-foreground transition-colors resize-none min-h-[38px] max-h-[120px] overflow-y-auto no-scrollbar"
+                  maxLength={maxMessageLength}
+                  className="w-full bg-surface-card border border-border-secondary hover:border-border-primary focus:border-primary focus:outline-none rounded-sm px-3.5 py-2.5 text-sm text-foreground transition-colors resize-none min-h-[38px] max-h-[50vh] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-zinc-300 hover:[&::-webkit-scrollbar-thumb]:bg-zinc-400 dark:[&::-webkit-scrollbar-thumb]:bg-zinc-700 dark:hover:[&::-webkit-scrollbar-thumb]:bg-zinc-600 [&::-webkit-scrollbar-thumb]:rounded-sm"
                 />
               </div>
 
+              {isMultiLine && (
+                <span className="text-[11px] text-text-muted shrink-0 select-none pb-2.5 w-[70px] text-right">
+                  ({inputText.length}/{maxMessageLength})
+                </span>
+              )}
               <Button
                 type="submit"
                 variant="primary"
