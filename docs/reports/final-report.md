@@ -147,6 +147,165 @@ CREATE TABLE emergency_alert_logs (
 
 ## 系統安裝說明
 
+### 0. 極簡版說明
+
+一、安裝 Docker Compose
+
+二、設定 `.env`（所有必填值已列於 `.env.example`）
+
+三、啟動服務
+- 開發模式：`docker compose up -d`
+- 生產模式：`docker compose -f docker-compose.prod.yml up -d`
+
+### 1. 取得程式碼與安裝必要軟體
+
+#### 步驟 1：取得原始碼
+將專案複製到本地端：
+```bash
+git clone <repository-url>
+cd 1142-ntnu-db-app
+```
+
+#### 步驟 2：安裝 Docker 運行環境
+請根據您的作業系統安裝對應的 Docker 軟體：
+
+* **Windows 平台**：
+  1. 前往 Docker 官網下載並安裝 [Docker Desktop](https://www.docker.com/products/docker-desktop/)。
+  2. 安裝完成並重新開機後，啟動 Docker Desktop。
+  3. 開啟命令提示字元（cmd）或 PowerShell，執行以下指令驗證安裝：
+     ```bash
+     docker --version
+     docker compose version
+     ```
+* **Linux 平台 (以 Ubuntu/Debian 為例)**：
+  1. 執行以下指令安裝 Docker Engine 與 Docker Compose：
+     ```bash
+     sudo apt-get update
+     sudo apt-get install docker.io docker-compose-v2 -y
+     ```
+  2. 將目前使用者加入 docker 群組，以避免每次執行都需要加上 `sudo`（設定完成後需重新登入使之生效）：
+     ```bash
+     sudo usermod -aG docker $USER
+     ```
+  3. 執行指令確認安裝：
+     ```bash
+     docker --version
+     docker compose version
+     ```
+
+---
+
+### 2. 環境變數（.env）設定教學
+
+系統需要一組環境變數來配置資料庫連接、金鑰與通訊連接埠。請在專案根目錄下完成以下設定：
+
+#### 步驟 1：複製環境變數範本
+* **Linux / macOS 終端機**：
+  ```bash
+  cp .env.example .env
+  ```
+* **Windows 檔案總管 / 終端機**：
+  在專案根目錄手動複製 `.env.example` 並命名為 `.env`；或者在 PowerShell 中執行：
+  ```powershell
+  Copy-Item .env.example .env
+  ```
+
+#### 步驟 2：修改環境變數值
+打開 `.env` 檔案修改其中變數值，以下為關鍵設定說明：
+
+1. **系統配置與運行模式**：
+   * `NODE_ENV`：設為 `development`（開發模式）或 `production`（生產模式）。
+2. **資料庫配置 (PostgreSQL)**：
+   * `POSTGRES_USER`、`POSTGRES_PASSWORD`、`POSTGRES_DB`：分別為資料庫的使用者名稱、密碼與資料庫名稱。
+   * `DATABASE_URL`：連線字串。由於在容器內運行，主機名稱請保持為 `db`，例如：`postgresql://chatuser:chatpassword@db:5432/chatdb`。
+3. **安全與認證**：
+   * `JWT_SECRET`：用於簽署 JWT Token 的隨機金鑰（開發環境可使用預設值，生產環境務必修改）。
+4. **前端 API URL 對接**：
+   * `NEXT_PUBLIC_API_URL`：前端瀏覽器端呼叫後端 API 的外部 URL。在本機開發時，Docker 將後端連接埠映射至外部的 `4005`，故設為 `http://localhost:4005`。
+5. **上傳檔案掛載路徑** (`UPLOADS_MOUNT_SOURCE`)：
+   * 預設為 Docker 命名磁碟卷 `app_uploads`。
+   * 如果想直接將上傳檔案儲存於主機的實體目錄，可將其設定為實體路徑：
+     * **Windows 範例**：`C:/chat-uploads`
+     * **Linux / macOS 範例**：`/Users/yourname/chat-uploads`
+
+---
+
+### 3. 開發模式（Dev）與生產模式（Prod）運行方式
+
+本專案提供兩種運行模式：
+
+```
+                              ┌───────────────┐
+                              │  取得原始碼   │
+                              └───────┬───────┘
+                                      │
+                              ┌───────▼───────┐
+                              │  複製 .env    │
+                              └───────┬───────┘
+                                      │
+                 ┌────────────────────┴────────────────────┐
+                 ▼                                         ▼
+         【 開發模式 (Dev) 】                     【 生產模式 (Prod) 】
+      使用原始程式碼即時熱編譯                     預先編譯優化、加入 Cloudflare
+  ┌──────────────────────────────┐          ┌──────────────────────────────┐
+  │ 1. 啟動服務:                  │          │ 1. 啟動服務:                  │
+  │    docker compose up -d      │          │    docker compose -f         │
+  │                              │          │    docker-compose.prod.yml   │
+  │ 2. 套用遷移與寫入種子資料:     │          │    up -d --build             │
+  │    docker compose exec       │          │                              │
+  │    backend pnpm run db:seed  │          │ 2. 套用遷移與寫入種子資料:     │
+  │                              │          │    (指令同左，但需加 -f 參數) │
+  └──────────────────────────────┘          └──────────────────────────────┘
+```
+
+#### A. 開發模式 (Development Mode)
+開發模式會掛載本地程式碼至容器內，當您修改程式碼時，服務會自動重啟（Hot Reload），便於偵錯與開發。
+
+1. **建置並啟動服務**：
+   使用 [docker-compose.yml](file:///home/blade520/dev/projects/1142-ntnu-db-app/docker-compose.yml) 啟動：
+   ```bash
+   # 建置並啟動所有服務（db、backend、frontend）
+   docker compose up -d --build
+   ```
+   *啟動後，後端服務會自動套用最新的資料庫 Schema 遷移（Migration）。*
+2. **初始化資料庫與寫入種子資料（推薦）**：
+   為了方便評分與測試，請執行以下指令將系統預設的種子資料寫入資料庫：
+   ```bash
+   docker compose exec backend pnpm run db:seed
+   ```
+   *這會建立預設測試帳號（密碼皆為 `password123`），如 `alice@test.com`、`bob@test.com` 等。*
+3. **存取服務網址**：
+   * **前端網頁 (Next.js)**：[http://localhost:3005](http://localhost:3005)
+   * **後端 API 與 Socket.IO**：[http://localhost:4005](http://localhost:4005)
+   * **本地資料庫 (PostgreSQL)**：`localhost:5435`
+4. **常用管理與偵錯指令**：
+   * 查看各容器運行狀態：`docker compose ps`
+   * 即時追蹤後端日誌：`docker compose logs -f backend`
+   * 停止開發服務：`docker compose down`
+
+#### B. 生產模式 (Production Mode)
+生產模式下，Docker 會預先編譯前端的 Next.js 靜態頁面與後端的 TypeScript，以優化執行效能並加強安全性，同時也支援部署 Cloudflare Tunnel 來對外提供公開服務。
+
+1. **啟動生產環境服務**：
+   使用 `docker-compose.prod.yml` 啟動：
+   ```bash
+   # 使用生產配置進行建置與啟動
+   docker compose -f docker-compose.prod.yml up -d --build
+   ```
+2. **初始化生產資料庫（首次執行時）**：
+   ```bash
+   docker compose -f docker-compose.prod.yml exec backend pnpm run migrate:up
+   ```
+   *(可選擇性寫入種子資料)*：
+   ```bash
+   docker compose -f docker-compose.prod.yml exec backend pnpm run db:seed
+   ```
+3. **外部部署與 Cloudflare Tunnel (選用)**：
+   若要使用 Cloudflare 提供的穿透服務，請先在 `.env` 中設定 `TUNNEL_TOKEN`，生產環境的 `tunnel` 服務將會自動連線並將您的系統公開至 Cloudflare 網域上。
+4. **停止生產服務**：
+   ```bash
+   docker compose -f docker-compose.prod.yml down
+   ```
 
 
 ## 系統功能與界面說明
