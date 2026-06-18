@@ -233,12 +233,11 @@ cd 1142-ntnu-db-app
 ### 3. 運行方式
 
 #### A. 開發模式 (Development Mode)
-開發模式會掛載本地程式碼至容器內，當您修改程式碼時，服務會自動重啟（Hot Reload），便於偵錯與開發。
+開發模式會掛載本地程式碼至容器內，當您修改程式碼時，服務會自動重啟，便於偵錯與開發。
 
 1. **建置並啟動服務**：
-   使用 [docker-compose.yml](file:///home/blade520/dev/projects/1142-ntnu-db-app/docker-compose.yml) 啟動：
+   使用 docker-compose.yml 啟動，若不加 -f 參數指定其他 yml 預設即是開發模式：
    ```bash
-   # 建置並啟動所有服務（db、backend、frontend）
    docker compose up -d --build
    ```
    *啟動後，後端服務會自動套用最新的資料庫 Schema 遷移（Migration）。*
@@ -263,20 +262,15 @@ cd 1142-ntnu-db-app
 1. **啟動生產環境服務**：
    使用 `docker-compose.prod.yml` 啟動：
    ```bash
-   # 使用生產配置進行建置與啟動
    docker compose -f docker-compose.prod.yml up -d --build
    ```
-2. **初始化生產資料庫（首次執行時）**：
+2. **若有更新或第一次建立，須進行資料庫欄位更新**：
    ```bash
    docker compose -f docker-compose.prod.yml exec backend pnpm run migrate:up
    ```
-   *(可選擇性寫入種子資料)*：
-   ```bash
-   docker compose -f docker-compose.prod.yml exec backend pnpm run db:seed
-   ```
 3. **外部部署與 Cloudflare Tunnel (選用)**：
    若要使用 Cloudflare 提供的穿透服務，請先在 `.env` 中設定 `TUNNEL_TOKEN`，生產環境的 `tunnel` 服務將會自動連線並將您的系統公開至 Cloudflare 網域上。
-4. **停止生產服務**：
+4. **停止服務**：
    ```bash
    docker compose -f docker-compose.prod.yml down
    ```
