@@ -34,6 +34,13 @@ CREATE TABLE users (
   last_activity TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   deleted_at TIMESTAMPTZ DEFAULT NULL,
+  lang_preference VARCHAR(10) NOT NULL DEFAULT 'en',
+  app_theme VARCHAR(10) NOT NULL DEFAULT 'light' CHECK (app_theme IN ('light', 'dark')),
+  notify_desktop BOOLEAN NOT NULL DEFAULT true,
+  notify_sound BOOLEAN NOT NULL DEFAULT true,
+  room_order JSONB NOT NULL DEFAULT '{}'::jsonb,
+  demo_warning_enabled BOOLEAN NOT NULL DEFAULT false,
+  demo_warning_seconds INTEGER NOT NULL DEFAULT 30
 );
 
 CREATE TABLE chat_rooms (
@@ -45,7 +52,8 @@ CREATE TABLE chat_rooms (
   require_approval BOOLEAN NOT NULL DEFAULT false,
   view_history BOOLEAN NOT NULL DEFAULT true,
   is_archived BOOLEAN NOT NULL DEFAULT false,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  is_readonly BOOLEAN NOT NULL DEFAULT false
 );
 
 CREATE UNIQUE INDEX chat_rooms_invite_code_unique
@@ -74,7 +82,30 @@ CREATE TABLE attachments (
   original_name VARCHAR(255) NOT NULL,
   uploaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE TABLE refresh_tokens (
+  token_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+  token_hash VARCHAR(255) NOT NULL UNIQUE,
+  expires_at TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  revoked_at TIMESTAMPTZ DEFAULT NULL,
+  replaced_by UUID REFERENCES refresh_tokens(token_id) ON DELETE SET NULL
+);
 ```
+
+#### 新增與修改欄位說明：
+
+1. `users` 表新增個人設定與功能欄位：
+   - `lang_preference`：儲存使用者介面語言選擇（預設為 `'en'`）。
+   - `app_theme`：限定為 `'light'` 或 `'dark'`，控制客戶端主題風格。
+   - `notify_desktop` 與 `notify_sound`：控制是否開啟桌面與聲音通知。
+   - `room_order`：以 postgreSQL 獨有 `JSONB` 格式儲存使用者自訂的聊天室拖曳排序結果。
+   - `demo_warning_enabled` 與 `demo_warning_seconds`：為求展示便利，設計了以「秒」為單位的緊急聯絡不活躍觸發機制。
+
+2. **`refresh_tokens` 表**：
+   - 用於實作安全的 JWT 雙 Token 驗證機制，儲存 Refresh Token 雜湊值（`token_hash`）與過期時間（`expires_at`）。
+   - 具備 `revoked_at` (作廢時間) 與 `replaced_by` (替換 Token ID)，以支援 Token 輪轉機制 (Token Rotation) 與重放攻擊偵測 (Reuse Detection)。
 
 ### 關係、弱實體與支援表
 
@@ -143,6 +174,7 @@ CREATE TABLE emergency_alert_logs (
   alerted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   PRIMARY KEY (user_id, last_activity_at)
 );
+
 ```
 
 ## 系統安裝說明
@@ -160,9 +192,10 @@ CREATE TABLE emergency_alert_logs (
 ### 1. 取得程式碼與安裝必要軟體
 
 #### 步驟 1：取得原始碼
-將專案複製到本地端：
+本專案的 github 儲存庫連結為 https://github.com/minstrike520/1142-ntnu-db-app
+可使用 git 下載至本地
 ```bash
-git clone <repository-url>
+git clone https://github.com/minstrike520/1142-ntnu-db-app.git
 cd 1142-ntnu-db-app
 ```
 
@@ -371,10 +404,11 @@ flowchart TD
     CheckEmailExist -- 是 --> RegErr
     CheckEmailExist -- 否 --> Bcrypt[密碼進行 bcrypt 加密]
     Bcrypt --> DBInsertUser[(寫入 users 資料表)]  
-    DBInsertUser --> RegSuccess[註冊成功]
-    RegSuccess --> GenJWT[自動登入：產生 JWT Token]
-    GenJWT --> SetCookie[設定 HttpOnly Cookie 或 Authorization]
-    SetCookie --> RedirectMain[跳轉至主對話介面]
+    DBInsertUser --> RegSuccess[註冊成功並自動登入]
+    RegSuccess --> GenTokens[產生短期 Access Token 與隨機 Refresh Token]
+    GenTokens --> DBInsertRefresh[(寫入 refresh_tokens 資料表儲存 Token 雜湊)]
+    DBInsertRefresh --> SetCookie[設定 HttpOnly Cookie 儲存 Refresh Token]
+    SetCookie --> RedirectMain[跳轉至主對話介面並回傳 Access Token]
     RedirectMain --> End([結束])      
 ```
 
@@ -386,10 +420,47 @@ flowchart TD
     CheckUser -- 否 --> LoginErr[提示信箱或密碼錯誤] --> LoginInput
     CheckUser -- 是 --> VerifyHash{比對密碼雜湊}
     VerifyHash -- 失敗 --> LoginErr
-    VerifyHash -- 成功 --> GenJWT[產生 JWT Token]
-    GenJWT --> SetCookie[設定 HttpOnly Cookie 或 Authorization]
-    SetCookie --> RedirectMain[跳轉至主對話介面]
+    VerifyHash -- 成功 --> UpdateActivity[(更新 last_activity 時間)]
+    UpdateActivity --> GenTokens[產生短期 Access Token 與隨機 Refresh Token]
+    GenTokens --> DBInsertRefresh[(寫入 refresh_tokens 資料表儲存 Token 雜湊)]
+    DBInsertRefresh --> SetCookie[設定 HttpOnly Cookie 儲存 Refresh Token]
+    SetCookie --> RedirectMain[跳轉至主對話介面並回傳 Access Token]
     RedirectMain --> End([結束])
+```
+
+### 刷新 Token 流程 (Refresh Token Rotation)
+```mermaid
+flowchart TD
+    Start([開始]) --> ReqRefresh[發送重新整理請求]
+    ReqRefresh --> ReadCookie{從 Cookie 讀取 Refresh Token？}
+    ReadCookie -- 否/不存在 --> FailErr[提示 Missing Refresh Token] --> EndFail([結束])
+    ReadCookie -- 是/存在 --> HashToken[對 Token 進行 SHA256 雜湊]
+    HashToken --> DBGetToken{查詢 refresh_tokens 資料表}
+    DBGetToken -- 不存在 --> InvalidErr[提示 Invalid Refresh Token] --> EndFail
+    DBGetToken -- 存在 --> CheckRevoked{是否已被作廢？}
+    CheckRevoked -- 是 --> CheckReused{是否有 replaced_by 關聯（重用）？}
+    CheckReused -- 是/偵測到重用 --> RevokeAll[(作廢該用戶名下所有 Refresh Token)] --> ReplayErr[提示安全風險並強制登出] --> ClearCookie[清除 Cookie 中的 Refresh Token] --> EndFail
+    CheckReused -- 否 --> RevokedErr[提示 Token 已作廢] --> ClearCookie --> EndFail
+    CheckRevoked -- 否 --> CheckExpired{是否已過期？}
+    CheckExpired -- 是 --> ExpiredErr[提示 Token 已過期] --> ClearCookie --> EndFail
+    CheckExpired -- 否 --> CheckUser{用戶是否存在且未被刪除？}
+    CheckUser -- 否 --> UserErr[提示用戶狀態無效] --> EndFail
+    CheckUser -- 是 --> GenNewTokens[產生新 Access Token 與新 Refresh Token]
+    GenNewTokens --> RotateToken[(執行 Token 輪轉：舊的標記作廢並關聯新 ID，寫入新 Token)]
+    RotateToken --> SetNewCookie[設定 HttpOnly Cookie 儲存新 Refresh Token]
+    SetNewCookie --> RespSuccess[回傳新 Access Token] --> EndSuccess([結束])
+```
+
+### 登出流程
+```mermaid
+flowchart TD
+    Start([開始]) --> ReqLogout[發送登出請求]
+    ReqLogout --> ReadCookie{從 Cookie 讀取 Refresh Token？}
+    ReadCookie -- 否/不存在 --> ClearCookie[清除 Cookie] --> End([結束])
+    ReadCookie -- 是/存在 --> HashToken[對 Token 進行 SHA256 雜湊]
+    HashToken --> DBGetToken{查詢 refresh_tokens 資料表}
+    DBGetToken -- 存在 --> RevokeToken[(作廢該筆 Refresh Token 記錄)] --> ClearCookie
+    DBGetToken -- 不存在 --> ClearCookie
 ```
 
 ### 發送好友邀請流程
@@ -536,12 +607,16 @@ flowchart TD
 
 ### 後端開發技術
 - 使用 `Node.js`、`Express` 與 `TypeScript` 建立 RESTful API 伺服器，並搭載 `Socket.IO` 實作實時雙向事件發送。
-- 身分驗證基於 `JSON Web Token (JWT)`，密碼加密採用 `bcryptjs` 進行高安全性單向雜湊。
 - 使用 `Routes -> Controllers -> Services -> Repositories` 分層設計。
   1. **Routes**：定義 REST API 與 middleware 組裝方式。
   2. **Controllers**：處理 HTTP request / response，呼叫對應的 Service 來執行核心邏輯。
-  3. **Services**：封裝系統規則邏輯，例如群組權限檢查、封鎖限制、訊息驗證。
-  4. **Repositories**：與資料庫溝通，使用 SQL 操作資料庫。
+  3. **Services**：封裝系統規則邏輯，例如群組權限檢查、封鎖限制、訊息驗證、JWT 驗證及 Refresh Token 輪轉邏輯。
+  4. **Repositories**：與資料庫溝通，使用 SQL 操作資料庫（包括 `users` 與 `refresh_tokens` 等表）。
+- 身分驗證與雙 Token 安全防禦機制：
+  - 身分驗證基於 `JSON Web Token (JWT)`，密碼加密採用 `bcryptjs` 進行高安全性單向雜湊。
+  - 系統使用短期有效的 JWT 作為 Access Token 作為請求憑證；並以長期有效的隨機字串作為 Refresh Token 用於重新整理存取權限。可透過 .env 中的環境變數 JWT_EXPIRES_IN 與 JWT_REFRESH_EXPIRES_IN_DAYS 設定兩者的有效期限，預設為 15 分鐘與 14 日
+  - refresh Token 儲存於客戶端的安全 Cookie 中，並設定 `HttpOnly` 與 `Secure` 屬性，防止 XSS 攻擊讀取。
+  - 每次刷新 Token 時皆實施 Token Rotation。若偵測到已被作廢的舊 Refresh Token 被重複使用，系統會立即判定為重放攻擊，並透過資料庫中的 `replaced_by` 與 `revoked_at` 記錄關聯，主動作廢該用戶名下所有的 Refresh Token，強制所有裝置登出以確保安全性。
 
 
 ### 資料庫管理與操作 
@@ -581,7 +656,7 @@ flowchart TD
 
 ## 工作分配
 
-- 楊銘煌：系統架設與 Docker 環境維護、UI / UX 界面設計、好友功能
+- 楊銘煌：系統架設與 Docker 環境維護、UI / UX 界面設計、好友功能、聊天室資料夾功能
 - 姚承希：UI / UX 界面設計、前端開發、聊天室功能
 - 趙偉恆：使用者功能、緊急聯絡功能、後端開發
 - 江禹叡：後端伺服器開發、聊天訊息與即時通訊、身份驗證系統
