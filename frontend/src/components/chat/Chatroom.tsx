@@ -95,7 +95,6 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
 
   const activeRoom = rooms.find((r) => r.id === roomId);
   const currentMember = activeRoom?.members?.find((m) => m.userId === user.userId || m.name === user.username);
-  const canManageMembers = currentMember?.role === "owner" || currentMember?.role === "admin";
   const isReadOnlyRoom = Boolean(activeRoom?.isArchived || activeRoom?.isReadonly);
   const isPending = Boolean(currentMember?.role === "pending");
   const isOwner = activeRoom?.type === "group" && currentMember?.role === "owner";
@@ -137,6 +136,17 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
     setSelectedMentionIndex(0);
   }
 
+  const [prevRoomId, setPrevRoomId] = useState(roomId);
+  if (prevRoomId !== roomId) {
+    setPrevRoomId(roomId);
+    setIsSearchOpen(false);
+    setMsgSearchQuery("");
+    setPendingAttachments([]);
+    setIsUploadingAttachment(false);
+    setInputText("");
+    setReplyTarget(null);
+  }
+
   // Scroll to bottom when room or messages change
   const lastScrolledRoomIdRef = useRef<string | null>(null);
   useLayoutEffect(() => {
@@ -149,22 +159,6 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
       messageEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
   }, [roomId, messages]);
-
-  useEffect(() => {
-    // Reset the staged attachment when switching rooms so a file selected in one
-    // chat is never sent from a different chat by accident.
-    const resetId = window.setTimeout(() => {
-      setPendingAttachments([]);
-      setIsUploadingAttachment(false);
-    }, 0);
-
-    return () => window.clearTimeout(resetId);
-  }, [roomId]);
-
-  useEffect(() => {
-    setIsSearchOpen(false);
-    setMsgSearchQuery("");
-  }, [roomId]);
 
   const handleToggleSearch = () => {
     if (isSearchOpen) {
@@ -351,7 +345,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
           />
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-sm font-bold text-foreground truncate max-w-[200px]">
+              <h1 className="text-sm font-bold text-foreground truncate max-w-50">
                 {activeRoom.name}
               </h1>
               {isPending && (
