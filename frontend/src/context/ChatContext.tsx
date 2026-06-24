@@ -1096,7 +1096,14 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     });
 
     const cleanupRoomUpdate = onRoomUpdate(socket, ({ type, roomId, data }) => {
-      const payload = data as { userId?: string; name?: string; avatarUrl?: string };
+      const payload = data as {
+        userId?: string;
+        name?: string;
+        avatarUrl?: string;
+        requireApproval?: boolean;
+        viewHistory?: boolean;
+        isArchived?: boolean;
+      };
       if (type === 'USER_UPDATED') {
         const { userId, name, avatarUrl } = payload;
         setRooms((current) =>

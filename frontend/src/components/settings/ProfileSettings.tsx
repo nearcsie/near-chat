@@ -19,6 +19,7 @@ const AVATAR_UPLOAD_MAX_BYTES = 2 * 1024 * 1024;
 
 export default function ProfileSettings() {
   const router = useRouter();
+  const { t } = useTranslation();
   const { user, rooms, uiLanguage, handleUpdateProfile, handleUpdatePreferences, handleDeleteAccount, setHasUnsavedChanges, handleLogout } = useChat();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [personalUsername, setPersonalUsername] = useState("");
@@ -76,8 +77,6 @@ export default function ProfileSettings() {
       }
     };
   }, [avatarPreviewUrl]);
-
-  const { t } = useTranslation();
 
   const handleBack = () => {
     router.push(rooms[0] ? `/chat/${rooms[0].id}` : "/");
