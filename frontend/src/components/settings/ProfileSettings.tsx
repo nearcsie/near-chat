@@ -27,7 +27,14 @@ export default function ProfileSettings() {
   const [personalAvatarFile, setPersonalAvatarFile] = useState<File | null>(null);
   const [avatarPreviewUrl, setAvatarPreviewUrl] = useState<string | null>(null);
   const [personalBio, setPersonalBio] = useState("");
-  const [bioError, setBioError] = useState<string | null>(null);
+  const bioError = (() => {
+    if (personalBio.length > 100) {
+      return t("profile.bioTooLong");
+    } else if (personalBio.split(/\r?\n/).length > 8) {
+      return t("profile.bioTooManyLines");
+    }
+    return null;
+  })();
   const [profileFeedback, setProfileFeedback] = useState<SettingsFeedback | null>(null);
 
   // Password change modal states
@@ -115,16 +122,6 @@ export default function ProfileSettings() {
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [hasUnsavedChanges]);
-
-  useEffect(() => {
-    if (personalBio.length > 100) {
-      setBioError(t("profile.bioTooLong"));
-    } else if (personalBio.split(/\r?\n/).length > 8) {
-      setBioError(t("profile.bioTooManyLines"));
-    } else {
-      setBioError(null);
-    }
-  }, [personalBio, t]);
 
   const [shouldAlertEffect, setShouldAlertEffect] = useState(false);
 

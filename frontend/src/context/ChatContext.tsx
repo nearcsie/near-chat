@@ -1096,7 +1096,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     });
 
     const cleanupRoomUpdate = onRoomUpdate(socket, ({ type, roomId, data }) => {
-      const payload = data as any;
+      const payload = data as { userId?: string; name?: string; avatarUrl?: string };
       if (type === 'USER_UPDATED') {
         const { userId, name, avatarUrl } = payload;
         setRooms((current) =>
@@ -1559,7 +1559,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const saveGroupSettings = async (roomId: string, settings: GroupSettingsInput) => {
     if (!token) return;
 
-    const payload: any = {};
+    const payload: Record<string, unknown> = {};
     if (settings.name !== undefined) payload.name = settings.name;
     if (settings.requireApproval !== undefined) payload.requireApproval = settings.requireApproval;
     if (settings.viewHistory !== undefined) payload.viewHistory = settings.viewHistory;

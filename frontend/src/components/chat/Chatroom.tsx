@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useLayoutEffect, useRef } from "react";
+import React, { useState, useLayoutEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useChat, getAvatarForUser, Message } from "@/context/ChatContext";
 import { resolveAssetUrl } from "@/lib/assets";
