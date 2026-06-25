@@ -147,10 +147,10 @@ Testing database setup: Integration tests run against an ephemeral Postgres test
 ### Running TypeScript Type Checks
 ```bash
 # Backend Check
-docker compose exec backend ./node_modules/.bin/tsc --noEmit
+docker compose exec backend pnpm exec tsc --noEmit
 
 # Frontend Check
-docker compose exec frontend ./node_modules/.bin/tsc --noEmit
+docker compose exec frontend pnpm exec tsc --noEmit
 ```
 
 ### Running ESLint Checks

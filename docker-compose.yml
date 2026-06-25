@@ -67,3 +67,7 @@ services:
 volumes:
   pgdata:
   app_uploads:
+
+networks:
+  default:
+    name: near-chat_network

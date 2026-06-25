@@ -147,10 +147,10 @@ docker compose exec backend pnpm run migrate:up
 ### 執行 TypeScript 型別檢查
 ```bash
 # 後端檢查
-docker compose exec backend ./node_modules/.bin/tsc --noEmit
+docker compose exec backend pnpm exec tsc --noEmit
 
 # 前端檢查
-docker compose exec frontend ./node_modules/.bin/tsc --noEmit
+docker compose exec frontend pnpm exec tsc --noEmit
 ```
 
 ### 執行 ESLint 代碼品質與風格檢查
