@@ -34,10 +34,8 @@ export function makeFriendService(
         if (notifyUser) {
           notifyUser(targetUserId, 'friend_request', accepted);
         }
-        if (privateRooms?.createPrivate) {
-          await privateRooms.createPrivate(requesterId, targetUserId);
-        } else {
-          await privateRooms?.reopenPrivateRoom?.(requesterId, targetUserId);
+        if (privateRooms?.reopenPrivateRoom) {
+          await privateRooms.reopenPrivateRoom(requesterId, targetUserId);
         }
         return accepted;
       }
@@ -64,10 +62,8 @@ export function makeFriendService(
         if (!accepted) {
           throw new AppError(404, 'Friend request not found', 'NOT_FOUND');
         }
-        if (privateRooms?.createPrivate) {
-          await privateRooms.createPrivate(requesterId, userId);
-        } else {
-          await privateRooms?.reopenPrivateRoom?.(requesterId, userId);
+        if (privateRooms?.reopenPrivateRoom) {
+          await privateRooms.reopenPrivateRoom(requesterId, userId);
         }
         // Notify the original requester that their request was accepted so their
         // friend list updates in real-time without a page refresh.
@@ -110,6 +106,14 @@ export function makeFriendService(
     async removeFriend(userId: string, friendId: string) {
       await repo.deleteFriendship(userId, friendId);
       await privateRooms?.markPrivateReadOnly(userId, friendId);
+      if (notifyUser) {
+        notifyUser(friendId, 'friend_request', {
+          requesterId: userId,
+          addresseeId: friendId,
+          status: 'deleted' as any,
+          createdAt: new Date(),
+        });
+      }
     },
 
     async blockUser(userId: string, targetUserId: string) {
@@ -118,6 +122,14 @@ export function makeFriendService(
       }
       await repo.blockUser(userId, targetUserId);
       await privateRooms?.markPrivateReadOnly(userId, targetUserId);
+      if (notifyUser) {
+        notifyUser(targetUserId, 'friend_request', {
+          requesterId: userId,
+          addresseeId: targetUserId,
+          status: 'blocked' as any,
+          createdAt: new Date(),
+        });
+      }
       return { status: 'blocked' };
     },
 
@@ -125,6 +137,14 @@ export function makeFriendService(
       await repo.unblockUser(userId, blockedId);
       if (await repo.areFriends(userId, blockedId)) {
         await privateRooms?.reopenPrivateRoom?.(userId, blockedId);
+      }
+      if (notifyUser) {
+        notifyUser(blockedId, 'friend_request', {
+          requesterId: userId,
+          addresseeId: blockedId,
+          status: 'unblocked' as any,
+          createdAt: new Date(),
+        });
       }
     },
 

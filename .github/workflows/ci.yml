@@ -2,40 +2,98 @@ name: CI
 
 on:
   push:
-    branches: [main, dev, "feat/**", "fix/**"]
+    branches: [main, dev]
   pull_request:
+    branches: [main, dev]
+  workflow_dispatch:
 
 permissions:
   contents: read
+  security-events: write
 
 jobs:
+  frontend-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: 'pnpm'
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - run: pnpm --prefix frontend install --frozen-lockfile
+      - run: pnpm --prefix frontend run lint
+
   frontend-typecheck:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
-      - run: npm install -g pnpm
-      - run: pnpm --prefix frontend install
+          node-version: 24
+          cache: 'pnpm'
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - run: pnpm --prefix frontend install --frozen-lockfile
       - run: pnpm --prefix frontend exec tsc --noEmit
+
+  frontend-build:
+    if: github.ref == 'refs/heads/main' || github.base_ref == 'main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: 'pnpm'
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - run: pnpm --prefix frontend install --frozen-lockfile
+      - run: pnpm --prefix frontend run build
+
+  backend-build:
+    if: github.ref == 'refs/heads/main' || github.base_ref == 'main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: 'pnpm'
+          cache-dependency-path: backend/pnpm-lock.yaml
+      - run: pnpm --prefix backend install --frozen-lockfile
+      - run: pnpm --prefix backend run build
 
   unit-tests:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
-      - run: npm install -g pnpm
-      - run: pnpm --prefix backend install
+          node-version: 24
+          cache: 'pnpm'
+          cache-dependency-path: backend/pnpm-lock.yaml
+      - run: pnpm --prefix backend install --frozen-lockfile
       - run: pnpm --prefix backend run test:unit
 
   integration-tests:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:16
+        image: postgres:18-alpine
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -51,11 +109,15 @@ jobs:
       DATABASE_URL_TEST: postgresql://postgres:postgres@localhost:5433/ntnu_test
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
-      - run: npm install -g pnpm
-      - run: pnpm --prefix backend install
+          node-version: 24
+          cache: 'pnpm'
+          cache-dependency-path: backend/pnpm-lock.yaml
+      - run: pnpm --prefix backend install --frozen-lockfile
       - run: DATABASE_URL=$DATABASE_URL_TEST pnpm --prefix backend run migrate:up
       - run: pnpm --prefix backend run test:integration
 
@@ -63,7 +125,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:16
+        image: postgres:18-alpine
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -79,15 +141,20 @@ jobs:
       DATABASE_URL_TEST: postgresql://postgres:postgres@localhost:5433/ntnu_test
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
-      - run: npm install -g pnpm
-      - run: pnpm --prefix backend install
+          node-version: 24
+          cache: 'pnpm'
+          cache-dependency-path: backend/pnpm-lock.yaml
+      - run: pnpm --prefix backend install --frozen-lockfile
       - run: DATABASE_URL=$DATABASE_URL_TEST pnpm --prefix backend run migrate:up
       - run: pnpm --prefix backend run test:e2e
 
   security-scan:
+    if: github.ref == 'refs/heads/main' || github.base_ref == 'main'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -134,4 +201,3 @@ jobs:
         with:
           sarif_file: frontend.sarif
           category: frontend
-

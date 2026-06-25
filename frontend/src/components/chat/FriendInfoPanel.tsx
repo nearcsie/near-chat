@@ -33,6 +33,14 @@ export default function FriendInfoPanel({
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
 
+  const isSelf = userId === user.userId;
+  const [prevUserId, setPrevUserId] = useState(userId);
+  if (prevUserId !== userId) {
+    setPrevUserId(userId);
+    setProfile(null);
+    setLoading(!isSelf && !!userId);
+  }
+
   const handleCopyUid = (e: React.MouseEvent) => {
     e.stopPropagation();
     const uidToCopy = userId || friends.find((f) => f.name === friendName)?.id;
@@ -49,44 +57,42 @@ export default function FriendInfoPanel({
 
   // Fetch user profile if userId is provided
   useEffect(() => {
-    if (!userId) {
-      setProfile(null);
+    if (!userId || userId === user.userId) {
       return;
     }
 
-    if (userId === user.userId) {
-      setProfile({
-        userId: user.userId || "",
-        name: user.username,
-        bio: user.bio || "",
-        avatarUrl: user.avatar || "",
-      });
-      setLoading(false);
-      return;
-    }
-
-    setLoading(true);
+    let active = true;
     getUserProfile(userId)
       .then((res) => {
-        setProfile(res);
+        if (active) setProfile(res);
       })
       .catch((err) => {
         console.error("Failed to load user profile:", err);
       })
       .finally(() => {
-        setLoading(false);
+        if (active) setLoading(false);
       });
+
+    return () => {
+      active = false;
+    };
   }, [userId, user.userId]);
 
   // Fallback resolving
   const targetId = userId ?? friends.find((f) => f.name === friendName)?.id;
   const friend = targetId ? friends.find((f) => f.id === targetId) : undefined;
-  const isSelf = targetId === user.userId;
 
-  const displayName = profile?.name ?? friendName;
-  const avatar = profile?.avatarUrl ? resolveAssetUrl(profile.avatarUrl) : undefined;
+  const currentProfile = isSelf ? {
+    userId: user.userId || "",
+    name: user.username,
+    bio: user.bio || "",
+    avatarUrl: user.avatar || "",
+  } : profile;
+
+  const displayName = currentProfile?.name ?? friendName;
+  const avatar = currentProfile?.avatarUrl ? resolveAssetUrl(currentProfile.avatarUrl) : undefined;
   const status = friend ? friend.status : "offline";
-  const bio = profile?.bio || t("profileCard.defaultBio");
+  const bio = currentProfile?.bio || t("profileCard.defaultBio");
 
   const isEmergency = friend ? emergencySettings.contacts.some((c) => c.contactId === friend.id) : false;
 

@@ -42,7 +42,7 @@ To get details on database schemas, REST APIs, or local setups, refer to the fol
 - Refer to [docs/database-design.md](docs/database-design.md) for actual column structures, default values, and foreign keys.
 
 ### 2. API Contract Verification
-- When modifying controllers, routes, or Socket.IO handlers, you must align precisely with the types and payload schemas described in [docs/api-documentation.md](file:///home/blade520/dev/projects/1142-ntnu-db-app/docs/api-documentation.md).
+- When modifying controllers, routes, or Socket.IO handlers, you must align precisely with the types and payload schemas described in [docs/api-documentation.md](docs/api-documentation.md).
 - Any discrepancy will break the frontend client integration.
 
 ### 3. Local Development Workflows

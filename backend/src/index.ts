@@ -88,7 +88,16 @@ const userService = makeUserService(
   { signToken, generateRefreshToken, hashToken },
   async (contactId, payload) => {
     // Send a real chat message
-    const room = await roomRepo.findPrivateRoomByMembers(payload.userId, contactId);
+    let room = await roomRepo.findPrivateRoomByMembers(payload.userId, contactId);
+    if (!room) {
+      try {
+        const result = await roomService.createPrivate(payload.userId, contactId, true);
+        room = result.room as any;
+      } catch (err) {
+        console.error('Failed to auto-create private room for emergency contact:', err);
+      }
+    }
+
     if (room) {
       try {
         const message = await messageService.sendMessage(payload.userId, room.roomId, payload.message);
@@ -99,7 +108,7 @@ const userService = makeUserService(
         io.to(`user_${contactId}`).emit('emergency_alert', payload);
       }
     } else {
-      // Fallback to basic socket alert if they have no private room
+      // Fallback to basic socket alert if they have no private room and creation failed
       io.to(`user_${contactId}`).emit('emergency_alert', payload);
     }
   },
@@ -145,7 +154,7 @@ const friendService = makeFriendService(friendRepo, (userId, eventName, payload)
   io.to(`user_${userId}`).emit(eventName as any, payload);
 }, {
   markPrivateReadOnly: roomService.markPrivateReadOnly,
-  createPrivate: (userA: string, userB: string) => roomService.createPrivate(userA, userB),
+  createPrivate: (userA: string, userB: string, bypassFriendCheck?: boolean) => roomService.createPrivate(userA, userB, bypassFriendCheck),
   reopenPrivateRoom: roomService.reopenPrivateRoom,
 });
 const friendController = makeFriendController(friendService);

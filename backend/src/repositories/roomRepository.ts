@@ -23,6 +23,7 @@ function mapRowToRoomSummary(row: any): RoomSummary {
     unreadCount: Number(row.unread_count ?? 0),
     otherMemberId: row.other_member_id ?? undefined,
     lastReadId: row.last_read_id ?? undefined,
+    role: row.role ?? undefined,
   };
 
   if (row.latest_message_id) {
@@ -55,6 +56,7 @@ interface MemberRoomRow {
   latest_sender_id?: string | null;
   latest_content?: string | null;
   latest_sent_at?: Date | null;
+  role: string;
 }
 
 interface VisibleMessageRow {
@@ -106,6 +108,7 @@ export class RoomRepository implements IRoomRepository {
          cr.*,
          rm.join_time,
          rm.last_read_id,
+         rm.role,
          last_read.sent_at AS last_read_sent_at,
          latest.message_id AS latest_message_id,
          latest.sender_id AS latest_sender_id,

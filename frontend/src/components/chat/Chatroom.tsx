@@ -66,8 +66,9 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
     activeRoomNicknames,
     handleSendMessage,
     handleTyping,
-    handleUploadAttachment,
+    handleUploadAttachments,
     handleRecallMessage,
+    handleUpdateMessage,
     handleModifyNickname,
     handleLeaveOrBlock,
     getReadAvatarsForMessage,
@@ -81,19 +82,26 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
   const [mentionDraft, setMentionDraft] = useState<MentionDraft | null>(null);
   const [selectedMentionIndex, setSelectedMentionIndex] = useState(0);
   const [replyTarget, setReplyTarget] = useState<Message | null>(null);
+  const [editingMessage, setEditingMessage] = useState<Message | null>(null);
   const [isModifyNickOpen, setIsModifyNickOpen] = useState(false);
   const [nickInputValue, setNickInputValue] = useState("");
-  const [pendingAttachment, setPendingAttachment] = useState<File | null>(null);
+  const [pendingAttachments, setPendingAttachments] = useState<File[]>([]);
   const [isUploadingAttachment, setIsUploadingAttachment] = useState(false);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [msgSearchQuery, setMsgSearchQuery] = useState("");
   const messageEndRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const { t } = useTranslation();
+  const [isMultiLine, setIsMultiLine] = useState(false);
+  const maxMessageLength = Number(process.env.NEXT_PUBLIC_MAX_MESSAGE_LENGTH || 1000);
 
   const activeRoom = rooms.find((r) => r.id === roomId);
   const currentMember = activeRoom?.members?.find((m) => m.userId === user.userId || m.name === user.username);
-  const canManageMembers = currentMember?.role === "owner" || currentMember?.role === "admin";
   const isReadOnlyRoom = Boolean(activeRoom?.isArchived || activeRoom?.isReadonly);
+  const isPending = Boolean(currentMember?.role === "pending");
+  const isOwner = activeRoom?.type === "group" && currentMember?.role === "owner";
   const mentionQuery = mentionDraft?.query.toLowerCase() ?? "";
   const memberMentionCandidates: MentionCandidate[] = mentionDraft
     ? (activeRoom?.members ?? [])
@@ -132,6 +140,17 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
     setSelectedMentionIndex(0);
   }
 
+  const [prevRoomId, setPrevRoomId] = useState(roomId);
+  if (prevRoomId !== roomId) {
+    setPrevRoomId(roomId);
+    setIsSearchOpen(false);
+    setMsgSearchQuery("");
+    setPendingAttachments([]);
+    setIsUploadingAttachment(false);
+    setInputText("");
+    setReplyTarget(null);
+  }
+
   // Scroll to bottom when room or messages change
   const lastScrolledRoomIdRef = useRef<string | null>(null);
   useLayoutEffect(() => {
@@ -145,16 +164,33 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
     }
   }, [roomId, messages]);
 
-  useEffect(() => {
-    // Reset the staged attachment when switching rooms so a file selected in one
-    // chat is never sent from a different chat by accident.
-    const resetId = window.setTimeout(() => {
-      setPendingAttachment(null);
-      setIsUploadingAttachment(false);
-    }, 0);
 
-    return () => window.clearTimeout(resetId);
-  }, [roomId]);
+
+  // Auto-resize the textarea height based on content
+  useEffect(() => {
+    const textarea = inputRef.current;
+    if (!textarea) return;
+
+    textarea.style.height = "auto";
+    const maxHeight = window.innerHeight * 0.5;
+    if (textarea.scrollHeight > maxHeight) {
+      textarea.style.height = `${maxHeight}px`;
+      textarea.style.overflowY = "auto";
+    } else {
+      textarea.style.height = `${textarea.scrollHeight}px`;
+      textarea.style.overflowY = "hidden";
+    }
+    setIsMultiLine(inputText.includes("\n") || textarea.scrollHeight > 48);
+  }, [inputText]);
+  const handleToggleSearch = () => {
+    if (isSearchOpen) {
+      setIsSearchOpen(false);
+      setMsgSearchQuery("");
+    } else {
+      setIsSearchOpen(true);
+      requestAnimationFrame(() => searchInputRef.current?.focus());
+    }
+  };
 
   if (!activeRoom) {
     return (
@@ -167,16 +203,28 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isUploadingAttachment) return;
-    if (!inputText.trim() && !pendingAttachment) return;
+    if (!inputText.trim() && pendingAttachments.length === 0) return;
+
+    if (editingMessage) {
+      try {
+        handleUpdateMessage(activeRoom.id, editingMessage.id, inputText);
+        setEditingMessage(null);
+        setInputText("");
+      } catch (error) {
+        console.error(error);
+        alert(error instanceof Error ? error.message : "Failed to update message");
+      }
+      return;
+    }
 
     try {
-      if (pendingAttachment) {
+      if (pendingAttachments.length > 0) {
         setIsUploadingAttachment(true);
-        await handleUploadAttachment(activeRoom.id, pendingAttachment, {
+        await handleUploadAttachments(activeRoom.id, pendingAttachments, {
           content: inputText,
           replyTarget,
         });
-        setPendingAttachment(null);
+        setPendingAttachments([]);
       } else {
         handleSendMessage(activeRoom.id, inputText, replyTarget);
       }
@@ -197,15 +245,15 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
   };
 
   const handleFileSelected = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
+    const files = event.target.files ? Array.from(event.target.files) : [];
     event.target.value = "";
-    if (!file) return;
-    setPendingAttachment(file);
+    if (files.length === 0) return;
+    setPendingAttachments((prev) => [...prev, ...files]);
   };
 
-  const handleRemovePendingAttachment = () => {
+  const handleRemovePendingAttachment = (index: number) => {
     if (isUploadingAttachment) return;
-    setPendingAttachment(null);
+    setPendingAttachments((prev) => prev.filter((_, i) => i !== index));
   };
 
   const handleModifyNick = () => {
@@ -263,7 +311,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
     });
   };
 
-  const handleMentionKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+  const handleMentionKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement | HTMLInputElement>) => {
     if (!mentionDraft || mentionCandidates.length === 0) return;
 
     if (event.key === "ArrowDown") {
@@ -331,9 +379,14 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
           />
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-sm font-bold text-foreground truncate max-w-[200px]">
+              <h1 className="text-sm font-bold text-foreground truncate max-w-50">
                 {activeRoom.name}
               </h1>
+              {isPending && (
+                <Badge className="bg-amber-500/10 border-amber-500 text-amber-500 normal-case shrink-0">
+                  {t("chatroom.pendingApproval")}
+                </Badge>
+              )}
               {isReadOnlyRoom && <Badge variant="danger">{t("chatroom.readOnly")}</Badge>}
             </div>
             {activeRoom.type === "group" && (
@@ -348,7 +401,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
         {/* Header Action Elements */}
         <div className="flex items-center gap-2 md:gap-3 shrink-0">
           {/* Group Settings Button */}
-          {activeRoom.type === "group" && onOpenGroupSettings && (
+          {activeRoom.type === "group" && onOpenGroupSettings && !isPending && (
             <Button
               variant="secondary"
               onClick={onOpenGroupSettings}
@@ -358,6 +411,18 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
               <span className="hidden sm:inline">{t("chatroom.groupSettings")}</span>
             </Button>
           )}
+
+          <button
+            onClick={handleToggleSearch}
+            className={`p-1.5 border rounded-sm transition-colors cursor-pointer ${
+              isSearchOpen
+                ? "bg-primary/10 border-primary/30 text-primary"
+                : "border-border-secondary hover:border-border-primary text-text-muted hover:text-foreground"
+            }`}
+            title={isSearchOpen ? t("chatroom.closeSearch") : t("chatroom.searchMessages")}
+          >
+            <Icon icon="boxicons:search" className="h-4 w-4" />
+          </button>
 
           <Dropdown
             trigger={
@@ -373,11 +438,14 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
               {
                 label:
                   activeRoom.type === "group"
-                    ? t("chatroom.leaveGroup")
+                    ? isOwner
+                      ? t("chatroom.ownerCannotLeave")
+                      : t("chatroom.leaveGroup")
                     : activeRoom.isReadonly
                       ? t("chatroom.unblock")
                       : t("chatroom.blockContact"),
-                onClick: handleLeaveOrBlockAction,
+                onClick: isOwner ? undefined : handleLeaveOrBlockAction,
+                disabled: isOwner,
                 variant: activeRoom.isReadonly ? "default" : "danger",
               },
             ]}
@@ -397,10 +465,43 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
         </div>
       </div>
 
+      {/* Search Bar */}
+      {isSearchOpen && (
+        <div className="border-b border-border-primary bg-surface-card px-3 md:px-6 py-2 flex items-center gap-2 shrink-0">
+          <Icon icon="boxicons:search" className="h-4 w-4 text-text-muted shrink-0" />
+          <input
+            ref={searchInputRef}
+            type="text"
+            value={msgSearchQuery}
+            onChange={(e) => setMsgSearchQuery(e.target.value)}
+            placeholder="搜尋訊息..."
+            className="flex-1 bg-transparent text-sm text-foreground placeholder:text-text-muted outline-none"
+            onKeyDown={(e) => { if (e.key === "Escape") handleToggleSearch(); }}
+          />
+          {msgSearchQuery.trim() && (
+            <span className="text-[10px] text-text-muted font-mono shrink-0">
+              {messages.filter((m) => m.roomId === activeRoom.id && !m.content.startsWith("[System] ") && m.content.toLowerCase().includes(msgSearchQuery.toLowerCase().trim())).length} 筆結果
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={handleToggleSearch}
+            className="p-0.5 text-text-muted hover:text-foreground transition-colors cursor-pointer shrink-0"
+          >
+            <Icon icon="boxicons:x" className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
       {/* Chat Messages Area */}
       <div className="flex-1 overflow-y-auto p-3 md:p-6 flex flex-col gap-4">
         {messages
-          .filter((m) => m.roomId === activeRoom.id)
+          .filter((m) => {
+            if (m.roomId !== activeRoom.id) return false;
+            const q = msgSearchQuery.trim().toLowerCase();
+            if (!q) return true;
+            return !m.content.startsWith("[System] ") && m.content.toLowerCase().includes(q);
+          })
           .map((msg) => {
             if (msg.content.startsWith("[System] ")) {
               return (
@@ -433,6 +534,13 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
               }
             }
 
+            const currentMember = activeRoom.members?.find((m) => m.userId === user.userId);
+            const isRoomOwner = currentMember?.role === "owner";
+            const isRoomAdmin = currentMember?.role === "admin";
+            const isSenderOwnerOrAdmin = senderMember?.role === "owner" || senderMember?.role === "admin";
+            const canAdminRecall = isRoomAdmin && !isSenderOwnerOrAdmin;
+            const canRecall = Boolean(msg.isOutgoing) || isRoomOwner || canAdminRecall;
+
             return (
               <div
                 key={msg.id}
@@ -461,12 +569,21 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
                   messageId={msg.id}
                   onReply={() => setReplyTarget(msg)}
                   onRecall={() => handleRecallMessage(msg.id)}
-                  canRecall={Boolean(msg.isOutgoing) || canManageMembers}
+                  onEdit={() => {
+                    setEditingMessage(msg);
+                    setInputText(msg.content);
+                    requestAnimationFrame(() => {
+                      inputRef.current?.focus();
+                    });
+                  }}
+                  canRecall={canRecall}
+                  canEdit={msg.isOutgoing && !msg.isRecalled}
                   avatarName={
                     msg.isOutgoing
                       ? user.username
                       : senderMember?.name || msg.senderName
                   }
+                  searchHighlight={msgSearchQuery.trim() || undefined}
                 />
 
                 {!msg.isRecalled && (
@@ -477,7 +594,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
                     >
                       {t("chatroom.reply")}
                     </button>
-                    {(Boolean(msg.isOutgoing) || canManageMembers) && (
+                    {canRecall && (
                       <button
                         onClick={() => handleRecallMessage(msg.id)}
                         className="hover:text-danger transition-colors cursor-pointer"
@@ -523,7 +640,11 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
 
       {/* Input Box Area */}
       <div className="border-t border-border-primary bg-surface-card px-3 py-3 md:px-6 md:py-4 shrink-0">
-        {isReadOnlyRoom ? (
+        {isPending ? (
+          <div className="w-full text-center py-2.5 bg-amber-500/10 text-xs text-amber-600 font-medium select-none border border-dashed border-amber-500/30 rounded-sm">
+            {t("chatroom.pendingApprovalBanner")}
+          </div>
+        ) : isReadOnlyRoom ? (
           <div className="w-full text-center py-2.5 bg-surface-muted text-xs text-text-muted uppercase tracking-wider select-none border border-dashed border-border-secondary rounded-sm">
             {t("chatroom.readOnlyOrBlocked")}
           </div>
@@ -532,29 +653,38 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
             <input
               ref={fileInputRef}
               type="file"
+              multiple
               className="hidden"
               onChange={handleFileSelected}
             />
-            {pendingAttachment && (
-              <div className="bg-surface-muted border border-border-primary px-6 py-2 flex items-center justify-between text-xs select-none rounded-sm">
-                <div className="flex-1 min-w-0 border-l-2 border-primary pl-2">
-                  <span className="font-bold text-foreground block">{t("chatroom.attachmentPreview")}</span>
-                  <p className="text-foreground truncate mt-0.5">{pendingAttachment.name}</p>
-                  <p className="text-text-muted truncate mt-0.5 font-mono">
-                    {pendingAttachment.type || "application/octet-stream"} · {formatFileSize(pendingAttachment.size)}
-                  </p>
+            {pendingAttachments.length > 0 && (
+              <div className="bg-surface-muted border border-border-primary px-4 py-3 flex flex-col gap-2 select-none rounded-sm">
+                <span className="text-[10px] font-bold text-text-muted uppercase tracking-widest px-1">
+                  {t("chatroom.attachmentPreview")} ({pendingAttachments.length})
+                </span>
+                <div className="flex flex-col gap-2.5 max-h-40 overflow-y-auto pr-1">
+                  {pendingAttachments.map((file, idx) => (
+                    <div key={idx} className="flex items-center gap-3 text-xs border-l-2 border-primary pl-2.5 py-0.5">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-foreground truncate font-semibold">{file.name}</p>
+                        <p className="text-text-muted text-[10px] font-mono truncate mt-0.5">
+                          {file.type || "application/octet-stream"} · {formatFileSize(file.size)}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleRemovePendingAttachment(idx)}
+                        disabled={isUploadingAttachment}
+                        className="text-text-muted hover:text-foreground cursor-pointer p-0.5 border border-transparent hover:border-border-primary rounded-sm disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+                        title={t("chatroom.cancel")}
+                      >
+                        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                  ))}
                 </div>
-                <button
-                  type="button"
-                  onClick={handleRemovePendingAttachment}
-                  disabled={isUploadingAttachment}
-                  className="text-text-muted hover:text-foreground cursor-pointer p-0.5 border border-transparent hover:border-border-primary rounded-sm disabled:opacity-50 disabled:cursor-not-allowed shrink-0 ml-4"
-                  title={t("chatroom.cancel")}
-                >
-                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
               </div>
             )}
 
@@ -568,6 +698,23 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
                 <Icon icon="boxicons:paperclip" className="h-4 w-4" />
               </button>
               <div className="relative flex-1">
+                {editingMessage && (
+                  <div className="flex items-center justify-between bg-primary/10 border-l-4 border-primary px-3 py-1.5 text-xs text-foreground select-none rounded-sm mb-2">
+                    <span className="flex items-center gap-1.5 truncate">
+                      {t("chatroom.editingMessageBanner")}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingMessage(null);
+                        setInputText("");
+                      }}
+                      className="text-text-muted hover:text-foreground cursor-pointer font-bold px-1"
+                    >
+                      {t("chatroom.cancel")}
+                    </button>
+                  </div>
+                )}
                 {mentionCandidates.length > 0 && (
                   <div className="absolute bottom-full left-0 right-0 mb-2 max-h-48 overflow-y-auto rounded-sm border border-border-primary bg-surface-card shadow-lg">
                     {mentionCandidates.map((candidate) => (
@@ -591,11 +738,11 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
                   </div>
                 )}
 
-                <input
+                <textarea
                   ref={inputRef}
-                  type="text"
                   placeholder={t("chatroom.inputPlaceholder")}
                   value={inputText}
+                  rows={1}
                   onChange={(e) => {
                     const nextText = e.target.value;
                     const nextCursorPosition = e.target.selectionStart ?? nextText.length;
@@ -616,11 +763,31 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
                     handleTyping(activeRoom.id, false);
                     setMentionDraft(null);
                   }}
-                  onKeyDown={handleMentionKeyDown}
-                  className="w-full bg-surface-card border border-border-secondary hover:border-border-primary focus:border-primary focus:outline-none rounded-sm px-3.5 py-2.5 text-sm text-foreground transition-colors"
+                  onKeyDown={(e) => {
+                    if (mentionDraft && mentionCandidates.length > 0) {
+                      handleMentionKeyDown(e);
+                      if (e.defaultPrevented) return;
+                    }
+
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      void handleSend(e);
+                    } else if (e.key === "Escape" && editingMessage) {
+                      e.preventDefault();
+                      setEditingMessage(null);
+                      setInputText("");
+                    }
+                  }}
+                  maxLength={maxMessageLength}
+                  className="block w-full bg-surface-card border border-border-secondary hover:border-border-primary focus:border-primary focus:outline-none rounded-sm px-3.5 py-2.5 text-sm text-foreground transition-colors resize-none min-h-[38px] max-h-[50vh] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-zinc-300 hover:[&::-webkit-scrollbar-thumb]:bg-zinc-400 dark:[&::-webkit-scrollbar-thumb]:bg-zinc-700 dark:hover:[&::-webkit-scrollbar-thumb]:bg-zinc-600 [&::-webkit-scrollbar-thumb]:rounded-sm"
                 />
               </div>
 
+              {isMultiLine && (
+                <span className="text-[11px] text-text-muted shrink-0 select-none pb-2.5 w-[70px] text-right">
+                  ({inputText.length}/{maxMessageLength})
+                </span>
+              )}
               <Button
                 type="submit"
                 variant="primary"

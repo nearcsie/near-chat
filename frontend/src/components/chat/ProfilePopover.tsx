@@ -74,37 +74,48 @@ export default function ProfilePopover({
     };
   }, [onClose]);
 
+  const isSelf = userId === user.userId;
+  const [prevUserId, setPrevUserId] = useState(userId);
+  if (prevUserId !== userId) {
+    setPrevUserId(userId);
+    setProfile(null);
+    setLoading(!isSelf);
+  }
+
   // Fetch user profile on mount / userId change
   useEffect(() => {
     if (userId === user.userId) {
-      setProfile({
-        userId: user.userId || "",
-        name: user.username,
-        bio: user.bio || "",
-        avatarUrl: user.avatar || "",
-      });
-      setLoading(false);
       return;
     }
 
-    setLoading(true);
+    let active = true;
     getUserProfile(userId)
       .then((res) => {
-        setProfile(res);
+        if (active) setProfile(res);
       })
       .catch((err) => {
         console.error("Failed to load user profile:", err);
       })
       .finally(() => {
-        setLoading(false);
+        if (active) setLoading(false);
       });
+
+    return () => {
+      active = false;
+    };
   }, [userId, user.userId]);
 
-  const isSelf = userId === user.userId;
   const friend = friends.find((f) => f.id === userId);
 
-  const displayName = profile?.name ?? username;
-  const displayAvatar = profile?.avatarUrl ? resolveAssetUrl(profile.avatarUrl) : undefined;
+  const currentProfile = isSelf ? {
+    userId: user.userId || "",
+    name: user.username,
+    bio: user.bio || "",
+    avatarUrl: user.avatar || "",
+  } : profile;
+
+  const displayName = currentProfile?.name ?? username;
+  const displayAvatar = currentProfile?.avatarUrl ? resolveAssetUrl(currentProfile.avatarUrl) : undefined;
   const status = isSelf ? "online" : friend ? friend.status : "offline";
   const bio = isSelf
     ? user.bio || t("profileCard.defaultBio")
@@ -220,7 +231,7 @@ export default function ProfilePopover({
               <span className="text-[9px] font-bold text-text-muted uppercase tracking-widest block mb-0.5">
                 {t("profileCard.bio")}
               </span>
-              <p className="text-[11px] text-text-muted leading-relaxed truncate-3-lines whitespace-pre-wrap break-words">{bio}</p>
+              <p className="text-[11px] text-text-muted leading-relaxed whitespace-pre-wrap break-words">{bio}</p>
             </div>
 
             {friend && (

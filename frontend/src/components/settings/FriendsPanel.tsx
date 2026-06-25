@@ -12,6 +12,7 @@ import { searchUsers, sendFriendRequest as sendFriendRequestApi } from "@/lib/ap
 import { getActiveAccessToken } from "@/lib/api";
 import type { SearchUserResult } from "@shared/types";
 import { resolveAssetUrl } from "@/lib/assets";
+import { Modal } from "@/components/ui/Modal";
 
 type Tab = "friends" | "incoming" | "outgoing" | "blocked" | "add";
 type SearchMode = "name" | "userId" | "email";
@@ -35,6 +36,25 @@ export default function FriendsPanel() {
 
   // Friends tab state
   const [searchText, setSearchText] = useState("");
+  const [blockConfirmOpen, setBlockConfirmOpen] = useState(false);
+  const [friendToBlock, setFriendToBlock] = useState<Friend | null>(null);
+
+  const handleBlockClick = (friend: Friend) => {
+    if (friend.isEmergencyContact) {
+      setFriendToBlock(friend);
+      setBlockConfirmOpen(true);
+    } else {
+      void blockFriend(friend.id).catch(console.error);
+    }
+  };
+
+  const handleBlockConfirm = () => {
+    if (friendToBlock) {
+      void blockFriend(friendToBlock.id).catch(console.error);
+    }
+    setBlockConfirmOpen(false);
+    setFriendToBlock(null);
+  };
 
   // Add friend tab state
   const [searchMode, setSearchMode] = useState<SearchMode>("name");
@@ -202,7 +222,7 @@ export default function FriendsPanel() {
                       type="button"
                       variant="secondary"
                       className="text-xs py-1 px-2 text-red-600"
-                      onClick={() => void blockFriend(friend.id).catch(console.error)}
+                      onClick={() => handleBlockClick(friend)}
                     >
                       {t("friends.block")}
                     </Button>
@@ -459,6 +479,43 @@ export default function FriendsPanel() {
           </div>
         )}
       </div>
+
+      {blockConfirmOpen && (
+        <Modal
+          isOpen={blockConfirmOpen}
+          onClose={() => {
+            setBlockConfirmOpen(false);
+            setFriendToBlock(null);
+          }}
+          title={t("friends.blockConfirmTitle")}
+        >
+          <div className="flex flex-col gap-4">
+            <p className="text-sm text-text-muted">
+              {t("friends.blockEmergencyWarning")}
+            </p>
+            <div className="flex justify-end gap-2.5">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => {
+                  setBlockConfirmOpen(false);
+                  setFriendToBlock(null);
+                }}
+              >
+                {t("friends.cancel")}
+              </Button>
+              <Button
+                type="button"
+                variant="primary"
+                className="bg-red-600 hover:bg-red-700 active:bg-red-800 border-none"
+                onClick={handleBlockConfirm}
+              >
+                {t("friends.block")}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

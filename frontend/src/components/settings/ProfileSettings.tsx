@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import { UiLanguage, useChat, PreferencesInput } from "@/context/ChatContext";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
@@ -18,8 +17,8 @@ const ACCEPTED_AVATAR_TYPES = ["image/png", "image/jpeg", "image/gif", "image/we
 const AVATAR_UPLOAD_MAX_BYTES = 2 * 1024 * 1024;
 
 export default function ProfileSettings() {
-  const router = useRouter();
-  const { user, rooms, uiLanguage, handleUpdateProfile, handleUpdatePreferences, handleDeleteAccount, setHasUnsavedChanges, handleLogout } = useChat();
+  const { t } = useTranslation();
+  const { user, uiLanguage, handleUpdateProfile, handleUpdatePreferences, handleDeleteAccount, setHasUnsavedChanges, handleLogout } = useChat();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [personalUsername, setPersonalUsername] = useState("");
   const [personalEmail, setPersonalEmail] = useState("");
@@ -27,6 +26,14 @@ export default function ProfileSettings() {
   const [personalAvatarFile, setPersonalAvatarFile] = useState<File | null>(null);
   const [avatarPreviewUrl, setAvatarPreviewUrl] = useState<string | null>(null);
   const [personalBio, setPersonalBio] = useState("");
+  const bioError = (() => {
+    if (personalBio.length > 100) {
+      return t("profile.bioTooLong");
+    } else if (personalBio.split(/\r?\n/).length > 8) {
+      return t("profile.bioTooManyLines");
+    }
+    return null;
+  })();
   const [profileFeedback, setProfileFeedback] = useState<SettingsFeedback | null>(null);
 
   // Password change modal states
@@ -69,25 +76,11 @@ export default function ProfileSettings() {
     };
   }, [avatarPreviewUrl]);
 
-  const { t } = useTranslation();
-
-  const handleBack = () => {
-    router.push(rooms[0] ? `/chat/${rooms[0].id}` : "/");
-  };
-
   const hasUnsavedChanges = 
     personalUsername !== user.username ||
     personalEmail !== user.email ||
     personalBio !== (user.bio || "") ||
     personalAvatarFile !== null;
-
-  const handleBackAttempt = () => {
-    if (hasUnsavedChanges) {
-      const confirmLeave = window.confirm(t("profile.unsavedChangesConfirm") || "有變更尚未儲存，確定要離開嗎？");
-      if (!confirmLeave) return;
-    }
-    handleBack();
-  };
 
   const handleCancel = () => {
     setPersonalUsername(user.username);
@@ -183,6 +176,7 @@ export default function ProfileSettings() {
 
   const handleProfileSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (bioError) return;
     setProfileFeedback(null);
 
     try {
@@ -312,6 +306,7 @@ export default function ProfileSettings() {
             label={t("profile.bio")} 
             value={personalBio} 
             onChange={(event) => setPersonalBio(event.target.value)} 
+            error={bioError || undefined}
           />
         </div>
 
@@ -327,7 +322,7 @@ export default function ProfileSettings() {
           <Button type="button" variant="secondary" onClick={handleCancel}>
             {t("profile.cancel")}
           </Button>
-          <Button type="submit" variant="primary">
+          <Button type="submit" variant="primary" disabled={!!bioError}>
             {t("profile.saveProfile")}
           </Button>
         </div>

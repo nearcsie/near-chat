@@ -61,7 +61,7 @@ const toMyProfile = (
 });
 
 const toUserSettings = (
-  user: Pick<User, 'warningEnabled' | 'warningDays' | 'demoWarningEnabled' | 'demoWarningSeconds' | 'language' | 'theme' | 'notifyDesktop' | 'notifySound'>,
+  user: Pick<User, 'warningEnabled' | 'warningDays' | 'demoWarningEnabled' | 'demoWarningSeconds' | 'language' | 'theme' | 'notifyDesktop' | 'notifySound' | 'roomOrder'>,
 ): UserSettings => ({
   warningEnabled: user.warningEnabled,
   warningDays: user.warningDays,
@@ -71,6 +71,7 @@ const toUserSettings = (
   theme: user.theme,
   notifyDesktop: user.notifyDesktop,
   notifySound: user.notifySound,
+  roomOrder: user.roomOrder,
 });
 
 export const makeUserService = (

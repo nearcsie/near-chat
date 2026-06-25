@@ -50,6 +50,15 @@ describe('user validation schemas', () => {
     expect(updateMeSchema.safeParse({ warningDays: 0 }).success).toBe(false);
   });
 
+  it('validates bio constraints in updateMeSchema', () => {
+    expect(updateMeSchema.safeParse({ bio: 'Hello world' }).success).toBe(true);
+    expect(updateMeSchema.safeParse({ bio: '' }).success).toBe(true);
+    expect(updateMeSchema.safeParse({ bio: '1\n2\n3\n4\n5\n6\n7\n8' }).success).toBe(true);
+    expect(updateMeSchema.safeParse({ bio: '1\n2\n3\n4\n5\n6\n7\n8\n9' }).success).toBe(false);
+    expect(updateMeSchema.safeParse({ bio: 'a'.repeat(101) }).success).toBe(false);
+    expect(updateMeSchema.safeParse({ bio: 'a'.repeat(100) }).success).toBe(true);
+  });
+
   it('requires at least one valid settings field', () => {
     expect(updateSettingsSchema.parse({ warningDays: 0 })).toEqual({ warningDays: 0 });
     expect(updateSettingsSchema.parse({ language: ' zh-TW ' })).toEqual({ language: 'zh-TW' });

@@ -5,4 +5,5 @@ export interface IMessageRepository {
   findByRoom(roomId: string, opts: { beforeId?: string; limit: number; after?: Date }): Promise<MessageWithSender[]>;
   create(data: Pick<Message, 'roomId' | 'senderId' | 'content' | 'replyToId'> & { mentions?: string[], attachmentIds?: string[] }): Promise<MessageWithSender>;
   markRecalled(messageId: string): Promise<MessageWithSender>;
+  update(messageId: string, content: string, mentions?: string[]): Promise<MessageWithSender>;
 }

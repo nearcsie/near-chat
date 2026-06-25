@@ -331,6 +331,49 @@ describe('messageService', () => {
     expect(result).toBe(recalled);
   });
 
+  it('recallMessage allows room admin to recall member messages', async () => {
+    const recalled: MessageWithSender = { ...messageWithSender, isRecalled: true };
+    roomRepo.findById.mockResolvedValue(room);
+    roomMemberRepo.findMember.mockImplementation(async (roomId, uid) => {
+      if (uid === 'user-1') return { ...member, role: 'admin' };
+      if (uid === 'user-2') return { ...member, role: 'member' };
+      return null;
+    });
+    messageRepo.findById.mockResolvedValue({ ...message, senderId: 'user-2' });
+    messageRepo.markRecalled.mockResolvedValue(recalled);
+
+    const result = await messageService.recallMessage('user-1', 'room-1', 'message-1');
+
+    expect(messageRepo.markRecalled).toHaveBeenCalledWith('message-1');
+    expect(result).toBe(recalled);
+  });
+
+  it('recallMessage rejects admins who attempt to recall owner messages', async () => {
+    roomRepo.findById.mockResolvedValue(room);
+    roomMemberRepo.findMember.mockImplementation(async (roomId, uid) => {
+      if (uid === 'user-1') return { ...member, role: 'admin' };
+      if (uid === 'user-2') return { ...member, role: 'owner' };
+      return null;
+    });
+    messageRepo.findById.mockResolvedValue({ ...message, senderId: 'user-2' });
+
+    await expect(messageService.recallMessage('user-1', 'room-1', 'message-1')).rejects.toThrow(ForbiddenError);
+    expect(messageRepo.markRecalled).not.toHaveBeenCalled();
+  });
+
+  it('recallMessage rejects admins who attempt to recall other admin messages', async () => {
+    roomRepo.findById.mockResolvedValue(room);
+    roomMemberRepo.findMember.mockImplementation(async (roomId, uid) => {
+      if (uid === 'user-1') return { ...member, role: 'admin' };
+      if (uid === 'user-2') return { ...member, role: 'admin' };
+      return null;
+    });
+    messageRepo.findById.mockResolvedValue({ ...message, senderId: 'user-2' });
+
+    await expect(messageService.recallMessage('user-1', 'room-1', 'message-1')).rejects.toThrow(ForbiddenError);
+    expect(messageRepo.markRecalled).not.toHaveBeenCalled();
+  });
+
   it('recallMessage throws NotFoundError when message does not exist', async () => {
     roomRepo.findById.mockResolvedValue(room);
     roomMemberRepo.findMember.mockResolvedValue(member);

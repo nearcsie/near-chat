@@ -28,6 +28,7 @@ export default function ChatList({ searchQuery }: ChatListProps) {
     handleDeleteFolder,
     handleRenameFolder,
     handleCategorizeRoom,
+    updateRoomSorting,
   } = useChat();
 
   const activeRoomId = params?.chatId as string | undefined;
@@ -39,6 +40,18 @@ export default function ChatList({ searchQuery }: ChatListProps) {
   const [dragOverUncategorized, setDragOverUncategorized] = React.useState(false);
   const [isRootDropActive, setIsRootDropActive] = React.useState(false);
   const [isUncategorizedCollapsed, setIsUncategorizedCollapsed] = React.useState(false);
+  const [dropTargetRoomId, setDropTargetRoomId] = React.useState<string | null>(null);
+  const [dropPlacement, setDropPlacement] = React.useState<"above" | "below" | null>(null);
+  const [roomOrderMap, setRoomOrderMap] = React.useState<Record<string, string[]>>(() => {
+    if (user?.roomOrder) {
+      return user.roomOrder;
+    }
+    try {
+      const saved = typeof window !== "undefined" ? localStorage.getItem("near:roomOrder") : null;
+      if (saved) return JSON.parse(saved) as Record<string, string[]>;
+    } catch {}
+    return {};
+  });
   const [contextMenu, setContextMenu] = React.useState<{
     folderId: string;
     folderName: string;
@@ -46,16 +59,13 @@ export default function ChatList({ searchQuery }: ChatListProps) {
     y: number;
   } | null>(null);
 
-  // 刪除確認 Modal 狀態
   const [deleteConfirmOpen, setDeleteConfirmOpen] = React.useState(false);
   const [deleteTargetFolderId, setDeleteTargetFolderId] = React.useState<string | null>(null);
 
-  // 更名 Modal 狀態
   const [renameOpen, setRenameOpen] = React.useState(false);
   const [renameTargetFolderId, setRenameTargetFolderId] = React.useState<string | null>(null);
   const [renameValue, setRenameValue] = React.useState("");
 
-  // 通用錯誤警告 Alert Modal 狀態
   const [alertOpen, setAlertOpen] = React.useState(false);
   const [alertTitle, setAlertTitle] = React.useState("");
   const [alertMessage, setAlertMessage] = React.useState("");
@@ -65,6 +75,65 @@ export default function ChatList({ searchQuery }: ChatListProps) {
     window.addEventListener("click", handleCloseMenu);
     return () => window.removeEventListener("click", handleCloseMenu);
   }, []);
+
+  const [prevRoomOrder, setPrevRoomOrder] = React.useState(user?.roomOrder);
+  if (prevRoomOrder !== user?.roomOrder) {
+    setPrevRoomOrder(user?.roomOrder);
+    if (user?.roomOrder) {
+      setRoomOrderMap(user.roomOrder);
+    } else {
+      try {
+        const saved = typeof window !== "undefined" ? localStorage.getItem("near:roomOrder") : null;
+        if (saved) {
+          setRoomOrderMap(JSON.parse(saved) as Record<string, string[]>);
+        } else {
+          setRoomOrderMap({});
+        }
+      } catch {
+        setRoomOrderMap({});
+      }
+    }
+  }
+
+  const applyRoomOrder = (sectionRooms: ChatRoom[], sectionKey: string): ChatRoom[] => {
+    const order = roomOrderMap[sectionKey];
+    if (!order || order.length === 0) return sectionRooms;
+    const posMap = new Map(order.map((id, i) => [id, i]));
+    return [...sectionRooms].sort((a, b) => {
+      const pa = posMap.has(a.id) ? (posMap.get(a.id) as number) : sectionRooms.length;
+      const pb = posMap.has(b.id) ? (posMap.get(b.id) as number) : sectionRooms.length;
+      return pa - pb;
+    });
+  };
+
+  const saveRoomOrder = (sectionKey: string, orderedIds: string[]) => {
+    const next = { ...roomOrderMap, [sectionKey]: orderedIds };
+    setRoomOrderMap(next);
+    try {
+      localStorage.setItem("near:roomOrder", JSON.stringify(next));
+    } catch {}
+    void updateRoomSorting(next);
+  };
+
+  const handleRoomDropOnRoom = (sectionKey: string, draggedId: string, targetId: string, placement: "above" | "below") => {
+    if (draggedId === targetId) return;
+    const sectionRooms = sectionKey === "root"
+      ? rooms.filter((r) => !r.folderId && r.id !== draggedId)
+      : rooms.filter((r) => r.folderId === sectionKey && r.id !== draggedId);
+    const ordered = applyRoomOrder(sectionRooms, sectionKey);
+    const ids = ordered.map((r) => r.id);
+    
+    let insertIdx = ids.indexOf(targetId);
+    if (insertIdx !== -1) {
+      if (placement === "below") {
+        insertIdx += 1;
+      }
+      ids.splice(insertIdx, 0, draggedId);
+    } else {
+      ids.push(draggedId);
+    }
+    saveRoomOrder(sectionKey, ids);
+  };
 
   const handleRenameFolderClick = (folderId: string, currentName: string) => {
     setRenameTargetFolderId(folderId);
@@ -77,14 +146,14 @@ export default function ChatList({ searchQuery }: ChatListProps) {
     if (!renameTargetFolderId) return;
     const trimmed = renameValue.trim();
     if (!trimmed) {
-      setAlertTitle("錯誤");
-      setAlertMessage("資料夾名稱不能為空");
+      setAlertTitle(t("folders.errorTitle"));
+      setAlertMessage(t("folders.nameCannotBeEmpty"));
       setAlertOpen(true);
       return;
     }
     if (trimmed.length > 50) {
-      setAlertTitle("錯誤");
-      setAlertMessage("資料夾名稱長度不能超過 50 個字元");
+      setAlertTitle(t("folders.errorTitle"));
+      setAlertMessage(t("folders.nameTooLong"));
       setAlertOpen(true);
       return;
     }
@@ -92,8 +161,8 @@ export default function ChatList({ searchQuery }: ChatListProps) {
       await handleRenameFolder(renameTargetFolderId, trimmed);
       setRenameOpen(false);
     } catch (error) {
-      setAlertTitle("錯誤");
-      setAlertMessage(error instanceof Error ? error.message : "修改資料夾名稱失敗");
+      setAlertTitle(t("folders.errorTitle"));
+      setAlertMessage(error instanceof Error ? error.message : (t("folders.renameFailed")));
       setAlertOpen(true);
     }
   };
@@ -103,6 +172,8 @@ export default function ChatList({ searchQuery }: ChatListProps) {
     setDragOverFolderId(null);
     setDragOverUncategorized(false);
     setIsRootDropActive(false);
+    setDropTargetRoomId(null);
+    setDropPlacement(null);
   };
 
   const getDroppedRoomId = (event: React.DragEvent) =>
@@ -179,8 +250,8 @@ export default function ChatList({ searchQuery }: ChatListProps) {
       setDeleteConfirmOpen(false);
     } catch (error) {
       console.error(error);
-      setAlertTitle("錯誤");
-      setAlertMessage(error instanceof Error ? error.message : "刪除資料夾失敗");
+      setAlertTitle(t("folders.errorTitle"));
+      setAlertMessage(error instanceof Error ? error.message : (t("folders.deleteFailed")));
       setAlertOpen(true);
     }
   };
@@ -236,36 +307,64 @@ export default function ChatList({ searchQuery }: ChatListProps) {
               onDragLeave={() => setIsRootDropActive(false)}
               onDrop={handleDropToRoot}
               className={`pl-4 border-l border-border-secondary/40 ml-5 transition-colors ${
-                isRootDropActive ? "bg-primary/5 outline outline-1 outline-primary/40 outline-offset-[-1px]" : ""
+                isRootDropActive ? "bg-primary/5 outline-1 outline-primary/40 outline-offset-1" : ""
               }`}
             >
-              {rootRooms.map((room) => (
-                <RoomItem
-                  key={room.id}
-                  room={room}
-                  isActive={room.id === activeRoomId && isChatPage}
-                  onClick={() => router.push(`/chat/${room.id}`)}
-                  onDragStart={(event) => handleRoomDragStart(event, room.id)}
-                  onDragEnd={resetDragState}
-                  avatarSrc={(() => {
-                    if (room.avatarUrl) {
-                      return resolveAssetUrl(room.avatarUrl);
-                    }
-                    if (room.type === "msg") {
-                      const otherMember = room.members?.find((m) => m.userId !== user.userId);
-                      if (otherMember?.avatarUrl) {
-                        return resolveAssetUrl(otherMember.avatarUrl);
+              {applyRoomOrder(rootRooms, "root").map((room) => {
+                const isPending = room.myRole === "pending";
+                return (
+                  <RoomItem
+                    key={room.id}
+                    room={room}
+                    isActive={room.id === activeRoomId && isChatPage}
+                    isDropTarget={dropTargetRoomId === room.id}
+                    dropPlacement={dropTargetRoomId === room.id ? dropPlacement : null}
+                    onClick={() => router.push(`/chat/${room.id}`)}
+                    onDragStart={(event) => handleRoomDragStart(event, room.id)}
+                    onDragEnd={resetDragState}
+                    onDragOver={(event) => {
+                      if (!draggedRoomId || draggedRoomId === room.id) return;
+                      event.preventDefault();
+                      event.stopPropagation();
+                      const rect = event.currentTarget.getBoundingClientRect();
+                      const relativeY = event.clientY - rect.top;
+                      const placement = relativeY < rect.height / 2 ? "above" : "below";
+                      setDropTargetRoomId(room.id);
+                      setDropPlacement(placement);
+                    }}
+                    onDrop={async (event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      const drId = getDroppedRoomId(event);
+                      if (!drId || drId === room.id) { resetDragState(); return; }
+                      const draggedRoom = rooms.find((r) => r.id === drId);
+                      if (draggedRoom && draggedRoom.folderId) {
+                        await handleCategorizeRoom(drId, null);
                       }
-                      const friend = friends.find((f) => f.id === room.otherMemberId || f.name === room.name);
-                      if (friend?.avatarUrl) {
-                        return resolveAssetUrl(friend.avatarUrl);
+                      handleRoomDropOnRoom("root", drId, room.id, dropPlacement || "above");
+                      resetDragState();
+                    }}
+                    avatarSrc={(() => {
+                      if (room.avatarUrl) {
+                        return resolveAssetUrl(room.avatarUrl);
                       }
-                    }
-                    return getAvatarForUser(room.name, user.avatar, user.username);
-                  })()}
-                  noMessagesText={t("sidebar.noMessages")}
-                />
-              ))}
+                      if (room.type === "msg") {
+                        const otherMember = room.members?.find((m) => m.userId !== user.userId);
+                        if (otherMember?.avatarUrl) {
+                          return resolveAssetUrl(otherMember.avatarUrl);
+                        }
+                        const friend = friends.find((f) => f.id === room.otherMemberId || f.name === room.name);
+                        if (friend?.avatarUrl) {
+                          return resolveAssetUrl(friend.avatarUrl);
+                        }
+                      }
+                      return getAvatarForUser(room.name, user.avatar, user.username);
+                    })()}
+                    noMessagesText={t("sidebar.noMessages")}
+                    isPending={isPending}
+                  />
+                );
+              })}
             </div>
           )}
         </div>
@@ -335,33 +434,61 @@ export default function ChatList({ searchQuery }: ChatListProps) {
 
                 {!folder.collapsed && (
                   <div className="pl-4 border-l border-border-secondary/40 ml-5">
-                    {folderRooms.map((room) => (
-                      <RoomItem
-                        key={room.id}
-                        room={room}
-                        isActive={room.id === activeRoomId && isChatPage}
-                        onClick={() => router.push(`/chat/${room.id}`)}
-                        onDragStart={(event) => handleRoomDragStart(event, room.id)}
-                        onDragEnd={resetDragState}
-                        avatarSrc={(() => {
-                          if (room.avatarUrl) {
-                            return resolveAssetUrl(room.avatarUrl);
-                          }
-                          if (room.type === "msg") {
-                            const otherMember = room.members?.find((m) => m.userId !== user.userId);
-                            if (otherMember?.avatarUrl) {
-                              return resolveAssetUrl(otherMember.avatarUrl);
+                    {applyRoomOrder(folderRooms, folder.id).map((room) => {
+                      const isPending = room.myRole === "pending";
+                      return (
+                        <RoomItem
+                          key={room.id}
+                          room={room}
+                          isActive={room.id === activeRoomId && isChatPage}
+                          isDropTarget={dropTargetRoomId === room.id}
+                          dropPlacement={dropTargetRoomId === room.id ? dropPlacement : null}
+                          onClick={() => router.push(`/chat/${room.id}`)}
+                          onDragStart={(event) => handleRoomDragStart(event, room.id)}
+                          onDragEnd={resetDragState}
+                          onDragOver={(event) => {
+                            if (!draggedRoomId || draggedRoomId === room.id) return;
+                            event.preventDefault();
+                            event.stopPropagation();
+                            const rect = event.currentTarget.getBoundingClientRect();
+                            const relativeY = event.clientY - rect.top;
+                            const placement = relativeY < rect.height / 2 ? "above" : "below";
+                            setDropTargetRoomId(room.id);
+                            setDropPlacement(placement);
+                          }}
+                          onDrop={async (event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            const drId = getDroppedRoomId(event);
+                            if (!drId || drId === room.id) { resetDragState(); return; }
+                            const draggedRoom = rooms.find((r) => r.id === drId);
+                            if (draggedRoom && draggedRoom.folderId !== folder.id) {
+                              await handleCategorizeRoom(drId, folder.id);
                             }
-                            const friend = friends.find((f) => f.id === room.otherMemberId || f.name === room.name);
-                            if (friend?.avatarUrl) {
-                              return resolveAssetUrl(friend.avatarUrl);
+                            handleRoomDropOnRoom(folder.id, drId, room.id, dropPlacement || "above");
+                            resetDragState();
+                          }}
+                          avatarSrc={(() => {
+                            if (room.avatarUrl) {
+                              return resolveAssetUrl(room.avatarUrl);
                             }
-                          }
-                          return getAvatarForUser(room.name, user.avatar, user.username);
-                        })()}
-                        noMessagesText={t("sidebar.noMessages")}
-                      />
-                    ))}
+                            if (room.type === "msg") {
+                              const otherMember = room.members?.find((m) => m.userId !== user.userId);
+                              if (otherMember?.avatarUrl) {
+                                return resolveAssetUrl(otherMember.avatarUrl);
+                              }
+                              const friend = friends.find((f) => f.id === room.otherMemberId || f.name === room.name);
+                              if (friend?.avatarUrl) {
+                                return resolveAssetUrl(friend.avatarUrl);
+                              }
+                            }
+                            return getAvatarForUser(room.name, user.avatar, user.username);
+                          })()}
+                          noMessagesText={t("sidebar.noMessages")}
+                          isPending={isPending}
+                        />
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -387,7 +514,7 @@ export default function ChatList({ searchQuery }: ChatListProps) {
             }}
             className="w-full text-left px-3 py-1.5 hover:bg-surface-muted text-foreground transition-colors font-normal text-xs block"
           >
-            修改資料夾名稱
+            {t("folders.rename")}
           </button>
           <button
             type="button"
@@ -397,7 +524,7 @@ export default function ChatList({ searchQuery }: ChatListProps) {
             }}
             className="w-full text-left px-3 py-1.5 hover:bg-surface-muted text-red-600 transition-colors font-normal text-xs block"
           >
-            刪除資料夾
+            {t("folders.delete")}
           </button>
         </div>
       )}
@@ -406,11 +533,11 @@ export default function ChatList({ searchQuery }: ChatListProps) {
         <Modal
           isOpen={deleteConfirmOpen}
           onClose={() => setDeleteConfirmOpen(false)}
-          title="確認刪除資料夾"
+          title={t("folders.confirmDelete")}
         >
           <div className="flex flex-col gap-4">
             <p className="text-sm text-text-muted">
-              確定要刪除此資料夾嗎？資料夾內的聊天室將會移回「未分類」。
+              {t("folders.deleteConfirmDesc")}
             </p>
             <div className="flex justify-end gap-2.5">
               <Button
@@ -418,7 +545,7 @@ export default function ChatList({ searchQuery }: ChatListProps) {
                 variant="secondary"
                 onClick={() => setDeleteConfirmOpen(false)}
               >
-                取消
+                {t("folders.cancel")}
               </Button>
               <Button
                 type="button"
@@ -426,7 +553,7 @@ export default function ChatList({ searchQuery }: ChatListProps) {
                 className="bg-red-600 hover:bg-red-700 active:bg-red-800 border-none"
                 onClick={handleDeleteConfirm}
               >
-                刪除
+                {t("folders.deleteAction")}
               </Button>
             </div>
           </div>
@@ -437,11 +564,11 @@ export default function ChatList({ searchQuery }: ChatListProps) {
         <Modal
           isOpen={renameOpen}
           onClose={() => setRenameOpen(false)}
-          title="修改資料夾名稱"
+          title={t("folders.rename")}
         >
           <form onSubmit={handleRenameSubmit} className="flex flex-col gap-4">
             <Input
-              label="資料夾名稱"
+              label={t("folders.nameLabel")}
               type="text"
               value={renameValue}
               onChange={(e) => setRenameValue(e.target.value)}
@@ -454,13 +581,13 @@ export default function ChatList({ searchQuery }: ChatListProps) {
                 variant="secondary"
                 onClick={() => setRenameOpen(false)}
               >
-                取消
+                {t("folders.cancel")}
               </Button>
               <Button
                 type="submit"
                 variant="primary"
               >
-                保存
+                {t("folders.save")}
               </Button>
             </div>
           </form>
@@ -481,7 +608,7 @@ export default function ChatList({ searchQuery }: ChatListProps) {
                 variant="primary"
                 onClick={() => setAlertOpen(false)}
               >
-                確定
+                {t("folders.confirmAction")}
               </Button>
             </div>
           </div>
@@ -502,26 +629,47 @@ function SectionLabel({ label }: { label: string }) {
 function RoomItem({
   room,
   isActive,
+  isDropTarget,
+  dropPlacement,
   onClick,
   onDragStart,
   onDragEnd,
+  onDragOver,
+  onDrop,
   avatarSrc,
   noMessagesText,
+  isPending,
 }: {
   room: ChatRoom;
   isActive: boolean;
+  isDropTarget?: boolean;
+  dropPlacement?: "above" | "below" | null;
   onClick: () => void;
   onDragStart: (event: React.DragEvent<HTMLButtonElement>) => void;
   onDragEnd: () => void;
+  onDragOver?: (event: React.DragEvent<HTMLDivElement>) => void;
+  onDrop?: (event: React.DragEvent<HTMLDivElement>) => void;
   avatarSrc?: string;
   noMessagesText: string;
+  isPending?: boolean;
 }) {
+  const { t } = useTranslation();
+
   return (
     <div
-      className={`group relative flex w-full items-center gap-2.5 px-4 py-2.5 transition-colors ${
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+      className={`group relative flex w-full items-center gap-2.5 px-4 py-2.5 transition-all ${
         isActive ? "bg-surface-muted" : "hover:bg-surface-muted/70"
-      }`}
+      } ${isDropTarget ? "bg-primary/5" : ""}`}
     >
+      {isDropTarget && dropPlacement && (
+        <div
+          className={`absolute left-0 right-0 h-[3px] bg-primary z-20 pointer-events-none ${
+            dropPlacement === "above" ? "top-0" : "bottom-0"
+          }`}
+        />
+      )}
       {isActive && <span className="absolute left-0 top-0 bottom-0 w-1 bg-primary" />}
       <button
         type="button"
@@ -534,12 +682,19 @@ function RoomItem({
         <Avatar name={room.name} src={avatarSrc} size="sm" isOnline={room.isOnline} />
         <span className="min-w-0 flex-1">
           <span className="flex items-center justify-between gap-2">
-            <span className="text-xs font-semibold text-foreground truncate">{room.name}</span>
+            <span className="flex items-center gap-1.5 min-w-0 flex-1">
+              <span className="text-xs font-semibold text-foreground truncate">{room.name}</span>
+              {isPending && (
+                <span className="text-[9px] font-bold text-amber-500 px-1.5 py-0.5 border border-amber-500/20 bg-amber-500/5 rounded-sm shrink-0 uppercase tracking-wide">
+                  {t("chatroom.pendingApproval")}
+                </span>
+              )}
+            </span>
             <span className="text-[9px] text-text-muted font-mono shrink-0">{room.lastMessageAt}</span>
           </span>
           <span className="mt-0.5 flex items-center gap-2">
             <span className="text-[10px] text-text-muted truncate flex-1">
-              {room.lastMessagePreview || noMessagesText}
+              {isPending ? t("chatroom.pendingApproval") : (room.lastMessagePreview || noMessagesText)}
             </span>
             {room.unreadCount ? <Badge variant="danger">{room.unreadCount}</Badge> : null}
           </span>
