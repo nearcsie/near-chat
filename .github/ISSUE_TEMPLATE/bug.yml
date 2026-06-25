@@ -43,7 +43,7 @@ body:
     attributes:
       label: 4. 測試環境與錯誤 Log (Environment & Logs)
       description: 作業系統、瀏覽器版本，或前端/後端 Docker 錯誤 Log（選填）。
-      placeholder: macOS Chrome 126, Docker log: "Connection pool exhausted..."
+      placeholder: 'macOS Chrome 126, Docker log: "Connection pool exhausted..."'
     validations:
       required: false
 
