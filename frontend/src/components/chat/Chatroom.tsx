@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useLayoutEffect, useRef } from "react";
+import React, { useState, useEffect, useLayoutEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useChat, getAvatarForUser, Message } from "@/context/ChatContext";
 import { resolveAssetUrl } from "@/lib/assets";
@@ -68,6 +68,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
     handleTyping,
     handleUploadAttachments,
     handleRecallMessage,
+    handleUpdateMessage,
     handleModifyNickname,
     handleLeaveOrBlock,
     getReadAvatarsForMessage,
@@ -81,6 +82,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
   const [mentionDraft, setMentionDraft] = useState<MentionDraft | null>(null);
   const [selectedMentionIndex, setSelectedMentionIndex] = useState(0);
   const [replyTarget, setReplyTarget] = useState<Message | null>(null);
+  const [editingMessage, setEditingMessage] = useState<Message | null>(null);
   const [isModifyNickOpen, setIsModifyNickOpen] = useState(false);
   const [nickInputValue, setNickInputValue] = useState("");
   const [pendingAttachments, setPendingAttachments] = useState<File[]>([]);
@@ -88,10 +90,12 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [msgSearchQuery, setMsgSearchQuery] = useState("");
   const messageEndRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const { t } = useTranslation();
+  const [isMultiLine, setIsMultiLine] = useState(false);
+  const maxMessageLength = Number(process.env.NEXT_PUBLIC_MAX_MESSAGE_LENGTH || 1000);
 
   const activeRoom = rooms.find((r) => r.id === roomId);
   const currentMember = activeRoom?.members?.find((m) => m.userId === user.userId || m.name === user.username);
@@ -160,6 +164,38 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
     }
   }, [roomId, messages]);
 
+  useEffect(() => {
+    // Reset the staged attachment when switching rooms so a file selected in one
+    // chat is never sent from a different chat by accident.
+    const resetId = window.setTimeout(() => {
+      setPendingAttachments([]);
+      setIsUploadingAttachment(false);
+    }, 0);
+
+    return () => window.clearTimeout(resetId);
+  }, [roomId]);
+
+  useEffect(() => {
+    setIsSearchOpen(false);
+    setMsgSearchQuery("");
+  }, [roomId]);
+
+  // Auto-resize the textarea height based on content
+  useEffect(() => {
+    const textarea = inputRef.current;
+    if (!textarea) return;
+
+    textarea.style.height = "auto";
+    const maxHeight = window.innerHeight * 0.5;
+    if (textarea.scrollHeight > maxHeight) {
+      textarea.style.height = `${maxHeight}px`;
+      textarea.style.overflowY = "auto";
+    } else {
+      textarea.style.height = `${textarea.scrollHeight}px`;
+      textarea.style.overflowY = "hidden";
+    }
+    setIsMultiLine(inputText.includes("\n") || textarea.scrollHeight > 48);
+  }, [inputText]);
   const handleToggleSearch = () => {
     if (isSearchOpen) {
       setIsSearchOpen(false);
@@ -182,6 +218,18 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
     e.preventDefault();
     if (isUploadingAttachment) return;
     if (!inputText.trim() && pendingAttachments.length === 0) return;
+
+    if (editingMessage) {
+      try {
+        handleUpdateMessage(activeRoom.id, editingMessage.id, inputText);
+        setEditingMessage(null);
+        setInputText("");
+      } catch (error) {
+        console.error(error);
+        alert(error instanceof Error ? error.message : "Failed to update message");
+      }
+      return;
+    }
 
     try {
       if (pendingAttachments.length > 0) {
@@ -277,7 +325,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
     });
   };
 
-  const handleMentionKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+  const handleMentionKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement | HTMLInputElement>) => {
     if (!mentionDraft || mentionCandidates.length === 0) return;
 
     if (event.key === "ArrowDown") {
@@ -535,7 +583,15 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
                   messageId={msg.id}
                   onReply={() => setReplyTarget(msg)}
                   onRecall={() => handleRecallMessage(msg.id)}
+                  onEdit={() => {
+                    setEditingMessage(msg);
+                    setInputText(msg.content);
+                    requestAnimationFrame(() => {
+                      inputRef.current?.focus();
+                    });
+                  }}
                   canRecall={canRecall}
+                  canEdit={msg.isOutgoing && !msg.isRecalled}
                   avatarName={
                     msg.isOutgoing
                       ? user.username
@@ -656,6 +712,23 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
                 <Icon icon="boxicons:paperclip" className="h-4 w-4" />
               </button>
               <div className="relative flex-1">
+                {editingMessage && (
+                  <div className="flex items-center justify-between bg-primary/10 border-l-4 border-primary px-3 py-1.5 text-xs text-foreground select-none rounded-sm mb-2">
+                    <span className="flex items-center gap-1.5 truncate">
+                      {t("chatroom.editingMessageBanner")}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingMessage(null);
+                        setInputText("");
+                      }}
+                      className="text-text-muted hover:text-foreground cursor-pointer font-bold px-1"
+                    >
+                      {t("chatroom.cancel")}
+                    </button>
+                  </div>
+                )}
                 {mentionCandidates.length > 0 && (
                   <div className="absolute bottom-full left-0 right-0 mb-2 max-h-48 overflow-y-auto rounded-sm border border-border-primary bg-surface-card shadow-lg">
                     {mentionCandidates.map((candidate) => (
@@ -679,11 +752,11 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
                   </div>
                 )}
 
-                <input
+                <textarea
                   ref={inputRef}
-                  type="text"
                   placeholder={t("chatroom.inputPlaceholder")}
                   value={inputText}
+                  rows={1}
                   onChange={(e) => {
                     const nextText = e.target.value;
                     const nextCursorPosition = e.target.selectionStart ?? nextText.length;
@@ -704,11 +777,31 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
                     handleTyping(activeRoom.id, false);
                     setMentionDraft(null);
                   }}
-                  onKeyDown={handleMentionKeyDown}
-                  className="w-full bg-surface-card border border-border-secondary hover:border-border-primary focus:border-primary focus:outline-none rounded-sm px-3.5 py-2.5 text-sm text-foreground transition-colors"
+                  onKeyDown={(e) => {
+                    if (mentionDraft && mentionCandidates.length > 0) {
+                      handleMentionKeyDown(e);
+                      if (e.defaultPrevented) return;
+                    }
+
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      void handleSend(e);
+                    } else if (e.key === "Escape" && editingMessage) {
+                      e.preventDefault();
+                      setEditingMessage(null);
+                      setInputText("");
+                    }
+                  }}
+                  maxLength={maxMessageLength}
+                  className="block w-full bg-surface-card border border-border-secondary hover:border-border-primary focus:border-primary focus:outline-none rounded-sm px-3.5 py-2.5 text-sm text-foreground transition-colors resize-none min-h-[38px] max-h-[50vh] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-zinc-300 hover:[&::-webkit-scrollbar-thumb]:bg-zinc-400 dark:[&::-webkit-scrollbar-thumb]:bg-zinc-700 dark:hover:[&::-webkit-scrollbar-thumb]:bg-zinc-600 [&::-webkit-scrollbar-thumb]:rounded-sm"
                 />
               </div>
 
+              {isMultiLine && (
+                <span className="text-[11px] text-text-muted shrink-0 select-none pb-2.5 w-[70px] text-right">
+                  ({inputText.length}/{maxMessageLength})
+                </span>
+              )}
               <Button
                 type="submit"
                 variant="primary"

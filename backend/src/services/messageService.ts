@@ -167,5 +167,63 @@ export const makeMessageService = (
 
       return messageRepo.markRecalled(parsed.data.messageId);
     },
+
+    async updateMessage(
+      userId: string,
+      roomId: string,
+      messageId: string,
+      content: string,
+    ): Promise<MessageWithSender> {
+      const parsed = sendMessageSchema.safeParse({ roomId, content });
+      if (!parsed.success) {
+        throw new ValidationError(validationMessage(parsed.error.issues));
+      }
+
+      const { room, member } = await assertRoomMembership(userId, roomId);
+      if (room.isArchived) {
+        throw new ForbiddenError('This room is archived');
+      }
+      if (room.isReadonly) {
+        throw new ForbiddenError('This room is read-only');
+      }
+      if (member.isMuted) {
+        throw new ForbiddenError('Muted members cannot update messages');
+      }
+
+      const existing = await messageRepo.findById(messageId);
+      if (!existing || existing.roomId !== roomId) {
+        throw new NotFoundError('message', messageId);
+      }
+
+      if (existing.senderId !== userId) {
+        throw new ForbiddenError('Only the original sender can edit this message');
+      }
+
+      if (existing.isRecalled) {
+        throw new ValidationError('Cannot edit a recalled message');
+      }
+
+      const mentionNames = parseMentionNames(parsed.data.content);
+      const mentionsEveryone = mentionNames.some(
+        (name) => name.toLowerCase() === EVERYONE_MENTION,
+      );
+      const directMentionNames = mentionNames.filter(
+        (name) => name.toLowerCase() !== EVERYONE_MENTION,
+      );
+
+      const directMentionedUserIds = directMentionNames.length > 0
+        ? await roomMemberRepo.resolveMentions(roomId, directMentionNames)
+        : [];
+      const everyoneMentionedUserIds = mentionsEveryone
+        ? (await roomMemberRepo.findByRoom(roomId))
+            .filter((roomMember) => roomMember.role !== 'pending' && roomMember.userId !== userId)
+            .map((roomMember) => roomMember.userId)
+        : [];
+      const mentionedUserIds = Array.from(
+        new Set([...directMentionedUserIds, ...everyoneMentionedUserIds]),
+      );
+
+      return messageRepo.update(messageId, parsed.data.content, mentionedUserIds);
+    },
   };
 };

@@ -187,6 +187,7 @@ export interface ClientToServerEvents {
   leave_room:     (payload: { roomId: string }) => void;
   send_message:   (payload: { roomId: string; content: string; replyTo?: string; attachmentIds?: string[] }) => void;
   recall_message: (payload: { messageId: string }) => void;
+  update_message: (payload: { roomId: string; messageId: string; content: string }) => void;
   typing:         (payload: { roomId: string; isTyping: boolean }) => void;
   read_receipt:   (payload: { roomId: string; messageId: string }) => void;
 }
@@ -194,6 +195,7 @@ export interface ClientToServerEvents {
 export interface ServerToClientEvents {
   new_message:      (payload: MessageWithSender) => void;
   message_recalled: (payload: { messageId: string }) => void;
+  message_updated:  (payload: MessageWithSender) => void;
   user_typing:      (payload: { roomId: string; userId: string; isTyping: boolean }) => void;
   read_update:      (payload: { roomId: string; userId: string; messageId: string }) => void;
   room_update:      (payload: { type: string; roomId: string; data: any }) => void;

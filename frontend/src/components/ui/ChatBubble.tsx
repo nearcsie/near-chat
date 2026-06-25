@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { useTranslation } from "@/hooks/useTranslation";
 import { resolveAssetUrl } from "@/lib/assets";
 import { cn } from "@/lib/utils";
 import { Avatar } from "./Avatar";
@@ -30,6 +31,7 @@ export interface ChatBubbleProps {
   roomType?: "msg" | "group";
   onReply?: () => void;
   onRecall?: () => void;
+  onEdit?: () => void;
   canRecall?: boolean;
   canEdit?: boolean;
   senderId?: string;
@@ -98,6 +100,7 @@ export function ChatBubble({
   roomType = "msg",
   onReply,
   onRecall,
+  onEdit,
   canRecall = false,
   canEdit = false,
   senderId,
@@ -105,6 +108,7 @@ export function ChatBubble({
   avatarName,
   searchHighlight,
 }: ChatBubbleProps) {
+  const { t } = useTranslation();
   const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null>(null);
   const [popoverStyle, setPopoverStyle] = useState<React.CSSProperties>({});
   const [downloadingUrl, setDownloadingUrl] = useState<string | null>(null);
@@ -276,7 +280,7 @@ export function ChatBubble({
                 isRecalled && "italic text-text-muted/70",
               )}
             >
-              {isRecalled ? "訊息已收回" : renderMentionContent(content, isOutgoing, isHighEmphasis, searchHighlight)}
+              {isRecalled ? t("chatroom.messageRecalled") : renderMentionContent(content, isOutgoing, isHighEmphasis, searchHighlight)}
             </div>
 
             {attachments.length > 0 && (
@@ -328,7 +332,7 @@ export function ChatBubble({
                         className,
                         "text-left disabled:cursor-wait disabled:opacity-70",
                       )}
-                      title={downloadingUrl === file.url ? "Downloading attachment" : "Download attachment"}
+                      title={downloadingUrl === file.url ? t("chatroom.downloadingAttachment") : t("chatroom.downloadAttachment")}
                     >
                       {fileContent}
                     </button>
@@ -361,15 +365,18 @@ export function ChatBubble({
                   setMenuPosition(null);
                 }}
               >
-                回覆訊息
+                {t("chatroom.replyMessage")}
               </button>
               <button
                 type="button"
                 className={menuItemClass}
                 disabled={!canEdit}
-                title={canEdit ? undefined : "目前尚未支援修改訊息"}
+                onClick={() => {
+                  onEdit?.();
+                  setMenuPosition(null);
+                }}
               >
-                修改訊息
+                {t("chatroom.editMessage")}
               </button>
               <button
                 type="button"
@@ -380,10 +387,10 @@ export function ChatBubble({
                   setMenuPosition(null);
                 }}
               >
-                收回訊息
+                {t("chatroom.recallMessage")}
               </button>
               <button type="button" className={menuItemClass} onClick={handleCopy}>
-                複製文字
+                {t("chatroom.copyText")}
               </button>
             </div>
           )}
