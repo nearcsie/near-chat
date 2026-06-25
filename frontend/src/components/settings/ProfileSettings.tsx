@@ -19,6 +19,7 @@ const AVATAR_UPLOAD_MAX_BYTES = 2 * 1024 * 1024;
 
 export default function ProfileSettings() {
   const router = useRouter();
+  const { t } = useTranslation();
   const { user, rooms, uiLanguage, handleUpdateProfile, handleUpdatePreferences, handleDeleteAccount, setHasUnsavedChanges, handleLogout } = useChat();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [personalUsername, setPersonalUsername] = useState("");
@@ -27,7 +28,14 @@ export default function ProfileSettings() {
   const [personalAvatarFile, setPersonalAvatarFile] = useState<File | null>(null);
   const [avatarPreviewUrl, setAvatarPreviewUrl] = useState<string | null>(null);
   const [personalBio, setPersonalBio] = useState("");
-  const [bioError, setBioError] = useState<string | null>(null);
+  const bioError = (() => {
+    if (personalBio.length > 100) {
+      return t("profile.bioTooLong");
+    } else if (personalBio.split(/\r?\n/).length > 8) {
+      return t("profile.bioTooManyLines");
+    }
+    return null;
+  })();
   const [profileFeedback, setProfileFeedback] = useState<SettingsFeedback | null>(null);
 
   // Password change modal states
@@ -69,8 +77,6 @@ export default function ProfileSettings() {
       }
     };
   }, [avatarPreviewUrl]);
-
-  const { t } = useTranslation();
 
   const handleBack = () => {
     router.push(rooms[0] ? `/chat/${rooms[0].id}` : "/");
@@ -115,16 +121,6 @@ export default function ProfileSettings() {
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [hasUnsavedChanges]);
-
-  useEffect(() => {
-    if (personalBio.length > 100) {
-      setBioError(t("profile.bioTooLong"));
-    } else if (personalBio.split(/\r?\n/).length > 8) {
-      setBioError(t("profile.bioTooManyLines"));
-    } else {
-      setBioError(null);
-    }
-  }, [personalBio, t]);
 
   const [shouldAlertEffect, setShouldAlertEffect] = useState(false);
 

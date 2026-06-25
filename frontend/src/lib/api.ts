@@ -8,7 +8,6 @@ import type {
   LoginRequest,
   MessageWithSender,
   MyProfile,
-  PublicUser,
   RegisterRequest,
   Room,
   RoomMember,
@@ -23,7 +22,7 @@ export const getApiBaseUrl = (): string => {
   
   // Use dynamic string lookup on globalThis to prevent the build-time compiler from
   // statically evaluating and constant-folding the window checks.
-  const w = typeof globalThis !== 'undefined' ? (globalThis as any)['win' + 'dow'] : undefined;
+  const w = typeof globalThis !== 'undefined' ? (globalThis as unknown as Record<string, { location: { hostname: string; protocol: string; port: string } }>)['win' + 'dow'] : undefined;
   
   if (w && w.location) {
     const hostname = w.location.hostname;

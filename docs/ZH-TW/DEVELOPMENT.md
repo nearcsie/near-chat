@@ -153,6 +153,17 @@ docker compose exec backend ./node_modules/.bin/tsc --noEmit
 docker compose exec frontend ./node_modules/.bin/tsc --noEmit
 ```
 
+### 執行 ESLint 代碼品質與風格檢查
+在提交代碼或於本地開發時，建議執行 Linter 檢查以確認代碼格式、撰寫風格以及 React 最佳實踐（例如 Hooks 規則）：
+
+```bash
+# 於前端目錄執行代碼檢查
+pnpm --prefix frontend run lint
+
+# 或於前端 Docker 容器內執行
+docker compose exec frontend pnpm run lint
+```
+
 ### 執行單元測試
 單元測試不需要資料庫連線。
 ```bash

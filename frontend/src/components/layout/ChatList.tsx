@@ -42,7 +42,16 @@ export default function ChatList({ searchQuery }: ChatListProps) {
   const [isUncategorizedCollapsed, setIsUncategorizedCollapsed] = React.useState(false);
   const [dropTargetRoomId, setDropTargetRoomId] = React.useState<string | null>(null);
   const [dropPlacement, setDropPlacement] = React.useState<"above" | "below" | null>(null);
-  const [roomOrderMap, setRoomOrderMap] = React.useState<Record<string, string[]>>({});
+  const [roomOrderMap, setRoomOrderMap] = React.useState<Record<string, string[]>>(() => {
+    if (user?.roomOrder) {
+      return user.roomOrder;
+    }
+    try {
+      const saved = typeof window !== "undefined" ? localStorage.getItem("near:roomOrder") : null;
+      if (saved) return JSON.parse(saved) as Record<string, string[]>;
+    } catch {}
+    return {};
+  });
   const [contextMenu, setContextMenu] = React.useState<{
     folderId: string;
     folderName: string;
@@ -67,16 +76,24 @@ export default function ChatList({ searchQuery }: ChatListProps) {
     return () => window.removeEventListener("click", handleCloseMenu);
   }, []);
 
-  React.useEffect(() => {
+  const [prevRoomOrder, setPrevRoomOrder] = React.useState(user?.roomOrder);
+  if (prevRoomOrder !== user?.roomOrder) {
+    setPrevRoomOrder(user?.roomOrder);
     if (user?.roomOrder) {
       setRoomOrderMap(user.roomOrder);
     } else {
       try {
-        const saved = localStorage.getItem("near:roomOrder");
-        if (saved) setRoomOrderMap(JSON.parse(saved) as Record<string, string[]>);
-      } catch {}
+        const saved = typeof window !== "undefined" ? localStorage.getItem("near:roomOrder") : null;
+        if (saved) {
+          setRoomOrderMap(JSON.parse(saved) as Record<string, string[]>);
+        } else {
+          setRoomOrderMap({});
+        }
+      } catch {
+        setRoomOrderMap({});
+      }
     }
-  }, [user?.roomOrder]);
+  }
 
   const applyRoomOrder = (sectionRooms: ChatRoom[], sectionKey: string): ChatRoom[] => {
     const order = roomOrderMap[sectionKey];

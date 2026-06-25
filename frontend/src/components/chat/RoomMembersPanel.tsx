@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { ChatRoom, Member, useChat } from "@/context/ChatContext";
 import { Avatar } from "@/components/ui/Avatar";
 import ProfilePopover from "./ProfilePopover";
@@ -13,11 +13,11 @@ export default function RoomMembersPanel({ room, members }: { room: ChatRoom; me
   const [popoverTop, setPopoverTop] = useState<number>(0);
   const { t } = useTranslation();
 
-  useEffect(() => {
-    if (!activeProfilePopover || activeProfilePopover.instanceId !== `member-${selectedMember?.userId}`) {
-      setSelectedMember(null);
-    }
-  }, [activeProfilePopover, selectedMember?.userId]);
+  // Reset selectedMember during render if popover is closed or doesn't match
+  const isPopoverMatch = activeProfilePopover && activeProfilePopover.instanceId === `member-${selectedMember?.userId}`;
+  if (selectedMember && !isPopoverMatch) {
+    setSelectedMember(null);
+  }
 
   return (
     <div className="members-panel-root w-[280px] max-w-[85vw] lg:w-[240px] shrink-0 border-l border-border-primary bg-surface-card flex flex-col h-full select-none relative">

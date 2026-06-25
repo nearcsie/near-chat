@@ -153,6 +153,17 @@ docker compose exec backend ./node_modules/.bin/tsc --noEmit
 docker compose exec frontend ./node_modules/.bin/tsc --noEmit
 ```
 
+### Running ESLint Checks
+Before committing code or during development, run the linter to verify code formatting, style guidelines, and React best practices (e.g. Hooks compliance):
+
+```bash
+# Run linting check in the frontend directory
+pnpm --prefix frontend run lint
+
+# Or run it inside the frontend Docker container
+docker compose exec frontend pnpm run lint
+```
+
 ### Running Unit Tests
 Unit tests do not require a database connection.
 ```bash
