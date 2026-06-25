@@ -131,7 +131,7 @@ export default function GroupSettings({ roomId, onClose }: GroupSettingsProps) {
         clearTimeout(searchTimeoutRef.current);
       }
     };
-  }, [activeRoom?.members, roomId]);
+  }, [activeRoom?.members, roomId, loadGroupMembers, t]);
 
 
   const refreshMembers = async () => {

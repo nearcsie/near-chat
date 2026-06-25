@@ -7,8 +7,8 @@ import ProfilePopover from "./ProfilePopover";
 import { useTranslation } from "@/hooks/useTranslation";
 import { resolveAssetUrl } from "@/lib/assets";
 
-export default function RoomMembersPanel({ room, members }: { room: ChatRoom; members: Member[] }) {
-  const { user, activeProfilePopover, setActiveProfilePopover } = useChat();
+export default function RoomMembersPanel({ members }: { room: ChatRoom; members: Member[] }) {
+  const { activeProfilePopover, setActiveProfilePopover } = useChat();
   const [selectedMember, setSelectedMember] = useState<Member | null>(null);
   const [popoverTop, setPopoverTop] = useState<number>(0);
   const { t } = useTranslation();

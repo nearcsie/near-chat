@@ -1,10 +1,9 @@
 "use client";
 
 import React, { useState } from "react";
-import { useParams, usePathname, useRouter } from "next/navigation";
-import { useChat, Friend, getAvatarForUser } from "@/context/ChatContext";
+import { usePathname, useRouter } from "next/navigation";
+import { useChat } from "@/context/ChatContext";
 import { Avatar } from "@/components/ui/Avatar";
-import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
@@ -16,28 +15,22 @@ import { resolveAssetUrl } from "@/lib/assets";
 
 export default function Sidebar() {
   const router = useRouter();
-  const params = useParams();
   const pathname = usePathname();
   const {
     rooms,
     folders,
     user,
-    activeRoomNicknames,
-    toggleFolder,
     handleCreateRoom,
     handleCreateFolder,
-    handleCategorizeRoom,
     handleJoinByInviteCode,
     handleLogout,
     friendRequests,
-    uiLanguage,
     selectedFriendForSidebar,
     setSelectedFriendForSidebar,
     hasUnsavedChanges,
   } = useChat();
 
   const [searchQuery, setSearchQuery] = useState("");
-  const activeRoomId = params?.chatId as string | undefined;
   const isSettingsPage = pathname === "/settings";
   const isChatPage = pathname === "/" || pathname.startsWith("/chat");
   const [isActionsModalOpen, setIsActionsModalOpen] = useState(false);
@@ -45,7 +38,6 @@ export default function Sidebar() {
   const [joinInviteCode, setJoinInviteCode] = useState("");
   const [joinError, setJoinError] = useState("");
   const [newRoomName, setNewRoomName] = useState("");
-  const [newRoomType, setNewRoomType] = useState<"msg" | "group">("group");
   const [newRoomFolder, setNewRoomFolder] = useState("");
   const [newFolderName, setNewFolderName] = useState("");
 

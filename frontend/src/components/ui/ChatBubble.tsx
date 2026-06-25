@@ -95,7 +95,6 @@ export function ChatBubble({
   replyTo,
   attachments = [],
   senderAvatar,
-  isRead = false,
   readByAvatars = [],
   roomType = "msg",
   onReply,
@@ -411,6 +410,7 @@ export function ChatBubble({
                 title={reader.displayName || reader.name}
               >
                 {reader.avatarUrl ? (
+                  /* eslint-disable-next-line @next/next/no-img-element */
                   <img src={resolveAssetUrl(reader.avatarUrl)} alt={reader.name} className="h-full w-full object-cover" />
                 ) : (
                   <span className="text-[8px] font-bold leading-none">

@@ -164,21 +164,7 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
     }
   }, [roomId, messages]);
 
-  useEffect(() => {
-    // Reset the staged attachment when switching rooms so a file selected in one
-    // chat is never sent from a different chat by accident.
-    const resetId = window.setTimeout(() => {
-      setPendingAttachments([]);
-      setIsUploadingAttachment(false);
-    }, 0);
 
-    return () => window.clearTimeout(resetId);
-  }, [roomId]);
-
-  useEffect(() => {
-    setIsSearchOpen(false);
-    setMsgSearchQuery("");
-  }, [roomId]);
 
   // Auto-resize the textarea height based on content
   useEffect(() => {

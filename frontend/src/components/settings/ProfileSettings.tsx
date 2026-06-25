@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import { UiLanguage, useChat, PreferencesInput } from "@/context/ChatContext";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
@@ -18,9 +17,8 @@ const ACCEPTED_AVATAR_TYPES = ["image/png", "image/jpeg", "image/gif", "image/we
 const AVATAR_UPLOAD_MAX_BYTES = 2 * 1024 * 1024;
 
 export default function ProfileSettings() {
-  const router = useRouter();
   const { t } = useTranslation();
-  const { user, rooms, uiLanguage, handleUpdateProfile, handleUpdatePreferences, handleDeleteAccount, setHasUnsavedChanges, handleLogout } = useChat();
+  const { user, uiLanguage, handleUpdateProfile, handleUpdatePreferences, handleDeleteAccount, setHasUnsavedChanges, handleLogout } = useChat();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [personalUsername, setPersonalUsername] = useState("");
   const [personalEmail, setPersonalEmail] = useState("");
@@ -78,23 +76,11 @@ export default function ProfileSettings() {
     };
   }, [avatarPreviewUrl]);
 
-  const handleBack = () => {
-    router.push(rooms[0] ? `/chat/${rooms[0].id}` : "/");
-  };
-
   const hasUnsavedChanges = 
     personalUsername !== user.username ||
     personalEmail !== user.email ||
     personalBio !== (user.bio || "") ||
     personalAvatarFile !== null;
-
-  const handleBackAttempt = () => {
-    if (hasUnsavedChanges) {
-      const confirmLeave = window.confirm(t("profile.unsavedChangesConfirm") || "有變更尚未儲存，確定要離開嗎？");
-      if (!confirmLeave) return;
-    }
-    handleBack();
-  };
 
   const handleCancel = () => {
     setPersonalUsername(user.username);

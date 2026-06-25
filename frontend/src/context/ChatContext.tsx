@@ -868,7 +868,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       window.removeEventListener('auth:token-expired', handleExpired);
       window.removeEventListener('auth:token-refreshed', handleRefreshed);
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     tokenRef.current = token;
@@ -969,6 +969,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isMounted]);
 
   useEffect(() => {
@@ -1241,6 +1242,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         socketRef.current = null;
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUserId, token]);
 
   const toggleFolder = (folderId: string) => {
@@ -1581,6 +1583,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     if (!activeRoom || activeRoom.members?.length) return;
 
     void loadGroupMembers(activeRoomId).catch(console.error);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeRoomId, rooms, token]);
 
   const saveGroupSettings = async (roomId: string, settings: GroupSettingsInput) => {
