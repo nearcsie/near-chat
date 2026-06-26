@@ -238,4 +238,44 @@ export class MessageRepository implements IMessageRepository {
     const [message] = await this.fetchMessageWithSenderByIds([messageId]);
     return message;
   }
+
+  async update(messageId: string, content: string, mentions?: string[]): Promise<MessageWithSender> {
+    const client = await this.db.connect();
+    try {
+      await client.query('BEGIN');
+      const res = await client.query(
+        `UPDATE messages
+         SET content = $1
+         WHERE message_id = $2
+         RETURNING message_id`,
+        [content, messageId],
+      );
+      if (res.rows.length === 0) {
+        throw new Error('Message not found');
+      }
+
+      await client.query(
+        'DELETE FROM message_mentions WHERE message_id = $1',
+        [messageId],
+      );
+
+      if (mentions && mentions.length > 0) {
+        const values = mentions.map((_, i) => `($1, $${i + 2})`).join(', ');
+        const params = [messageId, ...mentions];
+        await client.query(
+          `INSERT INTO message_mentions (message_id, user_id) VALUES ${values}`,
+          params,
+        );
+      }
+
+      await client.query('COMMIT');
+      const [message] = await this.fetchMessageWithSenderByIds([messageId]);
+      return message;
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
+  }
 }

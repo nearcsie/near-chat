@@ -20,4 +20,4 @@ services:
 networks:
   app_network:
     external: true
-    name: 1142-ntnu-db-app_default
+    name: near-chat_network

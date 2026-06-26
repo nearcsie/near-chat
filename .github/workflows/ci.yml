@@ -2,40 +2,142 @@ name: CI
 
 on:
   push:
-    branches: [main, dev, "feat/**", "fix/**"]
+    branches: [main, dev]
+    paths-ignore:
+      - 'docs/**'
+      - 'README.md'
+      - 'README.zh-TW.md'
+      - '.github/ISSUE_TEMPLATE/**'
+      - 'LICENSE'
+      - 'AGENTS.md'
   pull_request:
+    branches: [main, dev]
+    paths-ignore:
+      - 'docs/**'
+      - 'README.md'
+      - 'README.zh-TW.md'
+      - '.github/ISSUE_TEMPLATE/**'
+      - 'LICENSE'
+      - 'AGENTS.md'
+  workflow_dispatch:
 
 permissions:
   contents: read
+  security-events: write
 
 jobs:
-  frontend-typecheck:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      frontend: ${{ steps.filter.outputs.frontend }}
+      backend: ${{ steps.filter.outputs.backend }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            frontend:
+              - 'frontend/**'
+              - 'shared/**'
+              - 'tsconfig.base.json'
+            backend:
+              - 'backend/**'
+              - 'shared/**'
+              - 'tsconfig.base.json'
+
+  frontend-lint:
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
-      - run: npm install -g pnpm
-      - run: pnpm --prefix frontend install
+          node-version: 24
+          cache: 'pnpm'
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - run: pnpm --prefix frontend install --frozen-lockfile
+      - run: pnpm --prefix frontend run lint
+
+  frontend-typecheck:
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: 'pnpm'
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - run: pnpm --prefix frontend install --frozen-lockfile
       - run: pnpm --prefix frontend exec tsc --noEmit
 
-  unit-tests:
+  frontend-build:
+    needs: changes
+    if: (needs.changes.outputs.frontend == 'true' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/main' || github.base_ref == 'main')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
-      - run: npm install -g pnpm
-      - run: pnpm --prefix backend install
+          node-version: 24
+          cache: 'pnpm'
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - run: pnpm --prefix frontend install --frozen-lockfile
+      - run: pnpm --prefix frontend run build
+
+  backend-build:
+    needs: changes
+    if: (needs.changes.outputs.backend == 'true' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/main' || github.base_ref == 'main')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: 'pnpm'
+          cache-dependency-path: backend/pnpm-lock.yaml
+      - run: pnpm --prefix backend install --frozen-lockfile
+      - run: pnpm --prefix backend run build
+
+  unit-tests:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: 'pnpm'
+          cache-dependency-path: backend/pnpm-lock.yaml
+      - run: pnpm --prefix backend install --frozen-lockfile
       - run: pnpm --prefix backend run test:unit
 
   integration-tests:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:16
+        image: postgres:18-alpine
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -51,19 +153,25 @@ jobs:
       DATABASE_URL_TEST: postgresql://postgres:postgres@localhost:5433/ntnu_test
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
-      - run: npm install -g pnpm
-      - run: pnpm --prefix backend install
+          node-version: 24
+          cache: 'pnpm'
+          cache-dependency-path: backend/pnpm-lock.yaml
+      - run: pnpm --prefix backend install --frozen-lockfile
       - run: DATABASE_URL=$DATABASE_URL_TEST pnpm --prefix backend run migrate:up
       - run: pnpm --prefix backend run test:integration
 
   e2e-tests:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:16
+        image: postgres:18-alpine
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -79,15 +187,21 @@ jobs:
       DATABASE_URL_TEST: postgresql://postgres:postgres@localhost:5433/ntnu_test
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
-      - run: npm install -g pnpm
-      - run: pnpm --prefix backend install
+          node-version: 24
+          cache: 'pnpm'
+          cache-dependency-path: backend/pnpm-lock.yaml
+      - run: pnpm --prefix backend install --frozen-lockfile
       - run: DATABASE_URL=$DATABASE_URL_TEST pnpm --prefix backend run migrate:up
       - run: pnpm --prefix backend run test:e2e
 
   security-scan:
+    needs: changes
+    if: (needs.changes.outputs.frontend == 'true' || needs.changes.outputs.backend == 'true' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/main' || github.base_ref == 'main')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -134,4 +248,3 @@ jobs:
         with:
           sarif_file: frontend.sarif
           category: frontend
-

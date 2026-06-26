@@ -13,6 +13,7 @@ interface MessageService {
     opts?: { replyToId?: string; attachmentIds?: string[] },
   ): Promise<MessageWithSender>;
   recallMessage(userId: string, roomId: string, messageId: string): Promise<MessageWithSender>;
+  updateMessage(userId: string, roomId: string, messageId: string, content: string): Promise<MessageWithSender>;
 }
 
 interface SocketDeps {
@@ -78,14 +79,20 @@ export const attachSockets = (io: ChatServer, deps: SocketDeps): void => {
         if (!existing) {
           throw new NotFoundError('message', messageId);
         }
-        if (existing.senderId !== userId) {
-          throw new ForbiddenError('Only the original sender can recall this message');
-        }
 
         const recalled = await deps.messageService.recallMessage(userId, existing.roomId, messageId);
         io.to(`room_${existing.roomId}`).emit('message_recalled', {
           messageId: recalled.messageId,
         });
+      } catch (err) {
+        socket.emit('error', mapErrorToApiShape(err));
+      }
+    });
+
+    socket.on('update_message', async ({ roomId, messageId, content }) => {
+      try {
+        const updated = await deps.messageService.updateMessage(userId, roomId, messageId, content);
+        io.to(`room_${roomId}`).emit('message_updated', updated);
       } catch (err) {
         socket.emit('error', mapErrorToApiShape(err));
       }

@@ -1,23 +1,23 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { ChatRoom, Member, useChat } from "@/context/ChatContext";
 import { Avatar } from "@/components/ui/Avatar";
 import ProfilePopover from "./ProfilePopover";
 import { useTranslation } from "@/hooks/useTranslation";
 import { resolveAssetUrl } from "@/lib/assets";
 
-export default function RoomMembersPanel({ room, members }: { room: ChatRoom; members: Member[] }) {
-  const { user, activeProfilePopover, setActiveProfilePopover } = useChat();
+export default function RoomMembersPanel({ members }: { room: ChatRoom; members: Member[] }) {
+  const { activeProfilePopover, setActiveProfilePopover } = useChat();
   const [selectedMember, setSelectedMember] = useState<Member | null>(null);
   const [popoverTop, setPopoverTop] = useState<number>(0);
   const { t } = useTranslation();
 
-  useEffect(() => {
-    if (!activeProfilePopover || activeProfilePopover.instanceId !== `member-${selectedMember?.userId}`) {
-      setSelectedMember(null);
-    }
-  }, [activeProfilePopover, selectedMember?.userId]);
+  // Reset selectedMember during render if popover is closed or doesn't match
+  const isPopoverMatch = activeProfilePopover && activeProfilePopover.instanceId === `member-${selectedMember?.userId}`;
+  if (selectedMember && !isPopoverMatch) {
+    setSelectedMember(null);
+  }
 
   return (
     <div className="members-panel-root w-[280px] max-w-[85vw] lg:w-[240px] shrink-0 border-l border-border-primary bg-surface-card flex flex-col h-full select-none relative">
@@ -41,7 +41,7 @@ export default function RoomMembersPanel({ room, members }: { room: ChatRoom; me
                 const parentEl = e.currentTarget.closest(".members-panel-root");
                 if (parentEl) {
                   const parentRect = parentEl.getBoundingClientRect();
-                  const halfPopover = 170; // Half of estimated popover height (340px)
+                  const halfPopover = 200; // Half of estimated popover height (400px)
                   const padding = 12;      // Top/bottom margins
                   let topVal = rect.top - parentRect.top + rect.height / 2;
 

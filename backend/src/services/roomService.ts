@@ -77,24 +77,30 @@ export const makeRoomService = (
       });
     },
 
-    async createPrivate(creatorId: string, targetUserId: string): Promise<{ room: Room; created: boolean }> {
+    async createPrivate(creatorId: string, targetUserId: string, bypassFriendCheck = false): Promise<{ room: Room; created: boolean }> {
       if (creatorId === targetUserId) {
         throw new ValidationError('Cannot create a private room with yourself');
       }
-      if (!socialRepo) {
-        throw new ForbiddenError('Private rooms require friendship validation');
-      }
-      if (await socialRepo.isBlocked(creatorId, targetUserId)) {
-        throw new ForbiddenError('Cannot create a private room with a blocked user');
-      }
-      if (!(await socialRepo.areFriends(creatorId, targetUserId))) {
-        throw new ForbiddenError('Private rooms require an accepted friendship');
+      if (!bypassFriendCheck) {
+        if (!socialRepo) {
+          throw new ForbiddenError('Private rooms require friendship validation');
+        }
+        if (await socialRepo.isBlocked(creatorId, targetUserId)) {
+          throw new ForbiddenError('Cannot create a private room with a blocked user');
+        }
+        if (!(await socialRepo.areFriends(creatorId, targetUserId))) {
+          throw new ForbiddenError('Private rooms require an accepted friendship');
+        }
       }
 
       const existing = await repo.findPrivateRoomByMembers(creatorId, targetUserId);
       if (existing) {
         if (existing.isReadonly) {
           const room = await repo.update(existing.roomId, { isReadonly: false });
+          if (emitToUser) {
+            emitToUser(creatorId, 'room_update', { type: 'ROOM_JOINED', roomId: existing.roomId, data: {} });
+            emitToUser(targetUserId, 'room_update', { type: 'ROOM_JOINED', roomId: existing.roomId, data: {} });
+          }
           return { room, created: false };
         }
         return { room: existing, created: false };
@@ -108,6 +114,10 @@ export const makeRoomService = (
       });
       await ensureMember(room.roomId, creatorId);
       await ensureMember(room.roomId, targetUserId);
+      if (emitToUser) {
+        emitToUser(creatorId, 'room_update', { type: 'ROOM_JOINED', roomId: room.roomId, data: {} });
+        emitToUser(targetUserId, 'room_update', { type: 'ROOM_JOINED', roomId: room.roomId, data: {} });
+      }
       return { room, created: true };
     },
 
@@ -122,6 +132,10 @@ export const makeRoomService = (
       const existing = await repo.findPrivateRoomByMembers(userA, userB);
       if (existing && existing.isReadonly) {
         await repo.update(existing.roomId, { isReadonly: false });
+        if (emitToUser) {
+          emitToUser(userA, 'room_update', { type: 'ROOM_JOINED', roomId: existing.roomId, data: {} });
+          emitToUser(userB, 'room_update', { type: 'ROOM_JOINED', roomId: existing.roomId, data: {} });
+        }
       }
     },
 
@@ -130,6 +144,9 @@ export const makeRoomService = (
       if (!room) throw new NotFoundError('room', roomId);
       const caller = await roomMemberRepo.findMember(roomId, callerId);
       if (!caller) throw new ForbiddenError('User is not a member of this room');
+      if (caller.role === 'pending') {
+        return [caller];
+      }
       return roomMemberRepo.findByRoom(roomId);
     },
 

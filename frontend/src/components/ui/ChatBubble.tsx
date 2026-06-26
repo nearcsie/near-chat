@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { useTranslation } from "@/hooks/useTranslation";
 import { resolveAssetUrl } from "@/lib/assets";
 import { cn } from "@/lib/utils";
 import { Avatar } from "./Avatar";
@@ -30,17 +31,41 @@ export interface ChatBubbleProps {
   roomType?: "msg" | "group";
   onReply?: () => void;
   onRecall?: () => void;
+  onEdit?: () => void;
   canRecall?: boolean;
   canEdit?: boolean;
   senderId?: string;
   messageId?: string;
   avatarName?: string;
+  searchHighlight?: string;
 }
+
+const highlightText = (text: string, query: string): React.ReactNode => {
+  const lowerText = text.toLowerCase();
+  const lowerQuery = query.toLowerCase();
+  if (!lowerText.includes(lowerQuery)) return text;
+  const nodes: React.ReactNode[] = [];
+  let last = 0;
+  let idx = lowerText.indexOf(lowerQuery);
+  while (idx !== -1) {
+    if (idx > last) nodes.push(text.slice(last, idx));
+    nodes.push(
+      <mark key={idx} className="bg-amber-300/60 dark:bg-amber-600/50 text-foreground not-italic rounded-[2px] px-0.5">
+        {text.slice(idx, idx + query.length)}
+      </mark>,
+    );
+    last = idx + query.length;
+    idx = lowerText.indexOf(lowerQuery, last);
+  }
+  if (last < text.length) nodes.push(text.slice(last));
+  return <>{nodes}</>;
+};
 
 const renderMentionContent = (
   content: string,
   isOutgoing: boolean,
   isHighEmphasis: boolean,
+  searchHighlight?: string,
 ) => {
   const parts = content.split(/(@[^\s@]+)/g);
   const mentionClass = isOutgoing && isHighEmphasis
@@ -53,7 +78,9 @@ const renderMentionContent = (
         {part}
       </span>
     ) : (
-      <React.Fragment key={`${part}-${index}`}>{part}</React.Fragment>
+      <React.Fragment key={`${part}-${index}`}>
+        {searchHighlight ? highlightText(part, searchHighlight) : part}
+      </React.Fragment>
     ),
   );
 };
@@ -68,17 +95,19 @@ export function ChatBubble({
   replyTo,
   attachments = [],
   senderAvatar,
-  isRead = false,
   readByAvatars = [],
   roomType = "msg",
   onReply,
   onRecall,
+  onEdit,
   canRecall = false,
   canEdit = false,
   senderId,
   messageId,
   avatarName,
+  searchHighlight,
 }: ChatBubbleProps) {
+  const { t } = useTranslation();
   const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null>(null);
   const [popoverStyle, setPopoverStyle] = useState<React.CSSProperties>({});
   const [downloadingUrl, setDownloadingUrl] = useState<string | null>(null);
@@ -112,7 +141,7 @@ export function ChatBubble({
     if (scrollEl) {
       const parentRect = scrollEl.getBoundingClientRect();
       const relativeTop = rect.top - parentRect.top + rect.height / 2;
-      const halfPopover = 170;
+      const halfPopover = 200;
       const padding = 12;
       let topVal = relativeTop;
 
@@ -174,7 +203,10 @@ export function ChatBubble({
     >
       {!isOutgoing && (
         <div
-          className="shrink-0 mt-1 relative cursor-pointer avatar-click-target"
+          className={cn(
+            "shrink-0 mt-1 relative cursor-pointer avatar-click-target",
+            showPopover && "z-20"
+          )}
           onClick={handleTogglePopover}
         >
           <Avatar name={avatarName || senderName} src={senderAvatar} size="sm" />
@@ -247,7 +279,7 @@ export function ChatBubble({
                 isRecalled && "italic text-text-muted/70",
               )}
             >
-              {isRecalled ? "訊息已收回" : renderMentionContent(content, isOutgoing, isHighEmphasis)}
+              {isRecalled ? t("chatroom.messageRecalled") : renderMentionContent(content, isOutgoing, isHighEmphasis, searchHighlight)}
             </div>
 
             {attachments.length > 0 && (
@@ -299,7 +331,7 @@ export function ChatBubble({
                         className,
                         "text-left disabled:cursor-wait disabled:opacity-70",
                       )}
-                      title={downloadingUrl === file.url ? "Downloading attachment" : "Download attachment"}
+                      title={downloadingUrl === file.url ? t("chatroom.downloadingAttachment") : t("chatroom.downloadAttachment")}
                     >
                       {fileContent}
                     </button>
@@ -332,15 +364,18 @@ export function ChatBubble({
                   setMenuPosition(null);
                 }}
               >
-                回覆訊息
+                {t("chatroom.replyMessage")}
               </button>
               <button
                 type="button"
                 className={menuItemClass}
                 disabled={!canEdit}
-                title={canEdit ? undefined : "目前尚未支援修改訊息"}
+                onClick={() => {
+                  onEdit?.();
+                  setMenuPosition(null);
+                }}
               >
-                修改訊息
+                {t("chatroom.editMessage")}
               </button>
               <button
                 type="button"
@@ -351,10 +386,10 @@ export function ChatBubble({
                   setMenuPosition(null);
                 }}
               >
-                收回訊息
+                {t("chatroom.recallMessage")}
               </button>
               <button type="button" className={menuItemClass} onClick={handleCopy}>
-                複製文字
+                {t("chatroom.copyText")}
               </button>
             </div>
           )}
@@ -375,6 +410,7 @@ export function ChatBubble({
                 title={reader.displayName || reader.name}
               >
                 {reader.avatarUrl ? (
+                  /* eslint-disable-next-line @next/next/no-img-element */
                   <img src={resolveAssetUrl(reader.avatarUrl)} alt={reader.name} className="h-full w-full object-cover" />
                 ) : (
                   <span className="text-[8px] font-bold leading-none">

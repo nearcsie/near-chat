@@ -70,7 +70,7 @@ export default function ChatroomPageContent() {
             onClick={() => setShowRightPanel(false)}
             aria-hidden
           />
-          <div className="absolute inset-y-0 right-0 z-40 flex h-full lg:static lg:z-auto animate-slide-in-right lg:animate-none">
+          <div className="absolute inset-y-0 right-0 z-40 flex h-full lg:relative lg:z-20 animate-slide-in-right lg:animate-none">
             {rightPanel}
           </div>
         </>

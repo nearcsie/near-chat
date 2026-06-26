@@ -118,7 +118,9 @@
     "searchBtn": "查詢",
     "searching": "查詢中...",
     "noResults": "找不到符合的使用者。",
-    "requested": "已送出"
+    "requested": "已送出",
+    "blockConfirmTitle": "確認封鎖好友",
+    "blockEmergencyWarning": "此好友為您的緊急聯絡人，封鎖後緊急聯絡關係將會失效。確定要繼續封鎖嗎？"
   },
   "profile": {
     "profile": "個人資料",
@@ -155,6 +157,8 @@
     "passwordTooShort": "密碼至少需要 8 個字元。",
     "passwordMismatch": "密碼確認不一致。",
     "bio": "個人簡介",
+    "bioTooLong": "個人簡介最多 100 個字元。",
+    "bioTooManyLines": "個人簡介最多 8 行。",
     "savePreferences": "儲存偏好設定",
     "preferencesSaved": "偏好設定已儲存。",
     "deleteAccount": "刪除帳號",
@@ -178,6 +182,7 @@
     "save": "儲存",
     "noCategory": "無分類",
     "leaveGroup": "退出聊天室",
+    "ownerCannotLeave": "管理者不能離開聊天室",
     "leave": "退出",
     "unblock": "解除封鎖",
     "blockContact": "封鎖聯絡人",
@@ -187,13 +192,27 @@
     "replyTo": "回覆給 {name}",
     "readOnlyOrBlocked": "此聊天室已被封鎖或唯讀，無法發送訊息。",
     "uploadAttachment": "上傳附件檔案",
+    "attachmentPreview": "附件預覽",
     "inputPlaceholder": "輸入訊息...",
     "everyoneMention": "所有人",
     "send": "發送",
     "membersList": "成員列表 ({count})",
     "hideInfoPanel": "隱藏資訊欄",
     "showInfoPanel": "顯示資訊欄",
-    "muted": "已靜音"
+    "searchMessages": "搜尋訊息",
+    "closeSearch": "關閉搜尋",
+    "muted": "已靜音",
+    "pendingApproval": "審核中",
+    "pendingApprovalBanner": "您加入此群組的申請正在審核中。在 owner 或 admin 核准您的申請後，您就可以閱讀與傳送訊息。",
+    "editingMessageBanner": "正在修改訊息 (按 Esc 取消)",
+    "replyMessage": "回覆訊息",
+    "editMessage": "修改訊息",
+    "recallMessage": "收回訊息",
+    "copyText": "複製文字",
+    "messageRecalled": "訊息已收回",
+    "downloadingAttachment": "正在下載附件",
+    "downloadAttachment": "下載附件",
+    "newMessages": "新訊息"
   },
   "profileCard": {
     "myInfo": "我的資訊",
@@ -280,12 +299,33 @@
     "manageMember": "管理"
   },
   "mainRedirect": {
-    "emptyChats": "尚未建立聊天室"
+    "emptyChats": "尚未建立聊天室",
+    "emptyChatsDesc": "前往好友頁面，開始私人聊天；或透過側邊欄建立新群組",
+    "goToFriends": "前往好友",
+    "welcome": "歡迎使用 Near Chat",
+    "selectChat": "選擇聊天室開始對話",
+    "selectChatDesc": "從側邊欄選擇一個聊天室開始對話，或與好友發起新聊天。"
   },
   "avatarUpload": {
     "requirements": "僅支援 PNG、JPG、GIF、WebP，且檔案需小於 2 MB。",
     "selected": "已選擇：{name}",
     "invalidType": "請選擇 PNG、JPG、GIF 或 WebP 圖片。",
     "tooLarge": "頭像圖片大小不可超過 2 MB。"
+  },
+  "folders": {
+    "rename": "修改資料夾名稱",
+    "delete": "刪除資料夾",
+    "confirmDelete": "確認刪除資料夾",
+    "deleteConfirmDesc": "確定要刪除此資料夾嗎？資料夾內的聊天室將會移回「未分類」。",
+    "nameLabel": "資料夾名稱",
+    "cancel": "取消",
+    "save": "保存",
+    "deleteAction": "刪除",
+    "errorTitle": "錯誤",
+    "nameCannotBeEmpty": "資料夾名稱不能為空",
+    "nameTooLong": "資料夾名稱長度不能超過 50 個字元",
+    "renameFailed": "修改資料夾名稱失敗",
+    "deleteFailed": "刪除資料夾失敗",
+    "confirmAction": "確定"
   }
 }

@@ -6,6 +6,7 @@ export interface DropdownItem {
   onClick?: () => void;
   variant?: "default" | "danger";
   subMenuItems?: DropdownItem[];
+  disabled?: boolean;
 }
 
 export interface DropdownProps {
@@ -62,11 +63,13 @@ function DropdownRow({ item, setIsOpen }: { item: DropdownItem; setIsOpen: (open
   return (
     <div
       className="relative w-full"
-      onMouseEnter={() => hasSubMenu && setIsSubOpen(true)}
+      onMouseEnter={() => hasSubMenu && !item.disabled && setIsSubOpen(true)}
       onMouseLeave={() => hasSubMenu && setIsSubOpen(false)}
     >
       <button
+        disabled={item.disabled}
         onClick={(e) => {
+          if (item.disabled) return;
           if (hasSubMenu) {
             e.stopPropagation();
             setIsSubOpen(!isSubOpen);
@@ -77,9 +80,11 @@ function DropdownRow({ item, setIsOpen }: { item: DropdownItem; setIsOpen: (open
         }}
         className={cn(
           "w-full text-left px-4 py-2.5 text-xs font-sans font-medium transition-colors hover:bg-surface-muted select-none cursor-pointer flex items-center justify-between",
-          item.variant === "danger"
-            ? "text-red-600 hover:bg-red-500/10"
-            : "text-foreground"
+          item.disabled
+            ? "opacity-50 cursor-not-allowed text-text-muted hover:bg-transparent"
+            : item.variant === "danger"
+              ? "text-red-600 hover:bg-red-500/10"
+              : "text-foreground"
         )}
       >
         <span>{item.label}</span>
@@ -90,14 +95,16 @@ function DropdownRow({ item, setIsOpen }: { item: DropdownItem; setIsOpen: (open
         )}
       </button>
 
-      {hasSubMenu && isSubOpen && (
+      {hasSubMenu && isSubOpen && !item.disabled && (
         <div
           className="absolute right-full top-0 mr-1 w-40 bg-surface-card border border-border-primary rounded-sm shadow-lg flex flex-col divide-y divide-border-secondary z-40"
         >
           {item.subMenuItems!.map((subItem, sIdx) => (
             <button
               key={sIdx}
+              disabled={subItem.disabled}
               onClick={() => {
+                if (subItem.disabled) return;
                 if (subItem.onClick) {
                   subItem.onClick();
                 }
@@ -105,9 +112,11 @@ function DropdownRow({ item, setIsOpen }: { item: DropdownItem; setIsOpen: (open
               }}
               className={cn(
                 "w-full text-left px-4 py-2.5 text-xs font-sans font-medium transition-colors hover:bg-surface-muted select-none cursor-pointer",
-                subItem.variant === "danger"
-                  ? "text-red-600 hover:bg-red-500/10"
-                  : "text-foreground"
+                subItem.disabled
+                  ? "opacity-50 cursor-not-allowed text-text-muted hover:bg-transparent"
+                  : subItem.variant === "danger"
+                    ? "text-red-600 hover:bg-red-500/10"
+                    : "text-foreground"
               )}
             >
               {subItem.label}

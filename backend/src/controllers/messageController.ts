@@ -8,6 +8,12 @@ interface MessageService {
     roomId: string,
     opts?: { beforeId?: string; limit?: number },
   ): Promise<MessageWithSender[]>;
+  updateMessage(
+    userId: string,
+    roomId: string,
+    messageId: string,
+    content: string,
+  ): Promise<MessageWithSender>;
 }
 
 export const makeMessageController = (service: MessageService) => ({
@@ -27,6 +33,28 @@ export const makeMessageController = (service: MessageService) => ({
         limit: parsedLimit,
       });
       res.status(200).json(messages);
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async update(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const roomId = req.params.roomId as string;
+      const messageId = req.params.messageId as string;
+      const { content } = req.body;
+
+      if (typeof content !== 'string') {
+        return next(new ValidationError('content must be a string'));
+      }
+
+      const message = await service.updateMessage(
+        req.user!.userId,
+        roomId,
+        messageId,
+        content,
+      );
+      res.status(200).json(message);
     } catch (err) {
       next(err);
     }

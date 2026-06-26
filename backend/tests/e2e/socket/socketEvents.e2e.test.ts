@@ -242,6 +242,7 @@ describe('Socket.IO chat events E2E', () => {
   it('emits error when a non-sender recalls a message', async () => {
     const client = await connectClient('user-2');
     messageRepository.findById.mockResolvedValue(message);
+    messageService.recallMessage.mockRejectedValue(new ForbiddenError('Only the original sender or an admin can recall this message'));
 
     const errorPayload = waitFor<Parameters<ServerToClientEvents['error']>[0]>(client, 'error');
     client.emit('recall_message', { messageId: 'msg-1' });
@@ -250,7 +251,7 @@ describe('Socket.IO chat events E2E', () => {
       statusCode: 403,
       code: 'FORBIDDEN',
     });
-    expect(messageService.recallMessage).not.toHaveBeenCalled();
+    expect(messageService.recallMessage).toHaveBeenCalledWith('user-2', 'room-1', 'msg-1');
   });
 
   it('broadcasts read receipts and updates database', async () => {

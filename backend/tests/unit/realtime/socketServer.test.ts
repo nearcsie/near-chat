@@ -3,6 +3,12 @@ import { ForbiddenError, NotFoundError } from '../../../src/errors/AppError';
 import { attachSockets } from '../../../src/realtime/socketServer';
 import type { ChatServer } from '../../../src/realtime/authSocket';
 import type { MessageWithSender } from '../../../../shared/types';
+import { trackUserConnection, trackUserDisconnection } from '../../../src/realtime/presence';
+
+vi.mock('../../../src/realtime/presence', () => ({
+  trackUserConnection: vi.fn().mockResolvedValue(undefined),
+  trackUserDisconnection: vi.fn().mockResolvedValue(undefined),
+}));
 
 const message: MessageWithSender = {
   messageId: 'msg-1',
@@ -118,15 +124,16 @@ describe('attachSockets', () => {
     expect(roomEmit).toHaveBeenCalledWith('message_recalled', { messageId: 'msg-1' });
   });
 
-  it('emits ForbiddenError when recall_message caller is not the sender', async () => {
+  it('emits ForbiddenError when recallMessage fails with ForbiddenError', async () => {
     repo.findById.mockResolvedValue({ ...message, senderId: 'user-2' });
+    service.recallMessage.mockRejectedValue(new ForbiddenError('Only the original sender or an admin can recall this message'));
 
     await handlers.recall_message({ messageId: 'msg-1' });
 
-    expect(service.recallMessage).not.toHaveBeenCalled();
+    expect(service.recallMessage).toHaveBeenCalledWith('user-1', 'room-1', 'msg-1');
     expect(socket.emit).toHaveBeenCalledWith('error', {
       statusCode: 403,
-      message: 'Only the original sender can recall this message',
+      message: 'Only the original sender or an admin can recall this message',
       code: 'FORBIDDEN',
     });
   });
@@ -162,6 +169,68 @@ describe('attachSockets', () => {
       statusCode: 400,
       message: 'Invalid messageId for this room',
       code: 'VALIDATION_ERROR',
+    });
+  });
+
+  it('emits NotFoundError when recall_message target does not exist', async () => {
+    repo.findById.mockResolvedValue(null);
+
+    await handlers.recall_message({ messageId: 'missing-msg' });
+
+    expect(service.recallMessage).not.toHaveBeenCalled();
+    expect(socket.emit).toHaveBeenCalledWith('error', {
+      statusCode: 404,
+      message: 'message with id missing-msg not found',
+      code: 'NOT_FOUND',
+    });
+  });
+
+  describe('with friendRepository', () => {
+    let frHandlers: Record<string, any>;
+    let frSocket: any;
+    const friendRepo = { getFriends: vi.fn() };
+
+    beforeEach(() => {
+      vi.mocked(trackUserConnection).mockClear();
+      vi.mocked(trackUserDisconnection).mockClear();
+
+      frHandlers = {};
+      frSocket = {
+        id: 'socket-fr-1',
+        data: { user: { userId: 'user-1', name: 'Alice' } },
+        join: vi.fn(),
+        leave: vi.fn(),
+        emit: vi.fn(),
+        to: vi.fn(() => ({ emit: vi.fn() })),
+        on: vi.fn((event, handler) => { frHandlers[event] = handler; }),
+      };
+
+      let frConnectionHandler: any;
+      const frIo = {
+        on: vi.fn((event, handler) => { if (event === 'connection') frConnectionHandler = handler; }),
+        to: vi.fn(() => ({ emit: vi.fn() })),
+      } as unknown as ChatServer;
+
+      attachSockets(frIo, {
+        messageService: service,
+        messageRepository: repo,
+        roomMemberRepository: roomMemberRepo,
+        friendRepository: friendRepo,
+      });
+      frConnectionHandler(frSocket);
+    });
+
+    it('calls trackUserConnection on connect when friendRepository is provided', () => {
+      expect(trackUserConnection).toHaveBeenCalledWith(
+        expect.anything(), 'user-1', 'socket-fr-1', friendRepo,
+      );
+    });
+
+    it('calls trackUserDisconnection on disconnect when friendRepository is provided', () => {
+      frHandlers.disconnect();
+      expect(trackUserDisconnection).toHaveBeenCalledWith(
+        expect.anything(), 'user-1', 'socket-fr-1', friendRepo,
+      );
     });
   });
 });
