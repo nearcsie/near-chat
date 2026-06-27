@@ -211,7 +211,8 @@
     "copyText": "複製文字",
     "messageRecalled": "訊息已收回",
     "downloadingAttachment": "正在下載附件",
-    "downloadAttachment": "下載附件"
+    "downloadAttachment": "下載附件",
+    "newMessages": "新訊息"
   },
   "profileCard": {
     "myInfo": "我的資訊",
@@ -300,7 +301,10 @@
   "mainRedirect": {
     "emptyChats": "尚未建立聊天室",
     "emptyChatsDesc": "前往好友頁面，開始私人聊天；或透過側邊欄建立新群組",
-    "goToFriends": "前往好友"
+    "goToFriends": "前往好友",
+    "welcome": "歡迎使用 Near Chat",
+    "selectChat": "選擇聊天室開始對話",
+    "selectChatDesc": "從側邊欄選擇一個聊天室開始對話，或與好友發起新聊天。"
   },
   "avatarUpload": {
     "requirements": "僅支援 PNG、JPG、GIF、WebP，且檔案需小於 2 MB。",
