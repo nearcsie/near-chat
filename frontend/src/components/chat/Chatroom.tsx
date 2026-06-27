@@ -700,8 +700,6 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
                         : undefined
                     }
                     isRead={isRead}
-                    readByAvatars={getReadAvatarsForMessage(activeRoom, msg)}
-                    roomType={activeRoom.type}
                     senderId={msg.senderId || undefined}
                     messageId={msg.id}
                     onReply={() => setReplyTarget(msg)}
@@ -722,6 +720,34 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
                     }
                     searchHighlight={msgSearchQuery.trim() || undefined}
                   />
+
+                  {/* Render read receipt avatars on the far right of the screen */}
+                  {((activeRoom.type === "group" || activeRoom.type === "msg") &&
+                    getReadAvatarsForMessage(activeRoom, msg).length > 0) && (
+                    <div className="self-stretch flex gap-1 mt-1 justify-end px-0.5 select-none">
+                      {getReadAvatarsForMessage(activeRoom, msg).map((reader, idx) => (
+                        <div
+                          key={idx}
+                          className="h-4.5 w-4.5 border border-border-primary bg-surface-muted rounded-sm overflow-hidden flex items-center justify-center"
+                          title={reader.displayName || reader.name}
+                        >
+                          {reader.avatarUrl ? (
+                            /* eslint-disable-next-line @next/next/no-img-element */
+                            <img src={resolveAssetUrl(reader.avatarUrl)} alt={reader.name} className="h-full w-full object-cover" />
+                          ) : (
+                            <span className="text-[8px] font-bold leading-none">
+                              {reader.name
+                                .split(" ")
+                                .map((n) => n[0])
+                                .join("")
+                                .slice(0, 2)
+                                .toUpperCase() || "U"}
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
                   {!msg.isRecalled && (
                     <div className="opacity-0 group-hover/msg:opacity-100 flex gap-2.5 mt-1 select-none text-[10px] text-text-muted transition-opacity">
