@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useLayoutEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useLayoutEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useChat, getAvatarForUser, Message } from "@/context/ChatContext";
 import { resolveAssetUrl } from "@/lib/assets";
@@ -232,8 +232,10 @@ export default function Chatroom({ roomId, onOpenGroupSettings }: ChatroomProps)
       initialUnreadId = firstUnreadMsg?.id ?? null;
     }
 
-    setCurrentRoomUnreadId(initialUnreadId);
-    setHasInitializedUnread(true);
+    setTimeout(() => {
+      setCurrentRoomUnreadId(initialUnreadId);
+      setHasInitializedUnread(true);
+    }, 0);
   }, [roomId, messages, rooms, groupReadStates, user.userId, hasInitializedUnread]);
 
   const lastScrolledRoomIdRef = useRef<string | null>(null);
