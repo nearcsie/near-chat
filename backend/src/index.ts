@@ -1,4 +1,6 @@
 import express from "express";
+import path from "path";
+import fs from "fs";
 import http from "http";
 import cors from "cors";
 import { Server } from "socket.io";
@@ -181,8 +183,20 @@ attachSockets(io, {
 if (require.main === module) {
   startInactivityJob(userRepo, userService);
   startDemoInactivityJob(userRepo, userService);
+
+  let version = "1.0.0";
+  try {
+    const rootPkg = JSON.parse(fs.readFileSync(path.join(process.cwd(), "../package.json"), "utf8"));
+    version = rootPkg.version;
+  } catch {
+    try {
+      const localPkg = JSON.parse(fs.readFileSync(path.join(process.cwd(), "package.json"), "utf8"));
+      version = localPkg.version;
+    } catch {}
+  }
+
   server.listen(PORT as number, "0.0.0.0", () =>
-    console.log(`Backend server successfully listening on port ${PORT} (0.0.0.0)`),
+    console.log(`Backend server (v${version}) successfully listening on port ${PORT} (0.0.0.0)`),
   );
 }
 

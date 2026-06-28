@@ -508,6 +508,9 @@ export default function ProfileSettings() {
           </div>
         </form>
       </Modal>
+      <div className="mt-8 text-center text-xs text-foreground/50">
+        Near Chat v{process.env.NEXT_PUBLIC_APP_VERSION}
+      </div>
     </>
   );
 }

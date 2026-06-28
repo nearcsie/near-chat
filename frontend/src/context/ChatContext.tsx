@@ -853,6 +853,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- canonical SSR mounted flag; must flip after hydration
     setIsMounted(true);
+    console.log(`Near Chat client successfully initialized (v${process.env.NEXT_PUBLIC_APP_VERSION || '1.0.0'})`);
   }, []);
 
   useEffect(() => {
