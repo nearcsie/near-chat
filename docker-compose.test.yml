@@ -1,6 +1,6 @@
 services:
   db-test:
-    image: postgres:16
+    image: postgres:18-alpine
     ports:
       - "5436:5432"
     environment:
