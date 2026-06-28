@@ -753,6 +753,12 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
   const clearSession = () => {
     localStorage.removeItem("user");
+    localStorage.removeItem("theme");
+    localStorage.removeItem("language");
+    localStorage.removeItem("notify-desktop");
+    localStorage.removeItem("notify-sound");
+    localStorage.removeItem("near:roomOrder");
+    localStorage.removeItem("just_registered");
     setActiveAccessToken(null);
     setToken(null);
     setCurrentUserId(undefined);
