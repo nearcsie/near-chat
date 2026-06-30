@@ -9,6 +9,7 @@ const nextConfig: NextConfig = {
   /* config options here */
   allowedDevOrigins,
   output: 'standalone',
+  reactCompiler: true,
   env: {
     NEXT_PUBLIC_APP_VERSION: packageInfo.version,
   },
