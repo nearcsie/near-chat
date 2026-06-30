@@ -132,6 +132,8 @@
   },
   "profile": {
     "profile": "Profile",
+    "appInfo": "Application Info",
+    "version": "Version",
     "changeAvatar": "Change avatar",
     "userId": "User ID",
     "username": "Username",
