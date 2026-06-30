@@ -8,6 +8,7 @@ const nextConfig: NextConfig = {
   /* config options here */
   allowedDevOrigins,
   output: 'standalone',
+  reactCompiler: true,
 };
 
 export default nextConfig;
