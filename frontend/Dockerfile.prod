@@ -5,7 +5,7 @@ RUN corepack enable && corepack prepare pnpm@latest --activate
 WORKDIR /workspace
 
 # Copy global configs and shared files
-COPY tsconfig.base.json ./
+COPY tsconfig.base.json package.json ./
 COPY shared/ ./shared/
 
 # Copy frontend packages
@@ -23,7 +23,7 @@ RUN corepack enable && corepack prepare pnpm@latest --activate
 WORKDIR /workspace
 
 # Copy global configs and shared files
-COPY tsconfig.base.json ./
+COPY tsconfig.base.json package.json ./
 COPY shared/ ./shared/
 
 # Copy frontend packages and node_modules

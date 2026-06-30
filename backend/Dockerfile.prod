@@ -8,7 +8,7 @@ RUN corepack enable && corepack prepare pnpm@latest --activate
 WORKDIR /workspace
 
 # Copy global typescript and workspace configs
-COPY tsconfig.base.json ./
+COPY tsconfig.base.json package.json ./
 COPY shared/ ./shared/
 
 # Copy backend dependency declarations
