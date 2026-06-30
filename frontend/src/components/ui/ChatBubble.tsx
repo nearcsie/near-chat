@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from "react";
 import { useTranslation } from "@/hooks/useTranslation";
-import { resolveAssetUrl } from "@/lib/assets";
 import { cn } from "@/lib/utils";
 import { Avatar } from "./Avatar";
 import ProfilePopover from "../chat/ProfilePopover";
@@ -27,8 +26,6 @@ export interface ChatBubbleProps {
   attachments?: Attachment[];
   senderAvatar?: string;
   isRead?: boolean;
-  readByAvatars?: { name: string; displayName?: string; avatarUrl: string }[];
-  roomType?: "msg" | "group";
   onReply?: () => void;
   onRecall?: () => void;
   onEdit?: () => void;
@@ -95,8 +92,6 @@ export function ChatBubble({
   replyTo,
   attachments = [],
   senderAvatar,
-  readByAvatars = [],
-  roomType = "msg",
   onReply,
   onRecall,
   onEdit,
@@ -401,31 +396,6 @@ export function ChatBubble({
           )}
         </div>
 
-        {(roomType === "group" || roomType === "msg") && readByAvatars && readByAvatars.length > 0 && (
-          <div className="flex gap-1 mt-1 justify-end w-full px-0.5">
-            {readByAvatars.map((reader, idx) => (
-              <div
-                key={idx}
-                className="h-4.5 w-4.5 border border-border-primary bg-surface-muted rounded-sm overflow-hidden select-none flex items-center justify-center"
-                title={reader.displayName || reader.name}
-              >
-                {reader.avatarUrl ? (
-                  /* eslint-disable-next-line @next/next/no-img-element */
-                  <img src={resolveAssetUrl(reader.avatarUrl)} alt={reader.name} className="h-full w-full object-cover" />
-                ) : (
-                  <span className="text-[8px] font-bold leading-none">
-                    {reader.name
-                      .split(" ")
-                      .map((n) => n[0])
-                      .join("")
-                      .slice(0, 2)
-                      .toUpperCase() || "U"}
-                  </span>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
       </div>
     </div>
   );

@@ -628,23 +628,6 @@ const sortMessages = (items: Message[]) =>
     return a.id.localeCompare(b.id);
   });
 
-const computeUnreadCount = (
-  roomMessages: Message[],
-  currentUserId?: string,
-  lastReadId?: string | null,
-) => {
-  if (!roomMessages.length) return 0;
-
-  const firstUnreadIndex = lastReadId
-    ? roomMessages.findIndex((message) => message.id === lastReadId) + 1
-    : 0;
-
-  return roomMessages
-    .slice(Math.max(firstUnreadIndex, 0))
-    .filter((message) => message.senderId !== currentUserId)
-    .length;
-};
-
 export function ChatProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -694,6 +677,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     activeRoomIdRef.current = activeRoomId;
   }, [activeRoomId]);
+
 
   const loadGroupMembers = async (roomId: string): Promise<Member[]> => {
     if (!token) return [];
@@ -771,7 +755,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     socketRef.current = null;
   };
 
-  const loadMessagesForRooms = async (authToken: string, nextRooms: ChatRoom[], userId?: string) => {
+  const loadMessagesForRooms = useCallback(async (authToken: string, nextRooms: ChatRoom[], userId?: string) => {
     const roomMessages = await Promise.all(
       nextRooms.map(async (room) => {
         try {
@@ -789,7 +773,16 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       }),
     );
     setMessages(hydrateReplyTargets(roomMessages.flat()));
-  };
+  }, [user.username]);
+
+  useEffect(() => {
+    if (!token || !activeRoomId) return;
+
+    const activeRoom = roomsRef.current.find((r) => r.id === activeRoomId);
+    if (activeRoom) {
+      void loadMessagesForRooms(token, [activeRoom], currentUserId);
+    }
+  }, [activeRoomId, token, currentUserId, loadMessagesForRooms]);
 
   const refreshRoomsAndFolders = async (authToken: string, userId = currentUserId) => {
     const [apiRooms, apiFolders] = await Promise.all([listRooms(authToken), listFolders(authToken)]);
@@ -797,7 +790,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
     setFolders((current) => mapFolders(apiFolders, current));
     setRooms(nextRooms);
-    void loadMessagesForRooms(authToken, nextRooms, userId);
+    const activeRoom = nextRooms.find((r) => r.id === activeRoomIdRef.current);
+    void loadMessagesForRooms(authToken, activeRoom ? [activeRoom] : [], userId);
     setRoomsInitialized(true);
   };
 
@@ -1002,6 +996,19 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         const withoutDuplicate = current.filter((message) => message.id !== incoming.id);
         return hydrateReplyTargets(sortMessages([...withoutDuplicate, incoming]));
       });
+
+      // Update the sender's read receipt (since they sent it, they've read it!)
+      const senderId = incoming.senderId;
+      if (senderId) {
+        setGroupReadStates((current) => ({
+          ...current,
+          [incoming.roomId]: {
+            ...(current[incoming.roomId] ?? {}),
+            [senderId]: incoming.id,
+          },
+        }));
+      }
+
       setRooms((current) =>
         current.map((room) =>
           room.id === incoming.roomId
@@ -1009,6 +1016,18 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
                 ...room,
                 lastMessagePreview: summarizeMessagePreview(incoming),
                 lastMessageAt: incoming.timestamp,
+                unreadCount:
+                  activeRoomIdRef.current === room.id
+                    ? 0
+                    : incoming.senderId === currentUserId
+                    ? (room.unreadCount ?? 0)
+                    : (room.unreadCount ?? 0) + 1,
+                lastReadId: incoming.senderId === currentUserId ? incoming.id : room.lastReadId,
+                members: room.members?.map((member) =>
+                  member.userId === incoming.senderId
+                    ? { ...member, lastReadId: incoming.id }
+                    : member
+                ),
               }
             : room,
         ),
@@ -1044,19 +1063,28 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       }));
       setRooms((current) =>
         current.map((room) => {
-          if (room.id !== roomId || !room.members) return room;
+          if (room.id !== roomId) return room;
 
-          let memberChanged = false;
-          const nextMembers = room.members.map((member) => {
-            if (member.userId !== userId || member.lastReadId === messageId) {
-              return member;
-            }
+          let roomChanged = false;
+          const nextRoom = { ...room };
 
-            memberChanged = true;
-            return { ...member, lastReadId: messageId };
-          });
+          if (userId === currentUserId && room.lastReadId !== messageId) {
+            nextRoom.lastReadId = messageId;
+            roomChanged = true;
+          }
 
-          return memberChanged ? { ...room, members: nextMembers } : room;
+          if (room.members) {
+            const nextMembers = room.members.map((member) => {
+              if (member.userId !== userId || member.lastReadId === messageId) {
+                return member;
+              }
+              roomChanged = true;
+              return { ...member, lastReadId: messageId };
+            });
+            nextRoom.members = nextMembers;
+          }
+
+          return roomChanged ? nextRoom : room;
         }),
       );
     });
@@ -1860,13 +1888,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       const nextRooms = current.map((room) => {
         const roomMessages = sortMessages(messagesByRoom[room.id] ?? []);
         const latestMessage = roomMessages.at(-1);
-        const roomLastReadId =
-          groupReadStates[room.id]?.[currentUserId] ??
-          room.lastReadId ??
-          room.members?.find((member) => member.userId === currentUserId)?.lastReadId ??
-          null;
         const nextUnreadCount =
-          activeRoomId === room.id ? 0 : computeUnreadCount(roomMessages, currentUserId, roomLastReadId);
+          activeRoomId === room.id ? 0 : (room.unreadCount ?? 0);
         const nextPreview = latestMessage ? summarizeMessagePreview(latestMessage) : room.lastMessagePreview;
         const nextLastMessageAt = latestMessage ? latestMessage.timestamp : room.lastMessageAt;
 
@@ -1906,7 +1929,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     if (!activeRoom) return;
 
     const roomMessages = sortMessages(messages.filter((message) => message.roomId === activeRoomId));
-    const latestIncoming = [...roomMessages].reverse().find((message) => message.senderId !== currentUserId);
+    const latestIncoming = roomMessages.at(-1);
     if (!latestIncoming) return;
 
     const currentLastReadId =
@@ -1938,7 +1961,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       const room = roomsRef.current.find((r) => r.id === roomId);
       if (!room) return;
       const roomMessages = sortMessages(messages.filter((m) => m.roomId === roomId));
-      const latestIncoming = [...roomMessages].reverse().find((m) => m.senderId !== currentUserId);
+      const latestIncoming = roomMessages.at(-1);
       if (!latestIncoming) return;
       const currentLastReadId =
         groupReadStates[roomId]?.[currentUserId] ??
