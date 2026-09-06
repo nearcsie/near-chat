@@ -24,6 +24,11 @@ interface SocketDeps {
    * nothing to reconcile.
    */
   onSubscriberRestored?: (handler: () => void) => () => void;
+  /**
+   * First backoff before a reconciliation retries users whose membership read
+   * failed. Injected only so tests need not wait out a real backoff.
+   */
+  reconcileRetryDelayMs?: number;
 }
 
 /** The only room prefix reconciliation may act on. */
@@ -31,6 +36,12 @@ const ROOM_PREFIX = 'room_';
 
 /** Users whose durable membership is read at once during a reconciliation. */
 const RECONCILE_CONCURRENCY = 8;
+
+/** Passes a reconciliation makes before it stops retrying failed reads. */
+const RECONCILE_ATTEMPTS = 5;
+
+/** First backoff before retrying users whose membership read failed. */
+const RECONCILE_RETRY_DELAY_MS = 2_000;
 
 /** The socket type the namespace holds, without restating its generics. */
 type LocalSocket = ReturnType<ChatServer['of']>['sockets'] extends Map<string, infer S>
@@ -167,25 +178,30 @@ export const attachSockets = (io: ChatServer, deps: SocketDeps): void => {
         .map((member) => `${ROOM_PREFIX}${member.roomId}`),
     );
 
+  /**
+   * Reconcile one user's sessions. Resolves false when a membership read failed
+   * and this user's rooms are therefore still unverified.
+   */
   const reconcileUser = async (
     findByUser: (userId: string) => Promise<RoomMember[]>,
     userId: string,
     sockets: LocalSocket[],
-  ): Promise<void> => {
+  ): Promise<boolean> => {
     const read = async (): Promise<Set<string> | undefined> => {
       try {
         return permittedRooms(await findByUser(userId));
       } catch (error) {
-        // Leaving nothing is the safe failure. This pass only ever removes
-        // access, so skipping a user costs one more reconnect's worth of
-        // delay, while guessing would drop them out of rooms they still hold.
+        // Leaving nothing is the safe failure: this pass only ever removes
+        // access, and guessing would drop the user out of rooms they still
+        // hold. The cost is that this user stays unverified, which is why the
+        // caller retries rather than treating the pass as finished.
         console.error('Failed to read membership while reconciling subscriptions:', error);
         return undefined;
       }
     };
 
     const permitted = await read();
-    if (!permitted) return;
+    if (!permitted) return false;
 
     // Collected across the user's sockets before anything leaves, so the room
     // set being walked is never the one `leave` mutates — `socket.rooms` is the
@@ -201,8 +217,11 @@ export const attachSockets = (io: ChatServer, deps: SocketDeps): void => {
         candidates.add(room);
       }
     }
-    if (candidates.size === 0) return;
+    if (candidates.size === 0) return true;
 
+    // A re-read that failed leaves its room unverified too, so the pass is
+    // incomplete for the same reason a failed first read is.
+    let verified = true;
     const evicted = new Set<LocalSocket>();
     for (const room of candidates) {
       const roomId = room.slice(ROOM_PREFIX.length);
@@ -218,7 +237,11 @@ export const attachSockets = (io: ChatServer, deps: SocketDeps): void => {
         // private room and mutual-block conditions — a revocation caused by a
         // block would otherwise survive the re-read.
         const current = await read();
-        if (!current || current.has(room)) return;
+        if (!current) {
+          verified = false;
+          return;
+        }
+        if (current.has(room)) return;
         for (const socket of sockets) {
           if (socket.connected === false) continue;
           if (socket.rooms?.has(room) !== true) continue;
@@ -240,6 +263,7 @@ export const attachSockets = (io: ChatServer, deps: SocketDeps): void => {
     // social and member reloads — and a socket that kept every room has
     // nothing to recover.
     for (const socket of evicted) socket.emit('realtime_ready');
+    return verified;
   };
 
   /**
@@ -256,28 +280,37 @@ export const attachSockets = (io: ChatServer, deps: SocketDeps): void => {
    * same outage is a missed event rather than wrong access, and `/sync` plus
    * the next reconnect already cover it.
    */
-  const reconcileRoomSubscriptions = async (): Promise<void> => {
+  const reconcileRoomSubscriptions = async (): Promise<boolean> => {
     const repository = deps.roomMemberRepository;
     // Bound so the repository keeps its own `this`, and checked because
     // `findByUser` is optional on `IRoomMemberRepository`. Without it there is
     // no authorization source to reconcile against at all, and reading that as
     // "no rooms" would empty every socket out of every room it holds.
     const findByUser = repository.findByUser?.bind(repository);
-    if (!findByUser) return;
+    if (!findByUser) return true;
 
+    let complete = true;
     const grouped = [...localSocketsByUser()];
     for (let index = 0; index < grouped.length; index += RECONCILE_CONCURRENCY) {
-      await Promise.all(
+      const verified = await Promise.all(
         grouped
           .slice(index, index + RECONCILE_CONCURRENCY)
           .map(([userId, sockets]) => reconcileUser(findByUser, userId, sockets)),
       );
+      if (verified.includes(false)) complete = false;
     }
+    return complete;
   };
 
   /** The in-flight reconciliation, and whether one more pass is owed. */
   let reconciling: Promise<void> | undefined;
   let reconcileAgain = false;
+
+  const pause = (ms: number): Promise<void> =>
+    new Promise((resolve) => {
+      const timer = setTimeout(resolve, ms);
+      timer.unref?.();
+    });
 
   const scheduleReconcile = (): void => {
     if (reconciling) {
@@ -288,12 +321,37 @@ export const attachSockets = (io: ChatServer, deps: SocketDeps): void => {
       reconcileAgain = true;
       return;
     }
+    const retryDelay = deps.reconcileRetryDelayMs ?? RECONCILE_RETRY_DELAY_MS;
     reconciling = (async () => {
       try {
-        do {
+        let attempt = 0;
+        for (;;) {
           reconcileAgain = false;
-          await reconcileRoomSubscriptions();
-        } while (reconcileAgain);
+          const complete = await reconcileRoomSubscriptions();
+          // A fresh signal arrived mid-pass, so the pass just finished is
+          // already stale. Start over with the retry budget reset.
+          if (reconcileAgain) {
+            attempt = 0;
+            continue;
+          }
+          if (complete) return;
+          // Some user's membership could not be read, so their sockets are
+          // still unverified. Nothing else will ask again: the subscriber is
+          // back up, so no further signal is coming, and a revoked socket would
+          // otherwise sit in its room until that client happens to reconnect.
+          attempt += 1;
+          if (attempt >= RECONCILE_ATTEMPTS) {
+            console.error(
+              'Gave up reconciling room subscriptions after repeated membership read failures; '
+              + 'sockets may still hold rooms that have been revoked',
+            );
+            return;
+          }
+          // Backed off, because the reason a read failed is usually that the
+          // database is unavailable, and retrying at full speed would add load
+          // to something already struggling.
+          await pause(retryDelay * 2 ** (attempt - 1));
+        }
       } catch (error) {
         console.error('Failed to reconcile room subscriptions:', error);
       } finally {

@@ -442,6 +442,7 @@ describe('attachSockets', () => {
       sockets: ReturnType<typeof makeLive>[],
       repo: { findByUser?: Mock<any>; findMember: Mock<any> },
       withRoomSubscriptionLock?: any,
+      extra?: { reconcileRetryDelayMs?: number },
     ) => {
       let restored: (() => void) | undefined;
       const io = {
@@ -457,6 +458,7 @@ describe('attachSockets', () => {
           restored = handler;
           return () => {};
         },
+        ...extra,
       });
 
       return {
@@ -519,13 +521,63 @@ describe('attachSockets', () => {
     it('leaves nothing when the membership read fails', async () => {
       const socket = makeLive('s1', 'user-1', ['room_revoked']);
       const findByUser = mock().mockRejectedValue(new Error('database is down'));
-      const { trigger } = await attachReconciler([socket], {
-        findByUser,
-        findMember: mock(),
-      });
+      const { trigger } = await attachReconciler(
+        [socket],
+        { findByUser, findMember: mock() },
+        undefined,
+        { reconcileRetryDelayMs: 1 },
+      );
 
       await trigger();
 
+      expect(socket.leave).not.toHaveBeenCalled();
+    });
+
+    /**
+     * The signal fires once. If the pass that answered it skipped a user
+     * because the database was briefly unavailable, nothing else will ever ask
+     * again — the subscriber is back up, so no further signal is coming — and
+     * that user's revoked socket would sit in its room until the client happens
+     * to reconnect on its own.
+     */
+    it('retries a user whose membership read failed, and leaves once it succeeds', async () => {
+      const socket = makeLive('s1', 'user-1', ['room_revoked']);
+      const findByUser = mock()
+        .mockRejectedValueOnce(new Error('database is down'))
+        .mockResolvedValue([]);
+      const { trigger } = await attachReconciler(
+        [socket],
+        { findByUser, findMember: mock() },
+        undefined,
+        { reconcileRetryDelayMs: 1 },
+      );
+
+      await trigger();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      expect(socket.leave).toHaveBeenCalledWith('room_revoked');
+      expect(socket.emit).toHaveBeenCalledWith('realtime_ready');
+    });
+
+    it('stops retrying a database that stays down, rather than spinning', async () => {
+      const socket = makeLive('s1', 'user-1', ['room_revoked']);
+      const findByUser = mock().mockRejectedValue(new Error('database is down'));
+      const { trigger } = await attachReconciler(
+        [socket],
+        { findByUser, findMember: mock() },
+        undefined,
+        { reconcileRetryDelayMs: 1 },
+      );
+
+      await trigger();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      const attempts = findByUser.mock.calls.length;
+      await new Promise((resolve) => setTimeout(resolve, 60));
+
+      // Bounded: the backoff runs out and the pass gives up loudly rather than
+      // retrying against a database that is not coming back on its own.
+      expect(attempts).toBeLessThanOrEqual(5);
+      expect(findByUser.mock.calls.length).toBe(attempts);
       expect(socket.leave).not.toHaveBeenCalled();
     });
 
