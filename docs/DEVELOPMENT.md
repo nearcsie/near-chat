@@ -186,14 +186,25 @@ it does not lag a live socket the way a lease does. The per-user session limit
 and global rate limits remain per-instance, so a replica count above one is not
 yet a supported deployment.
 
-Two more gaps have to close before it becomes one, both from pub/sub keeping no
-backlog. A membership revocation (`socketsLeave`) lost while an instance's
-subscriber is down leaves that member's socket in the room, still receiving what
-is published there afterwards — a Sync Cursor cannot repair it, because the
-problem is a stale subscription rather than a missed event; it needs a durable
-path or a reconciliation against the database on reconnect (#477). And typing
-claims are aggregated per process, so the same user typing from two instances
-has the indication retracted by whichever node's last claim ends first (#474).
+A membership revocation (`socketsLeave`) published while an instance's
+subscriber is down used to be lost outright, leaving that member's socket in the
+room and still receiving what was published there afterwards — a Sync Cursor
+cannot repair that, because the problem is a stale subscription rather than a
+missed event. `realtime/socketServer.ts` now reconciles it (#649): when
+`utils/redis.ts` reports the subscriber back, every socket this process holds has
+its rooms re-derived from durable membership, and the ones no longer permitted
+are left. The pass only ever leaves, never joins — `services/roomService.ts`
+revokes before it writes a demotion, so a pass that re-joined would hand back the
+subscription a revocation in flight had just taken away.
+
+Two residual gaps are recorded in `realtime/redisAdapter.ts` rather than swept
+for: a revocation whose *publish* Redis refused (the adapter swallows that and
+resolves anyway, and the instance holding the stale socket never lost its
+subscriber, so nothing signals it), and a drop Bun's `autoReconnect` recovers
+without re-announcing. One gap is still open for a replica count above one:
+typing claims are aggregated per process, so the same user typing from two
+instances has the indication retracted by whichever node's last claim ends first
+(#474).
 
 ### Production Ingress & Proxy Trust
 

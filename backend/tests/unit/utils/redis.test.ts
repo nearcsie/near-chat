@@ -787,6 +787,150 @@ describe('redis manager', () => {
     });
   });
 
+  /**
+   * The signal a consumer needs to repair local state a lost frame corrupted.
+   *
+   * Pub/sub keeps no backlog, so the replay above restores the *subscription*
+   * and nothing else: whatever was published while the subscriber was away is
+   * gone. Anything derived from those frames has to be rebuilt from a durable
+   * source, and this is the only notice that it is time to.
+   */
+  describe('subscriber restored signal', () => {
+    /**
+     * The first subscription is not exempt, and that is the whole point.
+     * `index.ts` starts Redis with `void redis.connect()` and does not await it
+     * before the server accepts sockets, so sessions can already be holding
+     * rooms derived from the database while frames addressed here are being
+     * dropped. Treating the first connection as "nothing could have gone stale"
+     * leaves precisely that window unrepaired.
+     */
+    it('fires for the process\'s first subscription, not only for reconnects', async () => {
+      const { manager, harness } = createHarness();
+      let fired = 0;
+      manager.onSubscriberRestored(() => { fired += 1; });
+
+      // The order the composition root produces: the adapter registers its
+      // channel before anything connects, so the first replay is the moment
+      // that subscription actually reaches Redis.
+      await manager.subscribe('near-chat-ws', () => {});
+      await manager.connect();
+      await settle();
+
+      expect(fired).toBe(1);
+      expect(harness.byRole('subscriber').subscribeCalls).toEqual(['near-chat-ws']);
+    });
+
+    it('fires once the watchdog rebuilds the subscriber', async () => {
+      const { manager, harness } = createHarness();
+      await manager.connect();
+      await manager.subscribe('near-chat-ws', () => {});
+      let fired = 0;
+      manager.onSubscriberRestored(() => { fired += 1; });
+
+      harness.byRole('subscriber').drop();
+      harness.tick();
+      await settle();
+
+      expect(fired).toBe(1);
+      expect(harness.byRole('subscriber').subscribeCalls).toEqual(['near-chat-ws']);
+    });
+
+    it('fires when the client reconnects on its own, without a rebuild', async () => {
+      const { manager, harness } = createHarness();
+      await manager.connect();
+      await manager.subscribe('near-chat-ws', () => {});
+      let fired = 0;
+      manager.onSubscriberRestored(() => { fired += 1; });
+
+      // Bun reconnects by itself with `autoReconnect`, announcing on the same
+      // connection object. `openRole` never runs, so the rebuild counter never
+      // moves — but the frames published during the gap are just as gone.
+      harness.byRole('subscriber').onconnect?.();
+      await settle();
+
+      expect(fired).toBe(1);
+      expect(manager.status.reconnects).toBe(0);
+    });
+
+    it('fires when a lone channel is re-attached without any reconnect', async () => {
+      const { manager, harness } = createHarness();
+      await manager.connect();
+      const subscriber = harness.byRole('subscriber');
+      await manager.subscribe('room', () => {});
+      let fired = 0;
+      manager.onSubscriberRestored(() => { fired += 1; });
+
+      // The socket stays up throughout; only this channel's SUBSCRIBE is
+      // rejected and then repaired by the watchdog. The connection never
+      // dropped, so nothing else would ever report the gap — yet the channel
+      // spent that window unsubscribed and missed what was published on it.
+      subscriber.failCommands = true;
+      subscriber.onconnect?.();
+      await settle();
+      subscriber.failCommands = false;
+      const afterFailedReplay = fired;
+      harness.tick();
+      await settle();
+
+      expect(fired).toBeGreaterThan(afterFailedReplay);
+      expect(subscriber.listeners.get('room')).toHaveLength(1);
+    });
+
+    it('stops firing once the handler is unregistered', async () => {
+      const { manager, harness } = createHarness();
+      await manager.connect();
+      await manager.subscribe('near-chat-ws', () => {});
+      let fired = 0;
+      const unregister = manager.onSubscriberRestored(() => { fired += 1; });
+
+      unregister();
+      harness.byRole('subscriber').drop();
+      harness.tick();
+      await settle();
+
+      expect(fired).toBe(0);
+    });
+
+    it('keeps a throwing handler from breaking the replay', async () => {
+      const { manager, harness } = createHarness();
+      await manager.connect();
+      await manager.subscribe('near-chat-ws', () => {});
+      let reached = 0;
+      manager.onSubscriberRestored(() => { throw new Error('handler exploded'); });
+      manager.onSubscriberRestored(() => { reached += 1; });
+
+      harness.byRole('subscriber').drop();
+      harness.tick();
+      await settle();
+
+      // The replay is the reconnect path itself; one bad consumer must not be
+      // able to take the subscriber down with it, nor starve the next handler.
+      expect(reached).toBe(1);
+      expect(manager.status.ready).toBe(true);
+    });
+
+    it('fires after an outage that spanned the process\'s first connect', async () => {
+      const { manager, harness } = createHarness();
+      harness.onBuild((connection) => {
+        if (connection.role === 'subscriber') connection.failConnect = true;
+      });
+      let fired = 0;
+      manager.onSubscriberRestored(() => { fired += 1; });
+
+      await manager.connect();
+      await manager.subscribe('near-chat-ws', () => {});
+      harness.onBuild(() => {});
+      harness.tick();
+      await settle();
+
+      // Sockets are accepted and their rooms derived from the database while
+      // Redis is unreachable, so frames addressed here are being dropped from
+      // the first moment. Treating the eventual connection as "the first one"
+      // and staying quiet would leave that damage in place for good.
+      expect(fired).toBe(1);
+    });
+  });
+
   describe('shutdown', () => {
     it('leaves subscriber mode before closing, then closes every connection', async () => {
       const { manager, harness } = createHarness();

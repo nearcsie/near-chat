@@ -166,13 +166,20 @@ socket 上。
 際存活的 socket。每位使用者的 session 上限與全域限流仍是 per-instance，所以把
 replica 數量調到大於 1 目前還不是受支援的部署方式。
 
-要讓它成為受支援的部署方式，還有兩個源自「pub/sub 不保留 backlog」的缺口必須
-先補上。其一：成員資格撤銷（`socketsLeave`）若在某個 instance 的 subscriber 斷
-線期間送出就會永久遺失，該成員的 socket 仍留在房間裡，之後房間發布的內容都收
-得到——Sync Cursor 無法修復，因為問題是過期的訂閱而非漏收的事件；需要 durable
-傳輸，或在重連後依資料庫重新校正（#477）。其二：typing claim 以行程為單位彙
-總，同一使用者從兩個 instance 輸入時，任一節點最後一個 claim 結束就會撤回整體
-的輸入提示（#474）。
+成員資格撤銷（`socketsLeave`）若在某個 instance 的 subscriber 斷線期間送出，過
+去會永久遺失，該成員的 socket 仍留在房間裡，之後房間發布的內容都收得到——Sync
+Cursor 無法修復，因為問題是過期的訂閱而非漏收的事件。`realtime/socketServer.ts`
+現在會校正這一點（#649）：當 `utils/redis.ts` 回報 subscriber 恢復時，本行程持
+有的每一條 socket 都會依 durable membership 重新推導房間，並離開已不再允許的房
+間。這個掃描**只離開、不加入**——`services/roomService.ts` 是先撤銷、後寫入降
+級，若掃描會重新加入，反而會把進行中的撤銷所移除的訂閱又還回去。
+
+另有兩項殘留缺口記錄在 `realtime/redisAdapter.ts`，刻意不加上定期掃描：其一是
+publish 遭 Redis 拒絕的撤銷（adapter 會吞掉該錯誤並照常 resolve，而持有過期
+socket 的那台 instance 的 subscriber 從未斷線，因此不會收到任何訊號），其二是
+Bun 的 `autoReconnect` 未重新宣告就完成的重連。要讓 replica 數量大於 1 成為受支
+援的部署方式，仍有一項缺口未補：typing claim 以行程為單位彙總，同一使用者從兩個
+instance 輸入時，任一節點最後一個 claim 結束就會撤回整體的輸入提示（#474）。
 
 ### 正式環境入口拓撲與代理信任
 
