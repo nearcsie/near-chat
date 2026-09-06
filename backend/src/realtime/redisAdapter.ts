@@ -69,12 +69,27 @@ export const realtimeChannel = (clusterId?: string): string => {
  *
  * - A `SOCKETS_LEAVE` lost to an outage leaves a revoked member's socket in
  *   `room_<id>` on that instance, still receiving what the room publishes
- *   afterwards. Membership revocation therefore needs a durable or replayed
- *   path, or a reconciliation of every local socket's rooms against the
- *   database once the subscriber reconnects. `socketServer.ts` already derives
- *   subscriptions from durable membership on connect; what is missing is
- *   re-running that, and leaving the rooms that are no longer permitted, after
- *   a reconnect. Tracked on #477.
+ *   afterwards. `socketServer.ts` closes this on the *subscriber* side (#649):
+ *   `RedisManager` reports its subscriber coming back, and every local socket's
+ *   rooms are re-derived from durable membership, leaving the ones no longer
+ *   permitted. Two residual gaps are deliberately left open rather than swept
+ *   for, because a periodic scan would cost a membership query per connected
+ *   user forever to cover a window neither of them widens:
+ *
+ *   - The publisher side. `ClusterAdapter#delSockets` publishes inside a
+ *     `try`/`catch` that drops the failure into a debug log and calls
+ *     `super.delSockets` anyway, so `removeUserFromRoom` resolves successfully
+ *     even when Redis refused the publish — and the instance holding the stale
+ *     socket never lost its subscriber, so nothing there is signalled.
+ *   - A drop the client recovers silently. Bun's `autoReconnect` can restore a
+ *     connection without re-announcing it, and the watchdog then sees a live
+ *     socket with all its listeners attached and reports nothing.
+ *
+ *   A lost `SOCKETS_JOIN` is not in this list: it costs live push for that
+ *   room until the socket reconnects and re-derives its subscriptions, while
+ *   the durable content still arrives through the client's Sync Cursor. That
+ *   is a missed event, which the at-most-once bargain above already covers —
+ *   not access to content the member no longer has.
  * - Typing claims are aggregated per process in `socketServer.ts`, so with the
  *   same user typing from two instances the last local claim to end retracts
  *   the indication for everyone. That is #474's remaining acceptance

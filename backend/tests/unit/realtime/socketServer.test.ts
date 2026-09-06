@@ -409,4 +409,204 @@ describe('attachSockets', () => {
       expect(afterDisconnect[0]).toBeUndefined();
     });
   });
+
+  /**
+   * A revocation reaches the other instances as a `SOCKETS_LEAVE` frame, and
+   * Redis pub/sub keeps no backlog: published while an instance's subscriber is
+   * down, it is gone for good and that instance keeps the revoked member in the
+   * room. The Sync Cursor cannot repair it — the damage is a stale local
+   * subscription, not a missed durable event — so the subscription has to be
+   * re-derived from the database once the subscriber is back.
+   */
+  describe('reconciling room subscriptions after a subscriber reconnect', () => {
+    /** A socket as the namespace holds it, with the rooms it has joined. */
+    const makeLive = (id: string, userId: string, rooms: string[]) => ({
+      id,
+      connected: true,
+      data: { user: { userId } },
+      rooms: new Set([id, `user_${userId}`, ...rooms]),
+      join: mock(),
+      leave: mock(function (this: any, room: string) {
+        this.rooms.delete(room);
+      }),
+      emit: mock(),
+      to: mock(() => ({ emit: mock() })),
+      on: mock(),
+    });
+
+    /**
+     * Attaches with a registration-style reconnect signal and hands back the
+     * trigger, so a test fires the reconciliation without a Redis client.
+     */
+    const attachReconciler = (
+      sockets: ReturnType<typeof makeLive>[],
+      repo: { findByUser?: Mock<any>; findMember: Mock<any> },
+      withRoomSubscriptionLock?: any,
+    ) => {
+      let restored: (() => void) | undefined;
+      const io = {
+        on: mock(),
+        to: mock(() => ({ emit: mock() })),
+        of: mock(() => ({ sockets: new Map(sockets.map((s) => [s.id, s])) })),
+      } as unknown as ChatServer;
+
+      attachSockets(io, {
+        roomMemberRepository: repo as any,
+        withRoomSubscriptionLock,
+        onSubscriberRestored: (handler: () => void) => {
+          restored = handler;
+          return () => {};
+        },
+      });
+
+      return {
+        // Awaiting a macrotask lets the scan's awaited reads and leaves settle.
+        trigger: async () => {
+          restored?.();
+          await new Promise((resolve) => setTimeout(resolve, 0));
+        },
+        registered: () => restored !== undefined,
+      };
+    };
+
+    it('leaves the rooms membership no longer permits, and nothing else', async () => {
+      const socket = makeLive('s1', 'user-1', ['room_kept', 'room_revoked']);
+      const findByUser = mock().mockResolvedValue([{ roomId: 'kept', role: 'member' }]);
+      const { trigger } = await attachReconciler([socket], {
+        findByUser,
+        findMember: mock(),
+      });
+
+      await trigger();
+
+      expect(socket.leave).toHaveBeenCalledWith('room_revoked');
+      expect(socket.leave).not.toHaveBeenCalledWith('room_kept');
+      // The user's directed-event room and the socket's own room are not
+      // derived from membership, so a membership scan must not touch them.
+      expect(socket.leave).not.toHaveBeenCalledWith('user_user-1');
+      expect(socket.leave).not.toHaveBeenCalledWith('s1');
+    });
+
+    it('leaves a room whose membership row is only pending', async () => {
+      const socket = makeLive('s1', 'user-1', ['room_demoted']);
+      const findByUser = mock().mockResolvedValue([{ roomId: 'demoted', role: 'pending' }]);
+      const { trigger } = await attachReconciler([socket], {
+        findByUser,
+        findMember: mock(),
+      });
+
+      await trigger();
+
+      expect(socket.leave).toHaveBeenCalledWith('room_demoted');
+    });
+
+    /**
+     * `findByUser` is optional on `IRoomMemberRepository`. Reading its absence
+     * as "this user is in no rooms" would empty every socket out of every room
+     * it holds — the opposite of a repair.
+     */
+    it('leaves nothing at all when the repository cannot derive membership', async () => {
+      const socket = makeLive('s1', 'user-1', ['room_kept', 'room_revoked']);
+      const { trigger } = await attachReconciler([socket], { findMember: mock() });
+
+      await trigger();
+
+      expect(socket.leave).not.toHaveBeenCalled();
+      expect(socket.emit).not.toHaveBeenCalled();
+    });
+
+    /** Same reasoning: a failed read is not evidence that access is gone. */
+    it('leaves nothing when the membership read fails', async () => {
+      const socket = makeLive('s1', 'user-1', ['room_revoked']);
+      const findByUser = mock().mockRejectedValue(new Error('database is down'));
+      const { trigger } = await attachReconciler([socket], {
+        findByUser,
+        findMember: mock(),
+      });
+
+      await trigger();
+
+      expect(socket.leave).not.toHaveBeenCalled();
+    });
+
+    it('signals recovery only to the sockets that actually lost a room', async () => {
+      const evicted = makeLive('s1', 'user-1', ['room_revoked']);
+      const untouched = makeLive('s2', 'user-2', ['room_kept']);
+      const findByUser = mock(async (userId: string) =>
+        (userId === 'user-2' ? [{ roomId: 'kept', role: 'member' }] : []));
+      const { trigger } = await attachReconciler([evicted, untouched], {
+        findByUser,
+        findMember: mock(),
+      });
+
+      await trigger();
+
+      // `realtime_ready` puts a client through a full `synchronize()`. A socket
+      // that kept every room has nothing to recover, so broadcasting would buy
+      // one wasted sync per connected client.
+      expect(evicted.emit).toHaveBeenCalledWith('realtime_ready');
+      expect(untouched.emit).not.toHaveBeenCalled();
+    });
+
+    it('reads membership once per user rather than once per session', async () => {
+      const first = makeLive('s1', 'user-1', ['room_revoked']);
+      const second = makeLive('s2', 'user-1', ['room_revoked']);
+      const findByUser = mock().mockResolvedValue([]);
+      const { trigger } = await attachReconciler([first, second], {
+        findByUser,
+        findMember: mock(),
+      });
+
+      await trigger();
+
+      expect(first.leave).toHaveBeenCalledWith('room_revoked');
+      expect(second.leave).toHaveBeenCalledWith('room_revoked');
+      // One read for the candidate set, one confirming re-read under the lock —
+      // not one of each per session.
+      expect(findByUser.mock.calls.length).toBe(2);
+    });
+
+    /**
+     * A grant commits and only then joins the room, so a membership granted
+     * after the candidate set was read is already in `socket.rooms` while still
+     * missing from that snapshot. Acting on the snapshot would evict a socket
+     * that had just been legitimately authorized.
+     */
+    it('re-reads under the lock and spares a room granted mid-scan', async () => {
+      const socket = makeLive('s1', 'user-1', ['room_granted']);
+      const findByUser = mock()
+        .mockResolvedValueOnce([])
+        .mockResolvedValue([{ roomId: 'granted', role: 'member' }]);
+      const withRoomSubscriptionLock = mock(
+        async (_userId: string, _roomId: string, operation: () => Promise<unknown>) => operation(),
+      );
+      const { trigger } = await attachReconciler(
+        [socket],
+        { findByUser, findMember: mock() },
+        withRoomSubscriptionLock,
+      );
+
+      await trigger();
+
+      expect(withRoomSubscriptionLock).toHaveBeenCalledWith(
+        'user-1', 'granted', expect.any(Function),
+      );
+      expect(socket.leave).not.toHaveBeenCalled();
+      expect(socket.emit).not.toHaveBeenCalled();
+    });
+
+    it('registers nothing to reconcile when no reconnect signal is wired', () => {
+      const socket = makeLive('s1', 'user-1', ['room_revoked']);
+      const io = {
+        on: mock(),
+        to: mock(() => ({ emit: mock() })),
+        of: mock(() => ({ sockets: new Map([[socket.id, socket]]) })),
+      } as unknown as ChatServer;
+
+      // Without `REDIS_URL` no revocation ever leaves the process, so there is
+      // no lost frame to repair and no signal to subscribe to.
+      expect(() => attachSockets(io, { roomMemberRepository: roomMemberRepo })).not.toThrow();
+      expect(socket.leave).not.toHaveBeenCalled();
+    });
+  });
 });

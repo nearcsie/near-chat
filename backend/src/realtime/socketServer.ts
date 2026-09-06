@@ -1,4 +1,4 @@
-import type { FriendResponse } from '@shared/types';
+import type { FriendResponse, RoomMember } from '@shared/types';
 import { ForbiddenError, ValidationError } from '../utils/AppError';
 import type { IRoomMemberRepository } from '../models/IRoomMemberRepository';
 import type { ChatServer } from './authSocket';
@@ -16,7 +16,26 @@ interface SocketDeps {
   ) => Promise<T>;
   /** Optional injected presence tracker (defaults to process singleton). */
   presence?: Pick<PresenceTracker, 'trackUserConnection' | 'trackUserDisconnection'>;
+  /**
+   * Subscriber-reconnect signal from `utils/redis.ts`, when one is wired.
+   *
+   * Absent without `REDIS_URL`: the in-memory adapter never publishes a
+   * revocation over the wire, so there is no frame for an outage to lose and
+   * nothing to reconcile.
+   */
+  onSubscriberRestored?: (handler: () => void) => () => void;
 }
+
+/** The only room prefix reconciliation may act on. */
+const ROOM_PREFIX = 'room_';
+
+/** Users whose durable membership is read at once during a reconciliation. */
+const RECONCILE_CONCURRENCY = 8;
+
+/** The socket type the namespace holds, without restating its generics. */
+type LocalSocket = ReturnType<ChatServer['of']>['sockets'] extends Map<string, infer S>
+  ? S
+  : never;
 
 const maxSessionsPerUser = (): number => env().realtime.maxSessionsPerUser;
 
@@ -109,6 +128,187 @@ export const attachSockets = (io: ChatServer, deps: SocketDeps): void => {
       next();
     });
   }
+
+  /**
+   * Every socket this process holds, grouped by the user who owns it.
+   *
+   * `io.of('/').sockets` and not `fetchSockets()`: without `flags.local` the
+   * latter is a cluster-wide round trip, and `realtime/redisAdapter.ts`
+   * deliberately extends plain `ClusterAdapter` rather than the heartbeat
+   * subclass that keeps the `serverCount()` it waits on accurate.
+   *
+   * Grouped because durable membership is per user while sockets are not: one
+   * user holds up to `MAX_SESSIONS_PER_USER` of them, and they all reconcile
+   * against a single read.
+   */
+  const localSocketsByUser = (): Map<string, LocalSocket[]> => {
+    const grouped = new Map<string, LocalSocket[]>();
+    const server = io as unknown as {
+      of?: (name: string) => { sockets?: Map<string, LocalSocket> };
+    };
+    if (typeof server.of !== 'function') return grouped;
+    const sockets = server.of('/').sockets;
+    if (!sockets) return grouped;
+    for (const socket of sockets.values()) {
+      const owner = socket.data?.user?.userId;
+      if (typeof owner !== 'string' || owner.length === 0) continue;
+      const held = grouped.get(owner);
+      if (held) held.push(socket);
+      else grouped.set(owner, [socket]);
+    }
+    return grouped;
+  };
+
+  /** The rooms a membership read says this user's sockets may hold. */
+  const permittedRooms = (members: RoomMember[]): Set<string> =>
+    new Set(
+      members
+        .filter((member) => member.role !== 'pending')
+        .map((member) => `${ROOM_PREFIX}${member.roomId}`),
+    );
+
+  const reconcileUser = async (
+    findByUser: (userId: string) => Promise<RoomMember[]>,
+    userId: string,
+    sockets: LocalSocket[],
+  ): Promise<void> => {
+    const read = async (): Promise<Set<string> | undefined> => {
+      try {
+        return permittedRooms(await findByUser(userId));
+      } catch (error) {
+        // Leaving nothing is the safe failure. This pass only ever removes
+        // access, so skipping a user costs one more reconnect's worth of
+        // delay, while guessing would drop them out of rooms they still hold.
+        console.error('Failed to read membership while reconciling subscriptions:', error);
+        return undefined;
+      }
+    };
+
+    const permitted = await read();
+    if (!permitted) return;
+
+    // Collected across the user's sockets before anything leaves, so the room
+    // set being walked is never the one `leave` mutates — `socket.rooms` is the
+    // adapter's own live Set, not a copy. `socket.id` is skipped explicitly:
+    // socket ids come from an alphabet that includes `_`, so one can in
+    // principle start with `room_` without ever having been a room.
+    const candidates = new Set<string>();
+    for (const socket of sockets) {
+      for (const room of socket.rooms ?? []) {
+        if (room === socket.id) continue;
+        if (!room.startsWith(ROOM_PREFIX)) continue;
+        if (permitted.has(room)) continue;
+        candidates.add(room);
+      }
+    }
+    if (candidates.size === 0) return;
+
+    const evicted = new Set<LocalSocket>();
+    for (const room of candidates) {
+      const roomId = room.slice(ROOM_PREFIX.length);
+      const leave = async (): Promise<void> => {
+        // Re-read under the lock before acting, the same shape the
+        // connection-time restore uses above. The set gathered before this
+        // point is a candidate filter and nothing more: a grant commits and
+        // then joins the room (`services/roomService.ts`), so a membership
+        // granted after the first read is already in `socket.rooms` while
+        // still missing from that snapshot, and leaving on it would evict a
+        // socket that was just legitimately authorized. `findByUser` and not
+        // `findMember`, because its SQL is also what encodes the read-only
+        // private room and mutual-block conditions — a revocation caused by a
+        // block would otherwise survive the re-read.
+        const current = await read();
+        if (!current || current.has(room)) return;
+        for (const socket of sockets) {
+          if (socket.connected === false) continue;
+          if (socket.rooms?.has(room) !== true) continue;
+          await Promise.resolve(socket.leave(room));
+          evicted.add(socket);
+        }
+      };
+      // The same lock the connection-time restore takes, so a reconciliation
+      // and a reconnecting session cannot interleave on one room.
+      if (deps.withRoomSubscriptionLock) {
+        await deps.withRoomSubscriptionLock(userId, roomId, leave);
+      } else {
+        await leave();
+      }
+    }
+
+    // Only the sockets that actually lost a room. `realtime_ready` puts the
+    // client through `synchronize()` — a `/sync` page loop plus the room,
+    // social and member reloads — and a socket that kept every room has
+    // nothing to recover.
+    for (const socket of evicted) socket.emit('realtime_ready');
+  };
+
+  /**
+   * Re-derive every local socket's room subscriptions from durable membership,
+   * leaving the rooms that are no longer permitted and never joining any.
+   *
+   * Leave-only is the point. `services/roomService.ts` revokes the subscription
+   * *before* it writes the demotion, deliberately and for the reasons recorded
+   * there, so a pass reading the database inside that window would find the
+   * member still authorized and hand back the subscription a revocation in
+   * flight had just taken away. Grants run the other way round — the
+   * subscription is added after the write commits — so a pass that only leaves
+   * can never remove one that was just granted. A `SOCKETS_JOIN` lost to the
+   * same outage is a missed event rather than wrong access, and `/sync` plus
+   * the next reconnect already cover it.
+   */
+  const reconcileRoomSubscriptions = async (): Promise<void> => {
+    const repository = deps.roomMemberRepository;
+    // Bound so the repository keeps its own `this`, and checked because
+    // `findByUser` is optional on `IRoomMemberRepository`. Without it there is
+    // no authorization source to reconcile against at all, and reading that as
+    // "no rooms" would empty every socket out of every room it holds.
+    const findByUser = repository.findByUser?.bind(repository);
+    if (!findByUser) return;
+
+    const grouped = [...localSocketsByUser()];
+    for (let index = 0; index < grouped.length; index += RECONCILE_CONCURRENCY) {
+      await Promise.all(
+        grouped
+          .slice(index, index + RECONCILE_CONCURRENCY)
+          .map(([userId, sockets]) => reconcileUser(findByUser, userId, sockets)),
+      );
+    }
+  };
+
+  /** The in-flight reconciliation, and whether one more pass is owed. */
+  let reconciling: Promise<void> | undefined;
+  let reconcileAgain = false;
+
+  const scheduleReconcile = (): void => {
+    if (reconciling) {
+      // A subscriber that flaps signals on every watchdog tick. Folding those
+      // into a single trailing pass is what keeps a five-second tick from
+      // restarting a scan that is still reading the database — while still
+      // guaranteeing one full pass begins after the last signal.
+      reconcileAgain = true;
+      return;
+    }
+    reconciling = (async () => {
+      try {
+        do {
+          reconcileAgain = false;
+          await reconcileRoomSubscriptions();
+        } while (reconcileAgain);
+      } catch (error) {
+        console.error('Failed to reconcile room subscriptions:', error);
+      } finally {
+        reconciling = undefined;
+      }
+    })();
+  };
+
+  // Room subscriptions derived at connection time go stale when a revocation's
+  // `SOCKETS_LEAVE` is published while this instance's subscriber is down:
+  // pub/sub keeps no backlog, so that frame is gone for good and the revoked
+  // member's socket stays in the room. Nothing unregisters this handler —
+  // `attachSockets` runs once per process, and its `connection` listener is
+  // never removed either.
+  deps.onSubscriberRestored?.(scheduleReconcile);
 
   io.on('connection', (socket) => {
     const userId = socket.data.user.userId;
