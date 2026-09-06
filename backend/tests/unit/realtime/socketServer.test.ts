@@ -647,6 +647,23 @@ describe('attachSockets', () => {
       expect(socket.emit).not.toHaveBeenCalled();
     });
 
+    /**
+     * What makes it safe for `utils/redis.ts` to signal on the very first
+     * subscription rather than only on reconnects: with no session held there
+     * is nothing to check, so the pass costs one map read and no query at all.
+     */
+    it('queries nothing when this process holds no sockets', async () => {
+      const findByUser = mock();
+      const { trigger } = await attachReconciler([], {
+        findByUser,
+        findMember: mock(),
+      });
+
+      await trigger();
+
+      expect(findByUser).not.toHaveBeenCalled();
+    });
+
     it('registers nothing to reconcile when no reconnect signal is wired', () => {
       const socket = makeLive('s1', 'user-1', ['room_revoked']);
       const io = {

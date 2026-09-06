@@ -111,8 +111,8 @@ export interface RedisManager {
   /** Pings the command connection to verify liveness. Returns false if down. */
   ping(): Promise<boolean>;
   /**
-   * Registers a handler to run after the subscriber has been rebuilt, and
-   * returns the function that unregisters it.
+   * Registers a handler to run whenever the subscriber's channels have just
+   * been (re)subscribed, and returns the function that unregisters it.
    *
    * The signal means "frames addressed to this process may have been lost",
    * which is more than a liveness notice: pub/sub keeps no backlog, so
@@ -120,12 +120,13 @@ export interface RedisManager {
    * holding local state that a missed frame would have changed has to re-derive
    * it from a durable source, and this is when.
    *
-   * A subscriber that connected on its first attempt does not fire it: nothing
-   * had been published to fall behind, and a consumer that reconciles on the
-   * signal would otherwise do a full pass at startup for nothing. A first
-   * attempt that *failed* is a different thing and does fire, once it later
-   * succeeds — the process was accepting sockets the whole time it was
-   * unreachable.
+   * The process's *first* subscription counts too, and deliberately so.
+   * `index.ts` starts Redis with `void redis.connect()` and does not await it
+   * before the server begins accepting sockets, so there is always a window
+   * where sessions exist, have derived their rooms from the database, and
+   * frames addressed here are being dropped. Suppressing the first signal would
+   * leave exactly that window unrepaired. When no session is held yet the
+   * consumer's pass finds nothing to check, which costs nothing.
    *
    * Registration rather than an event emitter: this codebase has no
    * `EventEmitter` convention, and the handler set is expected to hold one or
@@ -190,20 +191,6 @@ interface SupervisedConnection {
   connecting: boolean;
   /** Silences callbacks when connection is retired. */
   detach: (() => void) | undefined;
-  /**
-   * True once this role has connected more than once in this process.
-   *
-   * The line between "the subscriber is up" and "the subscriber is up *again*",
-   * and only the second means frames may have been missed. Sticky, because
-   * every connection after a rebuild is itself a replacement.
-   *
-   * A connect that *failed* still counts: `openRole` assigns `entry.connection`
-   * before awaiting `connect()`, so a process that booted with Redis
-   * unreachable finds a `previous` on the watchdog's retry. That is the right
-   * answer — sockets were accepted and their rooms derived from the database
-   * while frames addressed here were being dropped.
-   */
-  rebuilt: boolean;
 }
 
 export const createRedisManager = (options: CreateRedisManagerOptions): RedisManager => {
@@ -228,7 +215,6 @@ export const createRedisManager = (options: CreateRedisManagerOptions): RedisMan
       state: initialState,
       connecting: false,
       detach: undefined,
-      rebuilt: false,
     },
     publisher: {
       role: 'publisher',
@@ -236,7 +222,6 @@ export const createRedisManager = (options: CreateRedisManagerOptions): RedisMan
       state: initialState,
       connecting: false,
       detach: undefined,
-      rebuilt: false,
     },
     subscriber: {
       role: 'subscriber',
@@ -244,7 +229,6 @@ export const createRedisManager = (options: CreateRedisManagerOptions): RedisMan
       state: initialState,
       connecting: false,
       detach: undefined,
-      rebuilt: false,
     },
   };
 
@@ -375,14 +359,19 @@ export const createRedisManager = (options: CreateRedisManagerOptions): RedisMan
     // that reacts by reading Redis would otherwise race the very subscriptions
     // this call is putting back.
     //
-    // Only for a connection that replaced an earlier one. The process's first
-    // subscriber has no earlier state to have fallen behind, and a consumer
-    // that reconciles on this signal would otherwise do a full pass at startup
-    // for nothing. Note that the replay completing is not a health claim:
-    // `replayChannels` swallows a failed SUBSCRIBE and moves on, so some
-    // channels can still be unsubscribed here. The watchdog re-attaches those,
-    // and announces again when it does.
-    if (supervised.subscriber.rebuilt) announceSubscriberRestored();
+    // Every establishment, the process's first included. Classifying one as
+    // "not a reconnect" and staying quiet is what would leave the startup
+    // window unrepaired: `index.ts` does not await `redis.connect()` before the
+    // server accepts sockets, so sessions can already hold rooms derived from
+    // the database by the time this first runs, and a revocation published in
+    // between is gone. Bun's own `autoReconnect` re-announcing on a connection
+    // `openRole` never rebuilt is the same story, which is why neither is
+    // distinguished here.
+    //
+    // The replay completing is not a health claim: `replayChannels` swallows a
+    // failed SUBSCRIBE and moves on, so some channels can still be unsubscribed
+    // at this point. The watchdog re-attaches those and announces again.
+    announceSubscriberRestored();
   };
 
   const replayChannels = async (connection: RedisConnection): Promise<void> => {
@@ -420,12 +409,6 @@ export const createRedisManager = (options: CreateRedisManagerOptions): RedisMan
 
     connection.onconnect = () => {
       if (detached) return;
-      // A second `onconnect` on one connection is Bun's own `autoReconnect`
-      // recovering a drop this module never saw, so `openRole` never ran and
-      // never marked it. The subscription survives on the client but the frames
-      // published while it was away do not, which is the same loss a rebuild
-      // causes and has to carry the same signal.
-      if (announced) entry.rebuilt = true;
       announced = true;
       setState(entry, 'ready');
       if (entry.role === 'subscriber') void resubscribeAll(connection);
@@ -474,7 +457,6 @@ export const createRedisManager = (options: CreateRedisManagerOptions): RedisMan
       entry.connection = undefined;
       void retire(previous, entry.role);
       reconnects += 1;
-      entry.rebuilt = true;
     }
 
     setState(entry, 'connecting');

@@ -796,18 +796,28 @@ describe('redis manager', () => {
    * source, and this is the only notice that it is time to.
    */
   describe('subscriber restored signal', () => {
-    it('does not fire for the process\'s first subscriber connection', async () => {
-      const { manager } = createHarness();
+    /**
+     * The first subscription is not exempt, and that is the whole point.
+     * `index.ts` starts Redis with `void redis.connect()` and does not await it
+     * before the server accepts sockets, so sessions can already be holding
+     * rooms derived from the database while frames addressed here are being
+     * dropped. Treating the first connection as "nothing could have gone stale"
+     * leaves precisely that window unrepaired.
+     */
+    it('fires for the process\'s first subscription, not only for reconnects', async () => {
+      const { manager, harness } = createHarness();
       let fired = 0;
       manager.onSubscriberRestored(() => { fired += 1; });
 
-      await manager.connect();
+      // The order the composition root produces: the adapter registers its
+      // channel before anything connects, so the first replay is the moment
+      // that subscription actually reaches Redis.
       await manager.subscribe('near-chat-ws', () => {});
+      await manager.connect();
       await settle();
 
-      // Nothing was published before this connection existed, so there is no
-      // earlier state to have fallen behind and nothing to reconcile.
-      expect(fired).toBe(0);
+      expect(fired).toBe(1);
+      expect(harness.byRole('subscriber').subscribeCalls).toEqual(['near-chat-ws']);
     });
 
     it('fires once the watchdog rebuilds the subscriber', async () => {
