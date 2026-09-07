@@ -72,6 +72,12 @@ export const createRealtime = ({
     roomMemberRepository: repositories.roomMembers,
     friendRepository: repositories.friends,
     withRoomSubscriptionLock: publisher.withRoomSubscriptionLock,
+    // Gated on the same `redisUrl` as the adapter above, and for the same
+    // reason: with the in-memory adapter a revocation never leaves the process,
+    // so there is no lost frame to reconcile away.
+    onSubscriberRestored: redisUrl
+      ? (handler) => redis.onSubscriberRestored(handler)
+      : undefined,
   });
 
   return { io, engine };

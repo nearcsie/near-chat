@@ -111,6 +111,7 @@ describe('createRealtime', () => {
         },
         unsubscribe: async () => ({ ok: true as const, value: undefined }),
         publish: async () => ({ ok: true as const, value: 0 }),
+        onSubscriberRestored: () => () => {},
       };
       const { io } = createRealtime({
         config: { port: 4000, corsOrigins: [], instanceId: 'test-instance' },

@@ -110,6 +110,29 @@ export interface RedisManager {
   unsubscribe(channel: string, handler: RedisMessageHandler): Promise<RedisOutcome<void>>;
   /** Pings the command connection to verify liveness. Returns false if down. */
   ping(): Promise<boolean>;
+  /**
+   * Registers a handler to run whenever the subscriber's channels have just
+   * been (re)subscribed, and returns the function that unregisters it.
+   *
+   * The signal means "frames addressed to this process may have been lost",
+   * which is more than a liveness notice: pub/sub keeps no backlog, so
+   * `replayChannels` restores the *subscription* and nothing else. A consumer
+   * holding local state that a missed frame would have changed has to re-derive
+   * it from a durable source, and this is when.
+   *
+   * The process's *first* subscription counts too, and deliberately so.
+   * `index.ts` starts Redis with `void redis.connect()` and does not await it
+   * before the server begins accepting sockets, so there is always a window
+   * where sessions exist, have derived their rooms from the database, and
+   * frames addressed here are being dropped. Suppressing the first signal would
+   * leave exactly that window unrepaired. When no session is held yet the
+   * consumer's pass finds nothing to check, which costs nothing.
+   *
+   * Registration rather than an event emitter: this codebase has no
+   * `EventEmitter` convention, and the handler set is expected to hold one or
+   * two entries for the lifetime of the process.
+   */
+  onSubscriberRestored(handler: () => void): () => void;
   /** Closes all connections and stops watchdog. Idempotent and never rejects. */
   close(): Promise<void>;
 }
@@ -232,6 +255,24 @@ export const createRedisManager = (options: CreateRedisManagerOptions): RedisMan
     return run;
   };
 
+  /** Handlers to run once the subscriber is subscribed again after a gap. */
+  const subscriberRestoredHandlers = new Set<() => void>();
+
+  /** Runs the restored handlers. */
+  const announceSubscriberRestored = (): void => {
+    if (closed || disabled) return;
+    for (const handler of [...subscriberRestoredHandlers]) {
+      try {
+        handler();
+      } catch (error) {
+        logger.error(
+          { target, error: toError(error).message },
+          'A Redis subscriber-restored handler threw',
+        );
+      }
+    }
+  };
+
   /** Flag indicating subscriber has untracked listeners and must be rebuilt. */
   let staleSubscriber = false;
 
@@ -314,6 +355,23 @@ export const createRedisManager = (options: CreateRedisManagerOptions): RedisMan
     } finally {
       replaying = false;
     }
+    // Announced after the replay rather than on the connect itself: a consumer
+    // that reacts by reading Redis would otherwise race the very subscriptions
+    // this call is putting back.
+    //
+    // Every establishment, the process's first included. Classifying one as
+    // "not a reconnect" and staying quiet is what would leave the startup
+    // window unrepaired: `index.ts` does not await `redis.connect()` before the
+    // server accepts sockets, so sessions can already hold rooms derived from
+    // the database by the time this first runs, and a revocation published in
+    // between is gone. Bun's own `autoReconnect` re-announcing on a connection
+    // `openRole` never rebuilt is the same story, which is why neither is
+    // distinguished here.
+    //
+    // The replay completing is not a health claim: `replayChannels` swallows a
+    // failed SUBSCRIBE and moves on, so some channels can still be unsubscribed
+    // at this point. The watchdog re-attaches those and announces again.
+    announceSubscriberRestored();
   };
 
   const replayChannels = async (connection: RedisConnection): Promise<void> => {
@@ -447,7 +505,17 @@ export const createRedisManager = (options: CreateRedisManagerOptions): RedisMan
     for (const channel of channels.keys()) {
       if (activeListeners.has(channel)) continue;
       if (channelQueue.has(channel)) continue;
-      void onChannel(channel, () => attachListener(channel)).catch(() => undefined);
+      // The third way a subscription comes back, and the quietest: the socket
+      // itself never dropped, so no reconnect ran, but this channel spent a
+      // window unsubscribed and missed whatever was published on it. That is
+      // the same loss a reconnect causes, so it carries the same signal —
+      // raised here rather than inside `attachListener`, which also serves a
+      // caller subscribing for the first time, where nothing was missed.
+      void onChannel(channel, () => attachListener(channel))
+        .then((outcome) => {
+          if (outcome.ok) announceSubscriberRestored();
+        })
+        .catch(() => undefined);
     }
   };
 
@@ -581,6 +649,13 @@ export const createRedisManager = (options: CreateRedisManagerOptions): RedisMan
       });
     },
 
+    onSubscriberRestored(handler) {
+      subscriberRestoredHandlers.add(handler);
+      return () => {
+        subscriberRestoredHandlers.delete(handler);
+      };
+    },
+
     async ping() {
       const connection = usable('command');
       if (!connection) return false;
@@ -605,6 +680,7 @@ export const createRedisManager = (options: CreateRedisManagerOptions): RedisMan
 
       channels.clear();
       activeListeners.clear();
+      subscriberRestoredHandlers.clear();
 
       for (const role of REDIS_ROLES) {
         const entry = supervised[role];
