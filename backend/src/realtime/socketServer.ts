@@ -316,9 +316,19 @@ export const attachSockets = (io: ChatServer, deps: SocketDeps): void => {
     return complete;
   };
 
-  /** The in-flight reconciliation, and whether one more pass is owed. */
+  /** The in-flight reconciliation cycle, if one is running. */
   let reconciling: Promise<void> | undefined;
-  let reconcileAgain = false;
+
+  /**
+   * Signals seen so far.
+   *
+   * Counted rather than flagged. A cycle is a pass, a wait, and a second pass,
+   * and a signal can land at any point in that — including inside the wait. A
+   * boolean cleared at the top of each pass cannot say "the newest signal has
+   * had a pass but not yet its own trailing verification", so the second signal
+   * silently inherited the first one's spent entitlement and lost its own.
+   */
+  let signals = 0;
 
   const pause = (ms: number): Promise<void> =>
     new Promise((resolve) => {
@@ -326,68 +336,67 @@ export const attachSockets = (io: ChatServer, deps: SocketDeps): void => {
       timer.unref?.();
     });
 
-  const scheduleReconcile = (): void => {
-    if (reconciling) {
-      // A subscriber that flaps signals on every watchdog tick. Folding those
-      // into a single trailing pass is what keeps a five-second tick from
-      // restarting a scan that is still reading the database — while still
-      // guaranteeing one full pass begins after the last signal.
-      reconcileAgain = true;
-      return;
+  /**
+   * One pass, retried while its membership reads keep failing.
+   *
+   * False only when the retry budget ran out, which is the one case the caller
+   * abandons the cycle rather than continuing to a verification it cannot trust.
+   */
+  const passWithRetries = async (retryDelay: number): Promise<boolean> => {
+    for (let attempt = 1; attempt <= RECONCILE_ATTEMPTS; attempt += 1) {
+      if (await reconcileRoomSubscriptions()) return true;
+      if (attempt === RECONCILE_ATTEMPTS) break;
+      // Backed off, because the reason a read failed is usually that the
+      // database is unavailable, and retrying at full speed would add load to
+      // something already struggling.
+      await pause(retryDelay * 2 ** (attempt - 1));
     }
+    console.error(
+      'Gave up reconciling room subscriptions after repeated membership read failures; '
+      + 'sockets may still hold rooms that have been revoked',
+    );
+    return false;
+  };
+
+  const scheduleReconcile = (): void => {
+    signals += 1;
+    // A subscriber that flaps signals on every watchdog tick. The running cycle
+    // picks the newest generation up at its next checkpoint, so ticks fold
+    // together instead of each starting a scan of their own.
+    if (reconciling) return;
     const retryDelay = deps.reconcileRetryDelayMs ?? RECONCILE_RETRY_DELAY_MS;
     const trailingDelay = deps.reconcileTrailingDelayMs ?? RECONCILE_TRAILING_DELAY_MS;
     reconciling = (async () => {
       try {
-        let attempt = 0;
-        let trailingOwed = true;
         for (;;) {
-          reconcileAgain = false;
-          const complete = await reconcileRoomSubscriptions();
-          // A fresh signal arrived mid-pass, so the pass just finished is
-          // already stale. Start over with the retry budget reset.
-          if (reconcileAgain) {
-            attempt = 0;
-            trailingOwed = true;
-            continue;
-          }
-          if (complete) {
-            if (!trailingOwed) return;
-            // One more pass, later, for a revocation that was published but had
-            // not yet committed when the pass above read the database.
-            // `roomService.ts` revokes *before* it writes, so a subscriber that
-            // came back inside that window reads a membership row that is still
-            // there, correctly declines to leave, and reports a clean pass — and
-            // nothing would ask again once the write lands, because the signal
-            // has already been spent. `withRoomSubscriptionLock` cannot bridge
-            // that: it serialises this process, not the instance holding the
-            // open transaction.
-            //
-            // This narrows the window rather than closing it. A commit slower
-            // than the delay still slips through, and no local scan can fix
-            // that — only a durable or ordered revocation path could, which
-            // `redisAdapter.ts` records as the remaining gap.
-            trailingOwed = false;
-            attempt = 0;
-            await pause(trailingDelay);
-            continue;
-          }
-          // Some user's membership could not be read, so their sockets are
-          // still unverified. Nothing else will ask again: the subscriber is
-          // back up, so no further signal is coming, and a revoked socket would
-          // otherwise sit in its room until that client happens to reconnect.
-          attempt += 1;
-          if (attempt >= RECONCILE_ATTEMPTS) {
-            console.error(
-              'Gave up reconciling room subscriptions after repeated membership read failures; '
-              + 'sockets may still hold rooms that have been revoked',
-            );
-            return;
-          }
-          // Backed off, because the reason a read failed is usually that the
-          // database is unavailable, and retrying at full speed would add load
-          // to something already struggling.
-          await pause(retryDelay * 2 ** (attempt - 1));
+          // The generation this cycle answers. Anything arriving from here on
+          // is a newer signal, and earns a full cycle of its own rather than
+          // whatever remains of this one.
+          const served = signals;
+
+          if (!(await passWithRetries(retryDelay))) return;
+          if (signals !== served) continue;
+
+          // Then once more, later, for a revocation that was published but not
+          // yet committed when the pass above read. `roomService.ts` revokes
+          // *before* it writes, so a subscriber back inside that window reads a
+          // membership row that is still there, correctly declines to leave,
+          // and reports a clean pass — and nothing would look again once the
+          // write landed. `withRoomSubscriptionLock` cannot bridge it either:
+          // it serialises this process, not the instance holding the open
+          // transaction.
+          //
+          // This narrows the window rather than closing it. A commit slower
+          // than the delay still escapes, and no local read can see another
+          // instance's uncommitted transaction — only a durable or ordered
+          // revocation path could, which `redisAdapter.ts` records as the gap
+          // that remains.
+          await pause(trailingDelay);
+          if (signals !== served) continue;
+
+          if (!(await passWithRetries(retryDelay))) return;
+          if (signals !== served) continue;
+          return;
         }
       } catch (error) {
         console.error('Failed to reconcile room subscriptions:', error);

@@ -471,6 +471,8 @@ describe('attachSockets', () => {
           restored?.();
           await new Promise((resolve) => setTimeout(resolve, 0));
         },
+        /** Fire another restore without waiting, to land one mid-cycle. */
+        signal: () => restored?.(),
         registered: () => restored !== undefined,
       };
     };
@@ -718,6 +720,39 @@ describe('attachSockets', () => {
       // poll, which would cost a membership query per connected user forever.
       expect(settled).toBe(2);
       expect(findByUser.mock.calls.length).toBe(settled);
+    });
+
+    /**
+     * A signal landing inside the trailing wait is a *new* subscriber restore,
+     * so it needs its own delayed re-check, not just the pass it happens to
+     * arrive in time for. Inheriting the spent entitlement of the cycle already
+     * running would drop exactly the revocation the trailing pass exists for.
+     */
+    it('gives a signal that arrives during the wait its own trailing pass', async () => {
+      const socket = makeLive('s1', 'user-1', ['room_revoked']);
+      // The first cycle's pass and the second signal's own first pass both
+      // still see the membership row, as they would while the revoking
+      // transaction is open. The commit only becomes visible in time for the
+      // second signal's trailing pass — which is the pass that used to be lost.
+      const findByUser = mock()
+        .mockResolvedValueOnce([{ roomId: 'revoked', role: 'member' }])
+        .mockResolvedValueOnce([{ roomId: 'revoked', role: 'member' }])
+        .mockResolvedValue([]);
+      const { trigger, signal } = await attachReconciler(
+        [socket],
+        { findByUser, findMember: mock() },
+        undefined,
+        { reconcileTrailingDelayMs: 20 },
+      );
+
+      await trigger();
+      // Land the second restore inside the first cycle's trailing wait.
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      signal();
+
+      await new Promise((resolve) => setTimeout(resolve, 120));
+
+      expect(socket.leave).toHaveBeenCalledWith('room_revoked');
     });
 
     it('registers nothing to reconcile when no reconnect signal is wired', () => {
