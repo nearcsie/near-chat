@@ -474,6 +474,53 @@ describe('presence tracker', () => {
       });
 
       /**
+       * With `PRESENCE_GRACE_MS` at 0 — a value the config parser accepts —
+       * `releaseUser` empties both maps before its first await, and
+       * `socketServer.ts` never awaits the disconnect it starts. So the
+       * disconnects `index.ts` triggers on its way down leave `heldUsers()`
+       * empty while the release is still in flight; a `stop()` that only
+       * consulted `heldUsers()` would return immediately and let `redis.close()`
+       * cut the announcement off.
+       */
+      it('waits for a zero-grace release that is still in flight', async () => {
+        const view = leases.viewFor('alpha');
+        let openGate: (() => void) | undefined;
+        const gatedStore: PresenceStore = {
+          ...view,
+          async release(userId) {
+            await new Promise<void>((resolve) => {
+              openGate = resolve;
+            });
+            return view.release(userId);
+          },
+        };
+        const zeroGrace = createPresenceTracker({ store: gatedStore, graceMs: () => 0 });
+        await zeroGrace.trackUserConnection(io, 'user-1', 'socket-a', friendRepo);
+        roomEmit.mockClear();
+
+        // Fire and forget, exactly as `socketServer.ts` calls it.
+        void zeroGrace.trackUserDisconnection(io, 'user-1', 'socket-a', friendRepo);
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        expect(openGate).toBeDefined();
+
+        let settled = false;
+        const stopping = zeroGrace.stop().then(() => {
+          settled = true;
+        });
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        expect(settled).toBe(false);
+
+        openGate!();
+        await stopping;
+
+        expect(roomEmit).toHaveBeenCalledWith('user_status', {
+          userId: 'user-1',
+          status: 'offline',
+        });
+        expect(leases.holders.has('user-1')).toBe(false);
+      });
+
+      /**
        * The handback is what `stop()` exists for, so it must survive a deadline
        * the announcement loses. Asserting only that `stop()` returned would
        * still pass if a hung friend lookup had starved the releases.

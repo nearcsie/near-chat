@@ -106,6 +106,25 @@ export const createPresenceTracker = ({
   // and nothing else in this module can reach a socket.
   let boundIo: ChatServer | undefined;
   let boundFriendRepo: FriendPresenceDeps | undefined;
+  // Releases already under way, which `stop()` has to wait for.
+  //
+  // `releaseUser` empties both maps *before* its first await, and
+  // `realtime/socketServer.ts` never awaits the disconnect it starts. With
+  // `PRESENCE_GRACE_MS` at 0 — a value the config parser accepts — the
+  // disconnects `index.ts` triggers on its way down therefore leave
+  // `heldUsers()` empty while their `store.release` and announcement are still
+  // in flight, and a `stop()` that only looked at `heldUsers()` would return
+  // straight away and let `redis.close()` cut them off.
+  const inflightReleases = new Set<Promise<void>>();
+
+  const trackRelease = (work: Promise<void>): Promise<void> => {
+    inflightReleases.add(work);
+    // `catch` before `finally`: a rejected `work` reaches its own handler at
+    // the call site, and a bare `finally` here would re-raise it as an
+    // unhandled rejection.
+    void work.catch(() => undefined).finally(() => inflightReleases.delete(work));
+    return work;
+  };
 
   const localSocketCount = (userId: string): number => userSockets.get(userId)?.size ?? 0;
 
@@ -305,7 +324,7 @@ export const createPresenceTracker = ({
 
       const delay = graceMs();
       if (delay === 0) {
-        await releaseUser(io, userId, friendRepo);
+        await trackRelease(releaseUser(io, userId, friendRepo));
         return;
       }
 
@@ -315,7 +334,7 @@ export const createPresenceTracker = ({
       const timer = setTimeout(() => {
         pendingDisconnects.delete(userId);
         if (localSocketCount(userId) > 0) return;
-        void releaseUser(io, userId, friendRepo).catch((err) => {
+        void trackRelease(releaseUser(io, userId, friendRepo)).catch((err) => {
           logger.debug({ err, userId }, 'Failed to release a presence lease after the grace period');
         });
       }, delay);
@@ -368,11 +387,17 @@ export const createPresenceTracker = ({
       const users = heldUsers();
       pendingDisconnects.clear();
       userSockets.clear();
-      if (!store || users.length === 0) return;
+      // Each already settles on its own; awaiting them here is only about not
+      // exiting first, so a rejected one must not abort the wait for the rest.
+      const inflight = [...inflightReleases].map((work) => work.catch(() => undefined));
+      if (!store || (users.length === 0 && inflight.length === 0)) return;
       // One deadline for the handbacks and the announcements together. A second
       // one for the announcements would let a slow friend lookup push shutdown
       // past the budget `docker-compose.release.yml` is built around.
-      await withDeadline(releaseHeldUsers(users), stopTimeoutMs);
+      await withDeadline(
+        Promise.all([releaseHeldUsers(users), ...inflight]),
+        stopTimeoutMs,
+      );
     },
   };
 };
