@@ -84,6 +84,14 @@ export const realtimeChannel = (clusterId?: string): string => {
  *   - A drop the client recovers silently. Bun's `autoReconnect` can restore a
  *     connection without re-announcing it, and the watchdog then sees a live
  *     socket with all its listeners attached and reports nothing.
+ *   - A revocation still mid-commit. `services/roomService.ts` publishes before
+ *     it writes, so a subscriber that comes back inside that gap reads a
+ *     membership row that is still there and correctly declines to leave. A
+ *     trailing pass a few seconds later covers the realistic case, but the gap
+ *     is bounded by the writing transaction, not by that delay, so a slow
+ *     enough commit still escapes it. Closing it for good needs a durable or
+ *     ordered revocation path rather than a local scan, since no read this
+ *     process makes can see a transaction another instance has not committed.
  *
  *   A lost `SOCKETS_JOIN` is not in this list: it costs live push for that
  *   room until the socket reconnects and re-derives its subscriptions, while

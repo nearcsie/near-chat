@@ -442,7 +442,7 @@ describe('attachSockets', () => {
       sockets: ReturnType<typeof makeLive>[],
       repo: { findByUser?: Mock<any>; findMember: Mock<any> },
       withRoomSubscriptionLock?: any,
-      extra?: { reconcileRetryDelayMs?: number },
+      extra?: { reconcileRetryDelayMs?: number; reconcileTrailingDelayMs?: number },
     ) => {
       let restored: (() => void) | undefined;
       const io = {
@@ -458,6 +458,10 @@ describe('attachSockets', () => {
           restored = handler;
           return () => {};
         },
+        // Parked beyond any test's lifetime by default, so the trailing pass
+        // only runs where a test asks for it and never bleeds into another
+        // test's call counts. Its timer is unref'd, so it holds nothing open.
+        reconcileTrailingDelayMs: 60_000,
         ...extra,
       });
 
@@ -662,6 +666,58 @@ describe('attachSockets', () => {
       await trigger();
 
       expect(findByUser).not.toHaveBeenCalled();
+    });
+
+    /**
+     * `services/roomService.ts` publishes a revocation *before* it commits the
+     * membership change. A subscriber that comes back inside that gap reads a
+     * row that is still there, correctly declines to leave, and reports a clean
+     * pass — and the signal is spent, so without a trailing pass nothing would
+     * ever look again once the write landed.
+     */
+    it('re-checks later, catching a revocation that was still mid-commit', async () => {
+      const socket = makeLive('s1', 'user-1', ['room_revoked']);
+      // First two reads are the candidate scan and its confirming re-read, both
+      // taken while the revoking transaction is still open. Afterwards the
+      // commit has landed and the row is gone.
+      const findByUser = mock()
+        .mockResolvedValueOnce([{ roomId: 'revoked', role: 'member' }])
+        .mockResolvedValue([]);
+      const { trigger } = await attachReconciler(
+        [socket],
+        { findByUser, findMember: mock() },
+        undefined,
+        { reconcileTrailingDelayMs: 1 },
+      );
+
+      await trigger();
+      expect(socket.leave).not.toHaveBeenCalled();
+
+      await new Promise((resolve) => setTimeout(resolve, 30));
+
+      expect(socket.leave).toHaveBeenCalledWith('room_revoked');
+      expect(socket.emit).toHaveBeenCalledWith('realtime_ready');
+    });
+
+    it('runs the trailing pass once, not on a loop', async () => {
+      const socket = makeLive('s1', 'user-1', ['room_kept']);
+      const findByUser = mock().mockResolvedValue([{ roomId: 'kept', role: 'member' }]);
+      const { trigger } = await attachReconciler(
+        [socket],
+        { findByUser, findMember: mock() },
+        undefined,
+        { reconcileTrailingDelayMs: 1 },
+      );
+
+      await trigger();
+      await new Promise((resolve) => setTimeout(resolve, 40));
+      const settled = findByUser.mock.calls.length;
+      await new Promise((resolve) => setTimeout(resolve, 40));
+
+      // One signal buys one pass plus one trailing pass — never a standing
+      // poll, which would cost a membership query per connected user forever.
+      expect(settled).toBe(2);
+      expect(findByUser.mock.calls.length).toBe(settled);
     });
 
     it('registers nothing to reconcile when no reconnect signal is wired', () => {

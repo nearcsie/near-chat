@@ -29,6 +29,11 @@ interface SocketDeps {
    * failed. Injected only so tests need not wait out a real backoff.
    */
   reconcileRetryDelayMs?: number;
+  /**
+   * Delay before the trailing verification pass. Injected only so tests need
+   * not wait out a real delay.
+   */
+  reconcileTrailingDelayMs?: number;
 }
 
 /** The only room prefix reconciliation may act on. */
@@ -42,6 +47,15 @@ const RECONCILE_ATTEMPTS = 5;
 
 /** First backoff before retrying users whose membership read failed. */
 const RECONCILE_RETRY_DELAY_MS = 2_000;
+
+/**
+ * Delay before the trailing pass that re-checks a revocation still mid-commit.
+ *
+ * Sized against the gap in `services/roomService.ts` between publishing a
+ * revocation and committing it — one statement, so milliseconds — with enough
+ * margin that a contended write is still covered.
+ */
+const RECONCILE_TRAILING_DELAY_MS = 3_000;
 
 /** The socket type the namespace holds, without restating its generics. */
 type LocalSocket = ReturnType<ChatServer['of']>['sockets'] extends Map<string, infer S>
@@ -322,9 +336,11 @@ export const attachSockets = (io: ChatServer, deps: SocketDeps): void => {
       return;
     }
     const retryDelay = deps.reconcileRetryDelayMs ?? RECONCILE_RETRY_DELAY_MS;
+    const trailingDelay = deps.reconcileTrailingDelayMs ?? RECONCILE_TRAILING_DELAY_MS;
     reconciling = (async () => {
       try {
         let attempt = 0;
+        let trailingOwed = true;
         for (;;) {
           reconcileAgain = false;
           const complete = await reconcileRoomSubscriptions();
@@ -332,9 +348,30 @@ export const attachSockets = (io: ChatServer, deps: SocketDeps): void => {
           // already stale. Start over with the retry budget reset.
           if (reconcileAgain) {
             attempt = 0;
+            trailingOwed = true;
             continue;
           }
-          if (complete) return;
+          if (complete) {
+            if (!trailingOwed) return;
+            // One more pass, later, for a revocation that was published but had
+            // not yet committed when the pass above read the database.
+            // `roomService.ts` revokes *before* it writes, so a subscriber that
+            // came back inside that window reads a membership row that is still
+            // there, correctly declines to leave, and reports a clean pass — and
+            // nothing would ask again once the write lands, because the signal
+            // has already been spent. `withRoomSubscriptionLock` cannot bridge
+            // that: it serialises this process, not the instance holding the
+            // open transaction.
+            //
+            // This narrows the window rather than closing it. A commit slower
+            // than the delay still slips through, and no local scan can fix
+            // that — only a durable or ordered revocation path could, which
+            // `redisAdapter.ts` records as the remaining gap.
+            trailingOwed = false;
+            attempt = 0;
+            await pause(trailingDelay);
+            continue;
+          }
           // Some user's membership could not be read, so their sockets are
           // still unverified. Nothing else will ask again: the subscriber is
           // back up, so no further signal is coming, and a revoked socket would

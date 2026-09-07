@@ -197,11 +197,14 @@ are left. The pass only ever leaves, never joins — `services/roomService.ts`
 revokes before it writes a demotion, so a pass that re-joined would hand back the
 subscription a revocation in flight had just taken away.
 
-Two residual gaps are recorded in `realtime/redisAdapter.ts` rather than swept
-for: a revocation whose *publish* Redis refused (the adapter swallows that and
-resolves anyway, and the instance holding the stale socket never lost its
-subscriber, so nothing signals it), and a drop Bun's `autoReconnect` recovers
-without re-announcing. One gap is still open for a replica count above one:
+Three residual gaps are recorded in `realtime/redisAdapter.ts` rather than
+swept for: a revocation whose *publish* Redis refused (the adapter swallows that
+and resolves anyway, and the instance holding the stale socket never lost its
+subscriber, so nothing signals it); a drop Bun's `autoReconnect` recovers
+without re-announcing; and a revocation still mid-commit when the pass reads,
+since `roomService` publishes before it writes — a trailing pass covers the
+realistic case, but only a durable or ordered revocation path closes it, because
+no local read can see another instance's uncommitted transaction. One gap is still open for a replica count above one:
 typing claims are aggregated per process, so the same user typing from two
 instances has the indication retracted by whichever node's last claim ends first
 (#474).
