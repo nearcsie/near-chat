@@ -145,11 +145,46 @@ container 就會在 lease 尚未交還時被 SIGKILL，外觀上與「instance �
 **Redis 7.4 以上** —— 對更舊的伺服器寫入會失敗，後端會記錄一次版本需求，
 presence 則退回只看本機。
 
-目前**尚未**共享的是 `user_status` 推播：`io.to()` 只會送到發出端行程自己持有
-的 socket，因此連在另一個 instance 上的好友要等到下一次 `GET /friends` 才會看
-到狀態變化。補上這段是 #475／#476 的 Redis event bus。每位使用者的 session 上
-限、全域限流與跨節點 change fan-out 同樣仍是 per-instance，所以把 replica 數量
-調到大於 1 目前還不是受支援的部署方式。
+只要設定了 `REDIS_URL`，事件 fan-out 同樣是共享的：`realtime/redisAdapter.ts`
+會在 `near-chat-ws` channel 上掛載 Socket.IO cluster adapter，因此 `io.to()`、
+room subscription 變更與強制斷線都會送到其他 instance（#475）。投遞語意是 at
+most once —— Redis pub/sub 不保留 backlog，instance 失聯期間錯過的事件不會補
+送，客戶端仍以 Sync Cursor 復原。
+
+多個 deployment 共用同一台 Redis 時，必須為每個 deployment 設定不同的
+`REALTIME_CLUSTER_ID`。pub/sub 不受 logical database 隔離 —— 在 `/1` 上
+SUBSCRIBE 會收到 `/0` PUBLISH 的訊息 —— 因此把 `REDIS_URL` 換成不同的 database
+**並不能**分開兩套環境，只有 channel 名稱可以。若未設定，兩邊共用
+`near-chat-ws` 而被併成同一個 Socket.IO cluster；又因為 `db:seed` 給每個環境
+相同的 user 與 room ID，一邊的房間事件、成員變更與強制斷線會真的落到另一邊的
+socket 上。
+
+`user_status` 推播同樣會跨 instance（#476）：`realtime/presence.ts` 直接送往每
+位好友的 `user_<id>` room 並交由 adapter 投遞，而不再只對「於發出端 instance 上
+持有 socket」的好友送出。這裡刻意不去查 presence lease 來決定收件者——room 的成
+員資格本來就是傳輸層對「是否存在 session」的答案，而且不像 lease 會落後於一條實
+際存活的 socket。每位使用者的 session 上限與全域限流仍是 per-instance，所以把
+replica 數量調到大於 1 目前還不是受支援的部署方式。
+
+成員資格撤銷（`socketsLeave`）若在某個 instance 的 subscriber 斷線期間送出，過
+去會永久遺失，該成員的 socket 仍留在房間裡，之後房間發布的內容都收得到——Sync
+Cursor 無法修復，因為問題是過期的訂閱而非漏收的事件。`realtime/socketServer.ts`
+現在會校正這一點（#649）：當 `utils/redis.ts` 回報 subscriber 恢復時，本行程持
+有的每一條 socket 都會依 durable membership 重新推導房間，並離開已不再允許的房
+間。這個掃描**只離開、不加入**——`services/roomService.ts` 是先撤銷、後寫入降
+級，若掃描會重新加入，反而會把進行中的撤銷所移除的訂閱又還回去。
+
+另有三項殘留缺口記錄在 `realtime/redisAdapter.ts`，刻意不加上定期掃描：其一是
+publish 遭 Redis 拒絕的撤銷（adapter 會吞掉該錯誤並照常 resolve，而持有過期
+socket 的那台 instance 的 subscriber 從未斷線，因此不會收到任何訊號）；其二是
+Bun 的 `autoReconnect` 未重新宣告就完成的重連；其三是掃描讀取時仍未提交的撤銷
+——`roomService` 是先發布、後寫入，因此另有一次延後的 trailing pass 涵蓋實務上的
+情形，但要徹底關閉只能靠 durable 或有序的撤銷路徑，因為本機的任何讀取都看不到另
+一台 instance 尚未提交的交易。
+
+要讓 replica 數量大於 1 成為受支援的部署方式，仍有一項缺口未補：typing claim 以
+行程為單位彙總，同一使用者從兩個 instance 輸入時，任一節點最後一個 claim 結束就
+會撤回整體的輸入提示（#474）。
 
 ### 正式環境入口拓撲與代理信任
 

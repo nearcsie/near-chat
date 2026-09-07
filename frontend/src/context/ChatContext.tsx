@@ -14,25 +14,15 @@ import { resolveAssetUrl } from "@/lib/assets";
 import { translate } from "@/lib/i18n";
 import { NotificationBridge } from "@/lib/notificationBridge";
 import type {
-  Attachment as ApiAttachment,
-  EmergencyContactResponse,
-  Folder as ApiFolder,
-  FriendRequestResponse,
-  FriendResponse,
   MessageWithSender,
   MyProfile,
   PublicUser,
   Room,
-  RoomMember as ApiRoomMember,
-  RoomMemberRole,
-  RoomSummary,
-  UserProfile,
   UserSettings,
 } from "@shared/types";
 import {
   ApiError,
   approveRoomMember,
-  attachmentDownloadUrl,
   blockUser as blockUserApi,
   createFolder,
   createGroup,
@@ -47,7 +37,6 @@ import {
   getMe,
   joinRoomByCode,
   getMySettings,
-  getUserProfile,
   kickRoomMember,
   leaveRoom as leaveRoomApi,
   listEmergencyContacts,
@@ -60,7 +49,6 @@ import {
   recallMessage as recallMessageApi,
   markRoomRead as markRoomReadApi,
   syncChanges,
-  listRoomMembers,
   listRooms,
   logout,
   respondFriendRequest,
@@ -80,7 +68,12 @@ import {
   getActiveAccessToken,
   setActiveAccessToken,
   refreshTokensExclusive,
+  getAdminHealth,
+  getAdminMetrics,
+  getAdminLogs,
+  getAdminSlowQueries,
 } from "@/lib/api";
+import { withRedirectParam } from "@/lib/redirect";
 import {
   createChatSocket,
   onEmergencyAlert,
@@ -101,648 +94,69 @@ import {
   type ChatSocket,
 } from "@/lib/socket";
 
-export interface Member {
-  userId: string;
-  name: string;
-  role: RoomMemberRole;
-  nickname?: string;
-  isMuted?: boolean;
-  lastReadId?: string | null;
-  readPosition?: number;
-  avatarUrl?: string;
-}
+export * from "./types";
+export * from "./chatMappers";
 
-export interface ChatRoom {
-  id: string;
-  type: "msg" | "group";
-  name: string;
-  isOnline?: boolean;
-  otherMemberId?: string;
-  folderId?: string | null;
-  inviteCode?: string;
-  requireApproval?: boolean;
-  viewHistory?: boolean;
-  members?: Member[];
-  isArchived?: boolean;
-  isReadonly?: boolean;
-  unreadCount?: number;
-  lastMessagePreview?: string;
-  lastMessageAt?: string;
-  lastMessageId?: string;
-  lastMessageSequence?: number;
-  lastMessageChangeSequence?: number;
-  avatarUrl?: string;
-  lastReadId?: string | null;
-  myRole?: RoomMemberRole;
-}
+import {
+  type AdminAccessState,
+  type AdminContextType,
+  type AdminError,
+  type AdminMonitoringState,
+  emptyAdminMonitoringState,
+  ADMIN_POLL_INTERVAL_MS,
+  type BlockedUser,
+  type ChatContextType,
+  type ChatRoom,
+  type EmergencySettings,
+  type Folder,
+  type Friend,
+  type FriendRequest,
+  type GroupSettingsInput,
+  type HandlerKey,
+  HANDLER_KEYS,
+  type Member,
+  type Message,
+  type PreferencesInput,
+  type ProfileInput,
+  type ProfilePopoverContextType,
+  type RightPanelContextType,
+  type StoredUser,
+  type UiLanguage,
+  type User,
+} from "./types";
+import {
+  CURSOR_CHECKPOINT_INTERVAL_MS,
+  fetchRoomMembers,
+  findRequestedUser,
+  getPrivateRoomName,
+  hydrateReplyTargets,
+  mapEmergencyContact,
+  mapFolders,
+  mapFriend,
+  mapFriendRequest,
+  mapMessage,
+  mapRooms,
+  mergeMessages,
+  sortMessages,
+  summarizeMessagePreview,
+  toStoredUser,
+} from "./chatMappers";
 
-export interface Message {
-  id: string;
-  roomId: string;
-  senderId: string | null;
-  senderName: string;
-  content: string;
-  sentAt: string;
-  timestamp: string;
-  replyToId?: string;
-  isOutgoing?: boolean;
-  isRecalled?: boolean;
-  messageSequence?: number;
-  changeSequence?: number;
-  revision?: number;
-  replyTo?: {
-    senderName: string;
-    content: string;
-  } | null;
-  attachments?: { filename: string; filetype: string; url?: string }[];
-  mentions?: string[];
-  isRead?: boolean;
-}
-
-export interface Folder {
-  id: string;
-  name: string;
-  collapsed: boolean;
-}
-
-export interface User {
-  userId?: string;
-  username: string;
-  email: string;
-  avatar: string;
-  bio?: string;
-  language?: UiLanguage;
-  theme?: "light" | "dark";
-  notifyDesktop?: boolean;
-  notifySound?: boolean;
-  warningEnabled?: boolean;
-  warningDays?: number;
-  lastActivity?: Date | string;
-  roomOrder?: Record<string, string[]>;
-}
-
-type StoredUser = User;
-
-export interface Friend {
-  id: string;
-  name: string;
-  email: string;
-  status: "online" | "offline";
-  isEmergencyContact?: boolean;
-  avatarUrl?: string;
-}
-
-export interface FriendRequest {
-  id: string;
-  name: string;
-  email: string;
-  direction: "incoming" | "outgoing";
-  avatarUrl?: string;
-}
-
-export interface BlockedUser {
-  id: string;
-  name: string;
-  email: string;
-  avatarUrl?: string;
-}
-
-export interface EmergencyContact {
-  id: string;
-  contactId: string;
-  name: string;
-  email: string;
-  message: string;
-}
-
-export interface EmergencySettings {
-  warningEnabled: boolean;
-  warningDays: number;
-  contacts: EmergencyContact[];
-}
-
-
-
-export type UiLanguage = "zh-TW" | "en";
-
-export const getAvatarForUser = (
-  username: string,
-  currentUserAvatar?: string,
-  currentUsername?: string,
-) => {
-  if (currentUsername && username === currentUsername) {
-    return currentUserAvatar ? resolveAssetUrl(currentUserAvatar) : "";
-  }
-  return "";
-};
-
-export interface ProfileInput {
-  username: string;
-  email: string;
-  avatar: string;
-  avatarFile?: File | null;
-  password?: string;
-  currentPassword?: string;
-  bio?: string;
-}
-
-export interface PreferencesInput {
-  theme: string;
-  language: UiLanguage;
-  notifyDesktop: boolean;
-  notifySound: boolean;
-  warningEnabled?: boolean;
-  warningDays?: number;
-}
-
-interface GroupSettingsInput {
-  name?: string;
-  requireApproval?: boolean;
-  viewHistory?: boolean;
-  isArchived?: boolean;
-  avatarFile?: File | null;
-}
-
-interface ChatContextType {
-  rooms: ChatRoom[];
-  folders: Folder[];
-  messages: Message[];
-  groupReadStates: Record<string, Record<string, string>>;
-  user: User;
-  activeRoomNicknames: Record<string, string>;
-  friends: Friend[];
-  friendRequests: FriendRequest[];
-  blockedUsers: BlockedUser[];
-  emergencySettings: EmergencySettings;
-  uiLanguage: UiLanguage;
-  isAuthenticated: boolean;
-  isMounted: boolean;
-  roomsInitialized: boolean;
-  selectedFriendForSidebar: Friend | null;
-  setSelectedFriendForSidebar: React.Dispatch<React.SetStateAction<Friend | null>>;
-  hasUnsavedChanges: boolean;
-  setHasUnsavedChanges: (val: boolean) => void;
-
-  setRooms: React.Dispatch<React.SetStateAction<ChatRoom[]>>;
-  setFolders: React.Dispatch<React.SetStateAction<Folder[]>>;
-  setMessages: React.Dispatch<React.SetStateAction<Message[]>>;
-  setUser: React.Dispatch<React.SetStateAction<User>>;
-  setActiveRoomNicknames: React.Dispatch<React.SetStateAction<Record<string, string>>>;
-
-  toggleFolder: (folderId: string) => void;
-  handleLogout: () => void;
-  handleSendMessage: (roomId: string, content: string, replyTarget: Message | null) => void;
-  handleTyping: (roomId: string, isTyping: boolean) => void;
-  handleUploadAttachments: (
-    roomId: string,
-    files: File[],
-    options?: { content?: string; replyTarget?: Message | null },
-  ) => Promise<void>;
-  handleRecallMessage: (msgId: string) => void;
-  handleUpdateMessage: (roomId: string, messageId: string, content: string) => void;
-  handleUpdateProfile: (profile: ProfileInput) => Promise<User>;
-  handleUpdatePreferences: (preferences: PreferencesInput) => Promise<void>;
-  handleCreateRoom: (name: string, type: "msg" | "group", folderId: string) => Promise<string>;
-  handleOpenPrivateRoom: (targetUserId: string) => Promise<string>;
-  handleCreateFolder: (name: string) => Promise<void>;
-  handleDeleteFolder: (folderId: string) => Promise<void>;
-  handleRenameFolder: (folderId: string, name: string) => Promise<void>;
-  handleCategorizeRoom: (roomId: string, folderId: string | null) => Promise<void>;
-  handleModifyNickname: (roomId: string, nickname: string) => Promise<void>;
-  handleLeaveOrBlock: (roomId: string) => Promise<{ isDeleted: boolean; newActiveId?: string }>;
-  handleDeleteAccount: () => Promise<void>;
-  loadGroupMembers: (roomId: string) => Promise<Member[]>;
-  saveGroupSettings: (roomId: string, settings: GroupSettingsInput) => Promise<void>;
-  approveGroupMember: (roomId: string, userId: string) => Promise<Member[] | undefined>;
-  updateGroupMember: (
-    roomId: string,
-    userId: string,
-    data: { role?: "admin" | "member"; nickname?: string; isMuted?: boolean },
-  ) => Promise<Member[] | undefined>;
-  kickGroupMember: (roomId: string, userId: string) => Promise<Member[] | undefined>;
-  transferGroupOwner: (roomId: string, userId: string) => Promise<Member[] | undefined>;
-  handleDeleteGroupRoom: (roomId: string) => Promise<string | null>;
-  getReadAvatarsForMessage: (room: ChatRoom, msg: Message) => { name: string; displayName?: string; avatarUrl: string }[];
-
-  searchUsersForInvite: (query: string) => Promise<PublicUser[]>;
-  handleJoinByInviteCode: (inviteCode: string) => Promise<string>;
-  sendFriendRequest: (query: string) => Promise<void>;
-  acceptFriendRequest: (requestId: string) => Promise<void>;
-  rejectFriendRequest: (requestId: string) => Promise<void>;
-  removeFriend: (friendId: string) => Promise<void>;
-  blockFriend: (friendId: string) => Promise<void>;
-  unblockUser: (blockedId: string) => Promise<void>;
-  saveEmergencySettings: (settings: EmergencySettings) => Promise<void>;
-  setUiLanguage: (language: UiLanguage) => void;
-  refreshSocialData: () => Promise<void>;
-  updateRoomSorting: (nextOrder: Record<string, string[]>) => Promise<void>;
-  markRoomAsRead: (roomId: string) => void;
-}
+/** Login URL that returns the user to /admin once authenticated. */
+const ADMIN_LOGIN_PATH = withRedirectParam("/login", "/admin");
 
 const ChatContext = createContext<ChatContextType | undefined>(undefined);
 
-// ---------------------------------------------------------------------------
-// Leaf contexts for high-frequency / UI-local state (hotspot #2, issue #383).
-//
-// These states change far more often than the chat data (typing events fire
-// on every keystroke of every peer) or are purely presentational (popover,
-// right panel). Keeping them inside the main context value forced every
-// useChat() consumer — including every ChatBubble via useTranslation — to
-// re-render on each change. They still live in ChatProvider's state; only the
-// subscription channel is separate, so this is not a ChatContext re-
-// architecture — splitting rooms/messages/socket across providers and bucketing
-// messages per room is a larger change that was deliberately left out of scope.
-// ---------------------------------------------------------------------------
-
+// Leaf contexts for high-frequency or UI-local states to prevent whole-tree re-renders.
 const TypingUsersContext = createContext<Record<string, string[]> | undefined>(undefined);
 
 const UiLanguageContext = createContext<UiLanguage | undefined>(undefined);
 
-interface ProfilePopoverContextType {
-  activeProfilePopover: { instanceId: string; userId: string } | null;
-  setActiveProfilePopover: React.Dispatch<
-    React.SetStateAction<{ instanceId: string; userId: string } | null>
-  >;
-}
-
 const ProfilePopoverContext = createContext<ProfilePopoverContextType | undefined>(undefined);
-
-interface RightPanelContextType {
-  showRightPanel: boolean;
-  setShowRightPanel: React.Dispatch<React.SetStateAction<boolean>>;
-}
 
 const RightPanelContext = createContext<RightPanelContextType | undefined>(undefined);
 
-// Static key list for the stable handler proxies built in ChatProvider. Kept
-// at module level so building the proxies never reads a ref during render.
-// The `NoMissingHandlerKey` check below fails to compile if a handler is
-// added to the `handlers` object without being listed here.
-const HANDLER_KEYS = [
-  "toggleFolder",
-  "handleLogout",
-  "handleSendMessage",
-  "handleTyping",
-  "handleUploadAttachments",
-  "handleRecallMessage",
-  "handleUpdateMessage",
-  "handleUpdateProfile",
-  "handleUpdatePreferences",
-  "handleCreateRoom",
-  "handleOpenPrivateRoom",
-  "handleCreateFolder",
-  "handleDeleteFolder",
-  "handleRenameFolder",
-  "handleCategorizeRoom",
-  "handleModifyNickname",
-  "handleLeaveOrBlock",
-  "handleDeleteAccount",
-  "loadGroupMembers",
-  "saveGroupSettings",
-  "approveGroupMember",
-  "updateGroupMember",
-  "kickGroupMember",
-  "transferGroupOwner",
-  "handleDeleteGroupRoom",
-  "searchUsersForInvite",
-  "handleJoinByInviteCode",
-  "sendFriendRequest",
-  "acceptFriendRequest",
-  "rejectFriendRequest",
-  "removeFriend",
-  "blockFriend",
-  "unblockUser",
-  "saveEmergencySettings",
-  "setUiLanguage",
-  "refreshSocialData",
-  "updateRoomSorting",
-] as const;
-type HandlerKey = (typeof HANDLER_KEYS)[number];
-
-const toStoredUser = (
-  profile: MyProfile,
-  settings?: Partial<UserSettings>,
-): StoredUser => ({
-  userId: profile.userId,
-  username: profile.name,
-  email: profile.email,
-  avatar: profile.avatarUrl ?? "",
-  bio: profile.bio ?? "",
-  language: normalizeLanguage(settings?.language),
-  theme: settings?.theme ?? "light",
-  notifyDesktop: settings?.notifyDesktop ?? true,
-  notifySound: settings?.notifySound ?? true,
-  warningEnabled: settings?.warningEnabled ?? false,
-  lastActivity: profile.lastActivity,
-  roomOrder: settings?.roomOrder ?? {},
-});
-
-const formatMessageTime = (value: Date | string): string => {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-};
-
-const mapAttachment = (attachment: ApiAttachment) => {
-  const filename = attachment.originalName || "attachment";
-  return {
-    filename,
-    filetype: attachment.fileType,
-    url: attachmentDownloadUrl(attachment.fileUrl),
-  };
-};
-
-const summarizeMessagePreview = (message: {
-  content: string;
-  attachments?: { filename: string }[];
-  isRecalled?: boolean;
-}) => {
-  if (message.isRecalled) return "";
-  if (message.content.trim()) return message.content.trim();
-  if (message.attachments?.length) return message.attachments[0].filename;
-  return "";
-};
-
-const isPrivateRoomFallbackName = (roomName: string | undefined, roomId: string) =>
-  roomName === `Private ${roomId.slice(0, 8)}`;
-
-const getPrivateRoomName = (
-  room: Pick<ChatRoom, "id" | "name" | "members" | "otherMemberId">,
-  currentUserId?: string,
-) => {
-  const otherMember =
-    room.members?.find((member) =>
-      currentUserId
-        ? member.userId !== currentUserId
-        : room.otherMemberId
-          ? member.userId === room.otherMemberId
-          : true,
-    ) ?? null;
-
-  if (otherMember?.name) {
-    return otherMember.name;
-  }
-
-  if (room.name && !isPrivateRoomFallbackName(room.name, room.id)) {
-    return room.name;
-  }
-
-  return "";
-};
-
-const mapMessage = (message: MessageWithSender, currentUserId?: string): Message => ({
-  id: message.messageId,
-  roomId: message.roomId,
-  senderId: message.senderId,
-  senderName: message.sender?.name ?? "Deleted User",
-  content: message.content,
-  sentAt: new Date(message.sentAt).toISOString(),
-  timestamp: formatMessageTime(message.sentAt),
-  replyToId: message.replyToId,
-  isOutgoing: Boolean(currentUserId && message.senderId === currentUserId),
-  isRecalled: message.isRecalled,
-  messageSequence: message.messageSequence,
-  changeSequence: message.changeSequence,
-  revision: message.revision,
-  replyTo: null,
-  attachments: message.attachments?.map(mapAttachment) ?? [],
-  mentions: message.mentions ?? [],
-});
-
-const hydrateReplyTargets = (items: Message[]): Message[] => {
-  const messageByRoom = new Map<string, Map<string, Message>>();
-
-  for (const item of items) {
-    let roomMessages = messageByRoom.get(item.roomId);
-    if (!roomMessages) {
-      roomMessages = new Map<string, Message>();
-      messageByRoom.set(item.roomId, roomMessages);
-    }
-    roomMessages.set(item.id, item);
-  }
-
-  return items.map((item) => {
-    if (!item.replyToId) {
-      return item.replyTo ? { ...item, replyTo: null } : item;
-    }
-
-    const replyTarget = messageByRoom.get(item.roomId)?.get(item.replyToId);
-    if (!replyTarget) {
-      return item;
-    }
-
-    const nextReplyTo = {
-      senderName: replyTarget.senderName,
-      content: replyTarget.isRecalled
-        ? ""
-        : replyTarget.content || replyTarget.attachments?.[0]?.filename || "",
-    };
-
-    if (
-      item.replyTo?.senderName === nextReplyTo.senderName &&
-      item.replyTo?.content === nextReplyTo.content
-    ) {
-      return item;
-    }
-
-    return {
-      ...item,
-      replyTo: nextReplyTo,
-    };
-  });
-};
-
-// How often a connected session re-runs `/sync` purely to move its cursor
-// forward. Long enough that an idle-but-chatty session is not making steady
-// background requests, short enough that the catch-up after a reconnect stays
-// bounded by minutes of activity rather than by the whole connection.
-const CURSOR_CHECKPOINT_INTERVAL_MS = 5 * 60_000;
-
-const mapRooms = (
-  apiRooms: RoomSummary[],
-  apiFolders: ApiFolder[],
-  currentRooms: ChatRoom[],
-  currentUserId?: string,
-): ChatRoom[] => {
-  const currentRoomById = new Map(currentRooms.map((room) => [room.id, room]));
-  const folderByRoom = new Map<string, string>();
-  for (const folder of apiFolders) {
-    for (const roomId of folder.roomIds) {
-      folderByRoom.set(roomId, folder.folderId);
-    }
-  }
-
-  return apiRooms.map((room) => {
-    const currentRoom = currentRoomById.get(room.roomId);
-    const latestMessage =
-      room.latestMessage
-        ? {
-            content: room.latestMessage.content,
-            attachments: [],
-            isRecalled: room.latestMessage.isRecalled,
-          }
-        : null;
-
-    return {
-      id: room.roomId,
-      type: room.type === "group" ? "group" : "msg",
-      avatarUrl: room.avatarUrl,
-      name:
-        room.name ||
-        (room.type === "group"
-          ? (currentRoom?.name && !isPrivateRoomFallbackName(currentRoom.name, room.roomId)
-              ? currentRoom.name
-              : `Group ${room.roomId.slice(0, 8)}`)
-          : getPrivateRoomName(
-              {
-                id: room.roomId,
-                name: currentRoom?.name ?? "",
-                members: currentRoom?.members,
-                otherMemberId: room.otherMemberId ?? currentRoom?.otherMemberId,
-              },
-              currentUserId,
-            )),
-      folderId: folderByRoom.get(room.roomId) ?? currentRoom?.folderId ?? null,
-      inviteCode: room.inviteCode,
-      requireApproval: room.requireApproval,
-      viewHistory: room.viewHistory,
-      isArchived: room.isArchived,
-      isReadonly: room.isReadonly,
-      isOnline: room.isOnline ?? currentRoom?.isOnline,
-      otherMemberId: room.otherMemberId ?? currentRoom?.otherMemberId,
-      members: currentRoom?.members ?? (room.type === "group" ? [] : undefined),
-      unreadCount: room.unreadCount ?? currentRoom?.unreadCount ?? 0,
-      lastReadId: room.lastReadId ?? currentRoom?.lastReadId ?? null,
-      myRole: room.role ?? currentRoom?.myRole,
-      lastMessagePreview: latestMessage ? summarizeMessagePreview(latestMessage) : undefined,
-      lastMessageAt: room.latestMessage
-        ? formatMessageTime(room.latestMessage.sentAt)
-        : undefined,
-      lastMessageId: room.latestMessage?.messageId,
-      lastMessageSequence: room.latestMessage?.messageSequence,
-      lastMessageChangeSequence: room.latestMessage?.changeSequence,
-    };
-  });
-};
-
-const mapFolders = (apiFolders: ApiFolder[], currentFolders: Folder[]): Folder[] => {
-  const collapsedById = new Map(currentFolders.map((folder) => [folder.id, folder.collapsed]));
-  return apiFolders.map((folder) => ({
-    id: folder.folderId,
-    name: folder.name,
-    collapsed: collapsedById.get(folder.folderId) ?? false,
-  }));
-};
-
-const normalizeLanguage = (language?: string): UiLanguage =>
-  language === "zh-TW" || language === "en" ? language : "en";
-
-const mapFriend = (item: FriendResponse, emergencyContactIds: Set<string>): Friend => ({
-  id: item.friend.userId,
-  name: item.friend.name,
-  email: "",
-  status: item.status || "offline",
-  isEmergencyContact: emergencyContactIds.has(item.friend.userId),
-  avatarUrl: item.friend.avatarUrl,
-});
-
-const mapFriendRequest = (item: FriendRequestResponse, currentUserId: string): FriendRequest => {
-  if (item.requesterId === currentUserId) {
-    return {
-      id: item.addresseeId,
-      name: item.addressee?.name ?? item.addresseeId,
-      email: "",
-      direction: "outgoing",
-      avatarUrl: item.addressee?.avatarUrl,
-    };
-  }
-  return {
-    id: item.requesterId,
-    name: item.requester?.name ?? item.requesterId,
-    email: "",
-    direction: "incoming",
-    avatarUrl: item.requester?.avatarUrl,
-  };
-};
-
-const mapEmergencyContact = (item: EmergencyContactResponse): EmergencyContact => ({
-  id: item.contactId,
-  contactId: item.contactId,
-  name: item.contact?.name ?? item.contactId,
-  email: item.contact?.email ?? "",
-  message: item.message,
-});
-
-const mapRoomMember = (member: ApiRoomMember, profile?: UserProfile): Member => ({
-  userId: member.userId,
-  name: profile?.name || member.userId,
-  role: member.role,
-  nickname: member.nickname,
-  isMuted: member.isMuted,
-  lastReadId: member.lastReadId ?? null,
-  readPosition: member.readPosition,
-  avatarUrl: profile?.avatarUrl,
-});
-
-const fetchRoomMembers = async (authToken: string, roomId: string): Promise<Member[]> => {
-  const apiMembers = await listRoomMembers(authToken, roomId);
-  const profiles = await Promise.all(
-    apiMembers.map((member) =>
-      getUserProfile(member.userId, authToken).catch(() => undefined),
-    ),
-  );
-
-  return apiMembers.map((member, index) => mapRoomMember(member, profiles[index]));
-};
-
-const findRequestedUser = (
-  candidates: PublicUser[],
-  query: string,
-): PublicUser | undefined => {
-  const normalizedQuery = query.trim().toLowerCase();
-
-  return (
-    candidates.find((candidate) => candidate.userId.toLowerCase() === normalizedQuery) ??
-    candidates.find((candidate) => candidate.name.toLowerCase() === normalizedQuery) ??
-    candidates.find((candidate) => candidate.name.toLowerCase().includes(normalizedQuery)) ??
-    candidates[0]
-  );
-};
-
-const sortMessages = (items: Message[]) =>
-  [...items].sort((a, b) => {
-    if (a.messageSequence !== undefined && b.messageSequence !== undefined) {
-      const sequenceCompare = a.messageSequence - b.messageSequence;
-      if (sequenceCompare !== 0) return sequenceCompare;
-    }
-    const sentAtCompare = new Date(a.sentAt).getTime() - new Date(b.sentAt).getTime();
-    if (sentAtCompare !== 0) return sentAtCompare;
-    return a.id.localeCompare(b.id);
-  });
-
-const compareMessageVersion = (left: Message, right: Message): number => {
-  if (left.changeSequence !== undefined && right.changeSequence !== undefined) {
-    return left.changeSequence - right.changeSequence;
-  }
-  if (left.revision !== undefined && right.revision !== undefined) {
-    return left.revision - right.revision;
-  }
-  if (left.messageSequence !== undefined && right.messageSequence !== undefined) {
-    return left.messageSequence - right.messageSequence;
-  }
-  return new Date(left.sentAt).getTime() - new Date(right.sentAt).getTime();
-};
-
-const mergeMessages = (current: Message[], incoming: Message[]): Message[] => {
-  const byId = new Map(current.map((message) => [message.id, message]));
-  for (const message of incoming) {
-    const existing = byId.get(message.id);
-    if (!existing || compareMessageVersion(message, existing) >= 0) {
-      byId.set(message.id, message);
-    }
-  }
-  return hydrateReplyTargets(sortMessages(Array.from(byId.values())));
-};
+const AdminContext = createContext<AdminContextType | undefined>(undefined);
 
 export function ChatProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -775,10 +189,18 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
   const [isMounted, setIsMounted] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isAuthResolved, setIsAuthResolved] = useState(false);
   const [roomsInitialized, setRoomsInitialized] = useState(false);
   const [token, setToken] = useState<string | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | undefined>(undefined);
   const [user, setUser] = useState<User>({ username: "", email: "", avatar: "" });
+  const [adminAccess, setAdminAccess] = useState<AdminAccessState>("checking");
+  const [adminMonitoring, setAdminMonitoring] = useState<AdminMonitoringState>(emptyAdminMonitoringState);
+  const [adminError, setAdminError] = useState<AdminError>(null);
+  const [adminRefreshNonce, setAdminRefreshNonce] = useState(0);
+  const [adminCheckNonce, setAdminCheckNonce] = useState(0);
+  const [adminVerifiedToken, setAdminVerifiedToken] = useState<string | null>(null);
+  const [adminVerifiedSessionKey, setAdminVerifiedSessionKey] = useState<string | null>(null);
   const [rooms, setRooms] = useState<ChatRoom[]>([]);
   const [folders, setFolders] = useState<Folder[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -896,6 +318,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     setToken(null);
     setCurrentUserId(undefined);
     setIsAuthenticated(false);
+    setIsAuthResolved(true);
     setRoomsInitialized(false);
     setRooms([]);
     setFolders([]);
@@ -1028,11 +451,16 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       const customEvent = e as CustomEvent<{ token: string; user: unknown }>;
       setToken(customEvent.detail.token);
     };
+    const handleTokenChanged = () => {
+      setToken(getActiveAccessToken());
+    };
     window.addEventListener('auth:token-expired', handleExpired);
     window.addEventListener('auth:token-refreshed', handleRefreshed);
+    window.addEventListener('auth:token-changed', handleTokenChanged);
     return () => {
       window.removeEventListener('auth:token-expired', handleExpired);
       window.removeEventListener('auth:token-refreshed', handleRefreshed);
+      window.removeEventListener('auth:token-changed', handleTokenChanged);
     };
   }, []);
 
@@ -1048,6 +476,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     /* eslint-disable react-hooks/set-state-in-effect -- post-mount localStorage session hydration */
     if (!isMounted) return;
+
+    const loginPath = pathname === "/admin" ? ADMIN_LOGIN_PATH : "/login";
 
     const savedUser = localStorage.getItem("user");
     const savedTheme = localStorage.getItem("theme");
@@ -1118,6 +548,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         setToken(currentToken);
         setActiveAccessToken(currentToken);
         setIsAuthenticated(true);
+        setIsAuthResolved(true);
         await Promise.all([
           refreshRoomsAndFolders(currentToken, profile.userId),
           refreshSocialData(currentToken, settings, profile.userId),
@@ -1126,7 +557,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         console.error(error);
         if (!cancelled) {
           clearSession();
-          window.location.replace("/login");
+          window.location.replace(loginPath);
         }
       }
     })();
@@ -1141,6 +572,149 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     roomsRef.current = rooms;
   }, [rooms]);
+
+  // Admin verification and monitoring deliberately live with the session
+  // lifecycle. The page only consumes this state; it must not create a second
+  // token/polling lifecycle of its own.
+  /* eslint-disable react-hooks/set-state-in-effect -- admin state setup after auth */
+  useEffect(() => {
+    if (pathname !== "/admin") {
+      return;
+    }
+    if (!isMounted || !isAuthResolved) return;
+    // The route guard in app/(main)/layout.tsx owns the redirect to login;
+    // here we only need to stay idle until a session exists.
+    if (!isAuthenticated || !token) return;
+
+    let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    const authToken = token;
+    const sessionKey = currentUserId ?? "anonymous";
+    setAdminAccess("checking");
+    setAdminVerifiedToken(null);
+    setAdminVerifiedSessionKey(null);
+    setAdminMonitoring(emptyAdminMonitoringState);
+    setAdminError(null);
+
+    void getAdminHealth(authToken)
+      .then(() => {
+        if (cancelled) return;
+        setAdminVerifiedToken(authToken);
+        setAdminVerifiedSessionKey(sessionKey);
+        setAdminAccess("allowed");
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        if (error instanceof ApiError && error.status === 401) {
+          clearSession();
+          router.replace(ADMIN_LOGIN_PATH);
+          return;
+        }
+        if (error instanceof ApiError && error.status === 403) {
+          setAdminAccess("forbidden");
+          return;
+        }
+        console.error("Failed to verify admin access:", error);
+        setAdminError("access");
+        setAdminAccess("error");
+        retryTimer = setTimeout(() => {
+          if (!cancelled) setAdminCheckNonce((current) => current + 1);
+        }, ADMIN_POLL_INTERVAL_MS);
+      });
+
+    return () => {
+      cancelled = true;
+      if (retryTimer !== undefined) clearTimeout(retryTimer);
+    };
+  }, [adminCheckNonce, currentUserId, isAuthenticated, isAuthResolved, isMounted, pathname, router, token]);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
+  useEffect(() => {
+    if (
+      pathname !== "/admin" ||
+      adminAccess !== "allowed" ||
+      adminVerifiedToken !== token ||
+      adminVerifiedSessionKey !== (currentUserId ?? "anonymous") ||
+      !isAuthenticated ||
+      !token
+    ) return;
+
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let inFlight = false;
+    const authToken = token;
+
+    const scheduleNextPoll = () => {
+      if (!cancelled) {
+        timer = setTimeout(() => {
+          timer = undefined;
+          void loadMonitoringData();
+        }, ADMIN_POLL_INTERVAL_MS);
+      }
+    };
+
+    const loadMonitoringData = async () => {
+      if (cancelled || inFlight) return;
+      const currentToken = getActiveAccessToken();
+      if (!currentToken || currentToken !== authToken) return;
+
+      inFlight = true;
+      let shouldContinuePolling = true;
+      try {
+        const [metricsResult, logsResult, slowQueriesResult] = await Promise.allSettled([
+          getAdminMetrics(authToken),
+          getAdminLogs(authToken),
+          getAdminSlowQueries(authToken),
+        ]);
+        if (cancelled) return;
+
+        const results = [metricsResult, logsResult, slowQueriesResult];
+        const rejectedResults = results.filter(
+          (result): result is PromiseRejectedResult => result.status === "rejected",
+        );
+        const authorizationError = rejectedResults.find(
+          (result) => result.reason instanceof ApiError && (result.reason.status === 401 || result.reason.status === 403),
+        );
+        if (authorizationError) throw authorizationError.reason;
+        if (rejectedResults[0]) throw rejectedResults[0].reason;
+        if (metricsResult.status !== "fulfilled" || logsResult.status !== "fulfilled" || slowQueriesResult.status !== "fulfilled") {
+          return;
+        }
+
+        setAdminMonitoring({
+          metrics: metricsResult.value,
+          logs: logsResult.value.entries,
+          slowQueries: slowQueriesResult.value.queries,
+          lastUpdated: metricsResult.value.at,
+        });
+        setAdminError(null);
+      } catch (error: unknown) {
+        if (cancelled) return;
+        if (error instanceof ApiError && error.status === 401) {
+          shouldContinuePolling = false;
+          clearSession();
+          router.replace(ADMIN_LOGIN_PATH);
+          return;
+        }
+        if (error instanceof ApiError && error.status === 403) {
+          shouldContinuePolling = false;
+          setAdminAccess("forbidden");
+          return;
+        }
+        console.error("Failed to load admin monitoring data:", error);
+        setAdminError("monitoring");
+      } finally {
+        inFlight = false;
+        if (shouldContinuePolling) scheduleNextPoll();
+      }
+    };
+
+    void loadMonitoringData();
+    return () => {
+      cancelled = true;
+      if (timer !== undefined) clearTimeout(timer);
+    };
+  }, [adminAccess, adminRefreshNonce, adminVerifiedSessionKey, adminVerifiedToken, currentUserId, isAuthenticated, pathname, router, token]);
 
   useEffect(() => {
     if (!token || !currentUserId) return;
@@ -1353,23 +927,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       void track(runCheckpoint());
     };
 
-    // A live durable event must never advance the cursor itself, however
-    // tempting its `changeSequence` looks. Services publish *after* their
-    // transaction commits and after a follow-up snapshot query, so two
-    // concurrent commands race in the application layer and this client can
-    // see the larger sequence first. Taking it as a watermark and then
-    // dropping the socket before the smaller one arrives would put that change
-    // permanently behind `/sync`'s `change_sequence > cursor` filter — a
-    // silently lost edit or recall.
-    //
-    // `/sync` has no such hazard: the counter row lock is held until commit,
-    // so changes become visible in sequence order and a page can never
-    // straddle a gap. The cursor is therefore checkpointed by running an
-    // ordinary cursor-only `/sync` on a timer, which is what keeps a
-    // long-lived session from paging its entire connection back on the next
-    // reconnect. Deliberately not `runSynchronization`: a periodic tick must
-    // not refresh rooms, and must not take the failure path that disconnects
-    // the socket.
+    // Periodic /sync checkpoint avoids gaps from out-of-order realtime events.
     let liveChangesSinceCheckpoint = false;
     const noteLiveDurableChange = () => {
       liveChangesSinceCheckpoint = true;
@@ -1880,12 +1438,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     }).then((message) => applyCanonicalMessage(message)).catch((error) => console.error('Failed to send attachment message:', error));
   };
 
-  /**
-   * A 409 means the local revision was stale: someone else edited or recalled
-   * the message first. Silently swallowing it leaves the user looking at
-   * content the server has already replaced, so realign from the server and
-   * tell them what happened.
-   */
+  /** Handles 409 conflict by refreshing canonical message from the server. */
   const handleRevisionConflict = async (
     roomId: string,
     messageId: string,
@@ -1893,21 +1446,12 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     noticeKey: string,
   ): Promise<void> => {
     if (!(error instanceof ApiError) || error.status !== 409) throw error;
-    // Only promise the user a refreshed message once the canonical row is
-    // actually back in state. The fetch can fail, and the message can sit
-    // outside the page it returns — in both cases the stale revision is still
-    // on screen, and a notice claiming otherwise would be a lie.
     let refreshed = false;
     if (token) {
       try {
         const canonical = (await listMessages(token, roomId, { limit: 50 }))
           .find((row) => row.messageId === messageId);
         if (canonical) {
-          // The sidebar preview is derived from this message whenever it is
-          // the room's last one, and the conflict means the event that would
-          // normally have refreshed the summary may never arrive. Skipping it
-          // unconditionally would leave a stale preview behind a notice that
-          // claims the latest version is on screen.
           const isRoomPreview = roomsRef.current
             .some((room) => room.id === roomId && room.lastMessageId === messageId);
           applyCanonicalMessage(canonical, isRoomPreview);
@@ -2525,18 +2069,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
   const prevActiveRoomIdRef = useRef<string | null>(null);
 
-  // Advances the local read marker optimistically, then undoes it if the write
-  // never lands. Both callers below decide whether to send by comparing the
-  // marker with the newest message, so a marker left ahead of a failed write is
-  // self-silencing: the room looks read here while the server still counts it
-  // unread, and nothing retries until a new message, a room switch or a reload.
-  //
-  // The rollback alone is not enough, though. `groupReadStates` is a dependency
-  // of the effect below, so undoing the marker immediately re-runs the effect,
-  // which calls straight back in here — a request loop with no delay and no
-  // ceiling for as long as the write keeps failing (offline, a persistent 5xx,
-  // a permission change). The per-room backoff below is what turns that into a
-  // paced retry, and `retryTick` is what wakes the effect once it expires.
+  // Optimistic read marker state with per-room exponential backoff for failed sync attempts.
   const readPositionRetryRef = useRef(
     new Map<string, { inFlight?: string; blockedUntil?: number; attempts: number; timer?: ReturnType<typeof setTimeout> }>(),
   );
@@ -2702,22 +2235,11 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // -------------------------------------------------------------------------
-  // Context value stabilization (hotspot #1, issue #383)
-  //
-  // The React Compiler is disabled for this file (see header), so without
-  // manual memoization every provider render would rebuild all handler
-  // closures and the context value object, forcing every useChat() consumer
-  // to re-render on any provider state change.
-  //
-  // Imperative handlers are exposed through identity-stable proxies that
-  // delegate to the latest implementation via a ref (same pattern as
-  // markRoomAsRead below). The proxies are only ever invoked from event
-  // handlers and effects — never during render — so they always observe the
-  // closures of the last committed render. Functions that consumers call
-  // during render (getReadAvatarsForMessage) use useCallback with real
-  // dependencies instead.
-  // -------------------------------------------------------------------------
+  const refreshAdminMonitoring = useCallback(() => {
+    setAdminRefreshNonce((current) => current + 1);
+  }, []);
+
+  // Identity-stable handler proxies to prevent unnecessary re-renders of useChat consumers.
   const handlers = {
     toggleFolder,
     handleLogout,
@@ -2792,6 +2314,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       emergencySettings,
       uiLanguage,
       isAuthenticated,
+      isAuthResolved,
       isMounted,
       roomsInitialized,
       selectedFriendForSidebar,
@@ -2820,6 +2343,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       emergencySettings,
       uiLanguage,
       isAuthenticated,
+      isAuthResolved,
       isMounted,
       roomsInitialized,
       selectedFriendForSidebar,
@@ -2840,28 +2364,35 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     [showRightPanel],
   );
 
+  const adminValue = useMemo<AdminContextType>(
+    () => ({ adminAccess, adminMonitoring, adminError, refreshAdminMonitoring }),
+    [adminAccess, adminMonitoring, adminError, refreshAdminMonitoring],
+  );
+
   return (
     <ChatContext.Provider value={contextValue}>
       <UiLanguageContext.Provider value={uiLanguage}>
         <TypingUsersContext.Provider value={typingUsers}>
           <ProfilePopoverContext.Provider value={profilePopoverValue}>
             <RightPanelContext.Provider value={rightPanelValue}>
-              {children}
-              {messageNoticeKey && (
-                <div
-                  role="status"
-                  className="fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-lg bg-red-600 px-4 py-3 text-sm text-white shadow-lg"
-                >
-                  <span>{translate(uiLanguage, messageNoticeKey)}</span>
-                  <button
-                    type="button"
-                    className="font-semibold underline"
-                    onClick={() => setMessageNoticeKey(null)}
+              <AdminContext.Provider value={adminValue}>
+                {children}
+                {messageNoticeKey && (
+                  <div
+                    role="status"
+                    className="fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-lg bg-red-600 px-4 py-3 text-sm text-white shadow-lg"
                   >
-                    {translate(uiLanguage, "chatroom.dismissNotice")}
-                  </button>
-                </div>
-              )}
+                    <span>{translate(uiLanguage, messageNoticeKey)}</span>
+                    <button
+                      type="button"
+                      className="font-semibold underline"
+                      onClick={() => setMessageNoticeKey(null)}
+                    >
+                      {translate(uiLanguage, "chatroom.dismissNotice")}
+                    </button>
+                  </div>
+                )}
+              </AdminContext.Provider>
             </RightPanelContext.Provider>
           </ProfilePopoverContext.Provider>
         </TypingUsersContext.Provider>
@@ -2874,6 +2405,18 @@ export function useChat() {
   const context = useContext(ChatContext);
   if (context === undefined) {
     throw new Error("useChat must be used within a ChatProvider");
+  }
+  return context;
+}
+
+/**
+ * Admin access state and monitoring snapshot. Separate from useChat so the 30s
+ * poll only re-renders the admin surface.
+ */
+export function useAdmin() {
+  const context = useContext(AdminContext);
+  if (context === undefined) {
+    throw new Error("useAdmin must be used within a ChatProvider");
   }
   return context;
 }

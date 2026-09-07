@@ -1,4 +1,4 @@
-import type { FriendResponse } from '@shared/types';
+import type { FriendResponse, RoomMember } from '@shared/types';
 import { ForbiddenError, ValidationError } from '../utils/AppError';
 import type { IRoomMemberRepository } from '../models/IRoomMemberRepository';
 import type { ChatServer } from './authSocket';
@@ -14,69 +14,74 @@ interface SocketDeps {
     roomId: string,
     operation: () => Promise<T> | T,
   ) => Promise<T>;
-  /**
-   * The presence tracker, defaulting to the process-wide one.
-   *
-   * Injected so a test can watch these two calls without `mock.module`, which
-   * would replace the module for every later test file in the same process.
-   * See backend/tests/CLAUDE.md.
-   */
+  /** Optional injected presence tracker (defaults to process singleton). */
   presence?: Pick<PresenceTracker, 'trackUserConnection' | 'trackUserDisconnection'>;
+  /**
+   * Subscriber-reconnect signal from `utils/redis.ts`, when one is wired.
+   *
+   * Absent without `REDIS_URL`: the in-memory adapter never publishes a
+   * revocation over the wire, so there is no frame for an outage to lose and
+   * nothing to reconcile.
+   */
+  onSubscriberRestored?: (handler: () => void) => () => void;
+  /**
+   * First backoff before a reconciliation retries users whose membership read
+   * failed. Injected only so tests need not wait out a real backoff.
+   */
+  reconcileRetryDelayMs?: number;
+  /**
+   * Delay before the trailing verification pass. Injected only so tests need
+   * not wait out a real delay.
+   */
+  reconcileTrailingDelayMs?: number;
 }
+
+/** The only room prefix reconciliation may act on. */
+const ROOM_PREFIX = 'room_';
+
+/** Users whose durable membership is read at once during a reconciliation. */
+const RECONCILE_CONCURRENCY = 8;
+
+/** Passes a reconciliation makes before it stops retrying failed reads. */
+const RECONCILE_ATTEMPTS = 5;
+
+/** First backoff before retrying users whose membership read failed. */
+const RECONCILE_RETRY_DELAY_MS = 2_000;
+
+/**
+ * Delay before the trailing pass that re-checks a revocation still mid-commit.
+ *
+ * Sized against the gap in `services/roomService.ts` between publishing a
+ * revocation and committing it — one statement, so milliseconds — with enough
+ * margin that a contended write is still covered.
+ */
+const RECONCILE_TRAILING_DELAY_MS = 3_000;
+
+/** The socket type the namespace holds, without restating its generics. */
+type LocalSocket = ReturnType<ChatServer['of']>['sockets'] extends Map<string, infer S>
+  ? S
+  : never;
 
 const maxSessionsPerUser = (): number => env().realtime.maxSessionsPerUser;
 
 const typingTtlMs = (): number => env().realtime.typingTtlMs;
 
-/**
- * How long a handshake may hold its reserved session slot before the slot is
- * assumed abandoned. Socket.IO defers the rest of the connection setup past
- * the middleware, so a transport that dies in that window never reaches the
- * `connection` handler and never registers the `disconnect` listener that
- * would return the slot. Without an expiry those slots accumulate until the
- * user can no longer connect at all.
- */
+/** Timeout before unestablished socket reservations are released. */
 const sessionReservationTtlMs = (): number => env().realtime.sessionReservationTtlMs;
 
-/**
- * Attach only the ephemeral realtime surface. Durable commands deliberately
- * have no Socket.IO listeners: REST owns idempotency, optimistic concurrency,
- * authorization and the transaction that creates the durable event.
- */
+/** Attaches ephemeral Socket.IO listeners for presence and typing indicators. */
 export const attachSockets = (io: ChatServer, deps: SocketDeps): void => {
   const presence = deps.presence ?? { trackUserConnection, trackUserDisconnection };
   const sessionLimit = maxSessionsPerUser();
   const sessionCounts = new Map<string, number>();
-  /**
-   * One live typing claim per socket per room: the expiry that retracts it if
-   * the socket goes silent, and when this socket's membership of that room was
-   * last verified.
-   */
+
+  /** Tracks active typing expiration timer and check timestamp per socket and room. */
   const typingClaims = new Map<string, { expiry: ReturnType<typeof setTimeout>; checkedAt: number }>();
-  /**
-   * Which sockets currently claim each `(room, user)` pair.
-   *
-   * `user_typing` is a statement about a *user*, but a user has as many sockets
-   * as open tabs, so retracting it takes more than one socket's say-so. Keyed
-   * per socket — which is what this replaced — a second tab sending
-   * `isTyping: false`, or simply closing, retracts a claim the first tab is
-   * still refreshing, and every other member sees the indicator disappear while
-   * the user is still typing.
-   *
-   * Only the retraction is aggregated. `true` stays a per-refresh broadcast
-   * because the client treats it as a heartbeat; see the send site below.
-   *
-   * Nested maps rather than one map under a composite key: `roomId` and `userId`
-   * are both opaque strings from outside this process, and there is no separator
-   * they cannot both contain.
-   *
-   * Process-local on purpose. Aggregating across instances needs the events
-   * themselves to cross first — `realtime/publisher.ts` is single-process, and
-   * closing that is the event bus's job (#475/#476), not this module's.
-   */
+
+  /** Maps roomId -> userId -> active socketIds claiming typing state. */
   const typingRooms = new Map<string, Map<string, Set<string>>>();
 
-  /** Record a socket's claim on a room. */
+  /** Records a socket typing claim on a room. */
   const addTypingSocket = (roomId: string, userId: string, socketId: string): void => {
     let byUser = typingRooms.get(roomId);
     if (!byUser) {
@@ -91,12 +96,7 @@ export const attachSockets = (io: ChatServer, deps: SocketDeps): void => {
     sockets.add(socketId);
   };
 
-  /**
-   * Drop a socket's claim. True only when it was the user's last in the room.
-   *
-   * Empty containers are deleted rather than left behind: a long-lived process
-   * would otherwise accumulate one entry per room anyone has ever typed in.
-   */
+  /** Drops a socket typing claim. Returns true only if it was the user's last active socket in the room. */
   const removeTypingSocket = (roomId: string, userId: string, socketId: string): boolean => {
     const byUser = typingRooms.get(roomId);
     const sockets = byUser?.get(userId);
@@ -106,9 +106,8 @@ export const attachSockets = (io: ChatServer, deps: SocketDeps): void => {
     if (byUser.size === 0) typingRooms.delete(roomId);
     return true;
   };
-  // Handshakes whose slot was already reserved by the middleware below, so the
-  // connection handler does not count the same session twice. Each reservation
-  // is a lease: if the connection never arrives, the timer returns the slot.
+
+  // Tracks reserved handshake slots to prevent race conditions during connection setup.
   const reservedSessions = new WeakSet<object>();
   const reservationTimers = new WeakMap<object, ReturnType<typeof setTimeout>>();
   const reservationTtl = sessionReservationTtlMs();
@@ -131,8 +130,7 @@ export const attachSockets = (io: ChatServer, deps: SocketDeps): void => {
     else sessionCounts.delete(userId);
   };
 
-  // The auth middleware runs first and stores socket.data.user. Test doubles
-  // without `use` still exercise the connection handlers below.
+  // Reserve session slot during handshake middleware.
   if (typeof (io as unknown as { use?: unknown }).use === 'function') {
     io.use((socket, next) => {
       const userId = socket.data.user?.userId;
@@ -140,9 +138,6 @@ export const attachSockets = (io: ChatServer, deps: SocketDeps): void => {
         next(new Error('Authentication error'));
         return;
       }
-      // Check and reserve in the same synchronous step. Counting only once the
-      // connection handler runs would let every concurrent handshake read the
-      // same pre-connection total and pass a limit that is already exhausted.
       if ((sessionCounts.get(userId) ?? 0) >= sessionLimit) {
         next(new Error('Session limit reached'));
         return;
@@ -151,8 +146,6 @@ export const attachSockets = (io: ChatServer, deps: SocketDeps): void => {
       reservedSessions.add(socket);
       const expiry = setTimeout(() => {
         reservationTimers.delete(socket);
-        // Only release when the connection handler has not already claimed
-        // this reservation, otherwise a live session would lose its slot.
         if (reservedSessions.delete(socket)) releaseSession(userId);
       }, reservationTtl);
       expiry.unref?.();
@@ -160,6 +153,266 @@ export const attachSockets = (io: ChatServer, deps: SocketDeps): void => {
       next();
     });
   }
+
+  /**
+   * Every socket this process holds, grouped by the user who owns it.
+   *
+   * `io.of('/').sockets` and not `fetchSockets()`: without `flags.local` the
+   * latter is a cluster-wide round trip, and `realtime/redisAdapter.ts`
+   * deliberately extends plain `ClusterAdapter` rather than the heartbeat
+   * subclass that keeps the `serverCount()` it waits on accurate.
+   *
+   * Grouped because durable membership is per user while sockets are not: one
+   * user holds up to `MAX_SESSIONS_PER_USER` of them, and they all reconcile
+   * against a single read.
+   */
+  const localSocketsByUser = (): Map<string, LocalSocket[]> => {
+    const grouped = new Map<string, LocalSocket[]>();
+    const server = io as unknown as {
+      of?: (name: string) => { sockets?: Map<string, LocalSocket> };
+    };
+    if (typeof server.of !== 'function') return grouped;
+    const sockets = server.of('/').sockets;
+    if (!sockets) return grouped;
+    for (const socket of sockets.values()) {
+      const owner = socket.data?.user?.userId;
+      if (typeof owner !== 'string' || owner.length === 0) continue;
+      const held = grouped.get(owner);
+      if (held) held.push(socket);
+      else grouped.set(owner, [socket]);
+    }
+    return grouped;
+  };
+
+  /** The rooms a membership read says this user's sockets may hold. */
+  const permittedRooms = (members: RoomMember[]): Set<string> =>
+    new Set(
+      members
+        .filter((member) => member.role !== 'pending')
+        .map((member) => `${ROOM_PREFIX}${member.roomId}`),
+    );
+
+  /**
+   * Reconcile one user's sessions. Resolves false when a membership read failed
+   * and this user's rooms are therefore still unverified.
+   */
+  const reconcileUser = async (
+    findByUser: (userId: string) => Promise<RoomMember[]>,
+    userId: string,
+    sockets: LocalSocket[],
+  ): Promise<boolean> => {
+    const read = async (): Promise<Set<string> | undefined> => {
+      try {
+        return permittedRooms(await findByUser(userId));
+      } catch (error) {
+        // Leaving nothing is the safe failure: this pass only ever removes
+        // access, and guessing would drop the user out of rooms they still
+        // hold. The cost is that this user stays unverified, which is why the
+        // caller retries rather than treating the pass as finished.
+        console.error('Failed to read membership while reconciling subscriptions:', error);
+        return undefined;
+      }
+    };
+
+    const permitted = await read();
+    if (!permitted) return false;
+
+    // Collected across the user's sockets before anything leaves, so the room
+    // set being walked is never the one `leave` mutates — `socket.rooms` is the
+    // adapter's own live Set, not a copy. `socket.id` is skipped explicitly:
+    // socket ids come from an alphabet that includes `_`, so one can in
+    // principle start with `room_` without ever having been a room.
+    const candidates = new Set<string>();
+    for (const socket of sockets) {
+      for (const room of socket.rooms ?? []) {
+        if (room === socket.id) continue;
+        if (!room.startsWith(ROOM_PREFIX)) continue;
+        if (permitted.has(room)) continue;
+        candidates.add(room);
+      }
+    }
+    if (candidates.size === 0) return true;
+
+    // A re-read that failed leaves its room unverified too, so the pass is
+    // incomplete for the same reason a failed first read is.
+    let verified = true;
+    const evicted = new Set<LocalSocket>();
+    for (const room of candidates) {
+      const roomId = room.slice(ROOM_PREFIX.length);
+      const leave = async (): Promise<void> => {
+        // Re-read under the lock before acting, the same shape the
+        // connection-time restore uses above. The set gathered before this
+        // point is a candidate filter and nothing more: a grant commits and
+        // then joins the room (`services/roomService.ts`), so a membership
+        // granted after the first read is already in `socket.rooms` while
+        // still missing from that snapshot, and leaving on it would evict a
+        // socket that was just legitimately authorized. `findByUser` and not
+        // `findMember`, because its SQL is also what encodes the read-only
+        // private room and mutual-block conditions — a revocation caused by a
+        // block would otherwise survive the re-read.
+        const current = await read();
+        if (!current) {
+          verified = false;
+          return;
+        }
+        if (current.has(room)) return;
+        for (const socket of sockets) {
+          if (socket.connected === false) continue;
+          if (socket.rooms?.has(room) !== true) continue;
+          await Promise.resolve(socket.leave(room));
+          evicted.add(socket);
+        }
+      };
+      // The same lock the connection-time restore takes, so a reconciliation
+      // and a reconnecting session cannot interleave on one room.
+      if (deps.withRoomSubscriptionLock) {
+        await deps.withRoomSubscriptionLock(userId, roomId, leave);
+      } else {
+        await leave();
+      }
+    }
+
+    // Only the sockets that actually lost a room. `realtime_ready` puts the
+    // client through `synchronize()` — a `/sync` page loop plus the room,
+    // social and member reloads — and a socket that kept every room has
+    // nothing to recover.
+    for (const socket of evicted) socket.emit('realtime_ready');
+    return verified;
+  };
+
+  /**
+   * Re-derive every local socket's room subscriptions from durable membership,
+   * leaving the rooms that are no longer permitted and never joining any.
+   *
+   * Leave-only is the point. `services/roomService.ts` revokes the subscription
+   * *before* it writes the demotion, deliberately and for the reasons recorded
+   * there, so a pass reading the database inside that window would find the
+   * member still authorized and hand back the subscription a revocation in
+   * flight had just taken away. Grants run the other way round — the
+   * subscription is added after the write commits — so a pass that only leaves
+   * can never remove one that was just granted. A `SOCKETS_JOIN` lost to the
+   * same outage is a missed event rather than wrong access, and `/sync` plus
+   * the next reconnect already cover it.
+   */
+  const reconcileRoomSubscriptions = async (): Promise<boolean> => {
+    const repository = deps.roomMemberRepository;
+    // Bound so the repository keeps its own `this`, and checked because
+    // `findByUser` is optional on `IRoomMemberRepository`. Without it there is
+    // no authorization source to reconcile against at all, and reading that as
+    // "no rooms" would empty every socket out of every room it holds.
+    const findByUser = repository.findByUser?.bind(repository);
+    if (!findByUser) return true;
+
+    let complete = true;
+    const grouped = [...localSocketsByUser()];
+    for (let index = 0; index < grouped.length; index += RECONCILE_CONCURRENCY) {
+      const verified = await Promise.all(
+        grouped
+          .slice(index, index + RECONCILE_CONCURRENCY)
+          .map(([userId, sockets]) => reconcileUser(findByUser, userId, sockets)),
+      );
+      if (verified.includes(false)) complete = false;
+    }
+    return complete;
+  };
+
+  /** The in-flight reconciliation cycle, if one is running. */
+  let reconciling: Promise<void> | undefined;
+
+  /**
+   * Signals seen so far.
+   *
+   * Counted rather than flagged. A cycle is a pass, a wait, and a second pass,
+   * and a signal can land at any point in that — including inside the wait. A
+   * boolean cleared at the top of each pass cannot say "the newest signal has
+   * had a pass but not yet its own trailing verification", so the second signal
+   * silently inherited the first one's spent entitlement and lost its own.
+   */
+  let signals = 0;
+
+  const pause = (ms: number): Promise<void> =>
+    new Promise((resolve) => {
+      const timer = setTimeout(resolve, ms);
+      timer.unref?.();
+    });
+
+  /**
+   * One pass, retried while its membership reads keep failing.
+   *
+   * False only when the retry budget ran out, which is the one case the caller
+   * abandons the cycle rather than continuing to a verification it cannot trust.
+   */
+  const passWithRetries = async (retryDelay: number): Promise<boolean> => {
+    for (let attempt = 1; attempt <= RECONCILE_ATTEMPTS; attempt += 1) {
+      if (await reconcileRoomSubscriptions()) return true;
+      if (attempt === RECONCILE_ATTEMPTS) break;
+      // Backed off, because the reason a read failed is usually that the
+      // database is unavailable, and retrying at full speed would add load to
+      // something already struggling.
+      await pause(retryDelay * 2 ** (attempt - 1));
+    }
+    console.error(
+      'Gave up reconciling room subscriptions after repeated membership read failures; '
+      + 'sockets may still hold rooms that have been revoked',
+    );
+    return false;
+  };
+
+  const scheduleReconcile = (): void => {
+    signals += 1;
+    // A subscriber that flaps signals on every watchdog tick. The running cycle
+    // picks the newest generation up at its next checkpoint, so ticks fold
+    // together instead of each starting a scan of their own.
+    if (reconciling) return;
+    const retryDelay = deps.reconcileRetryDelayMs ?? RECONCILE_RETRY_DELAY_MS;
+    const trailingDelay = deps.reconcileTrailingDelayMs ?? RECONCILE_TRAILING_DELAY_MS;
+    reconciling = (async () => {
+      try {
+        for (;;) {
+          // The generation this cycle answers. Anything arriving from here on
+          // is a newer signal, and earns a full cycle of its own rather than
+          // whatever remains of this one.
+          const served = signals;
+
+          if (!(await passWithRetries(retryDelay))) return;
+          if (signals !== served) continue;
+
+          // Then once more, later, for a revocation that was published but not
+          // yet committed when the pass above read. `roomService.ts` revokes
+          // *before* it writes, so a subscriber back inside that window reads a
+          // membership row that is still there, correctly declines to leave,
+          // and reports a clean pass — and nothing would look again once the
+          // write landed. `withRoomSubscriptionLock` cannot bridge it either:
+          // it serialises this process, not the instance holding the open
+          // transaction.
+          //
+          // This narrows the window rather than closing it. A commit slower
+          // than the delay still escapes, and no local read can see another
+          // instance's uncommitted transaction — only a durable or ordered
+          // revocation path could, which `redisAdapter.ts` records as the gap
+          // that remains.
+          await pause(trailingDelay);
+          if (signals !== served) continue;
+
+          if (!(await passWithRetries(retryDelay))) return;
+          if (signals !== served) continue;
+          return;
+        }
+      } catch (error) {
+        console.error('Failed to reconcile room subscriptions:', error);
+      } finally {
+        reconciling = undefined;
+      }
+    })();
+  };
+
+  // Room subscriptions derived at connection time go stale when a revocation's
+  // `SOCKETS_LEAVE` is published while this instance's subscriber is down:
+  // pub/sub keeps no backlog, so that frame is gone for good and the revoked
+  // member's socket stays in the room. Nothing unregisters this handler —
+  // `attachSockets` runs once per process, and its `connection` listener is
+  // never removed either.
+  deps.onSubscriberRestored?.(scheduleReconcile);
 
   io.on('connection', (socket) => {
     const userId = socket.data.user.userId;
@@ -208,9 +461,7 @@ export const attachSockets = (io: ChatServer, deps: SocketDeps): void => {
       }
     };
 
-    // Subscriptions are derived from durable membership at connection time.
-    // A pending member is intentionally excluded, and room revocation later
-    // removes all sessions through the publisher boundary.
+    // Restore room subscriptions from durable membership records.
     const restoreSubscriptions = deps.roomMemberRepository.findByUser
       ? deps.roomMemberRepository.findByUser(userId)
         .then((members) => Promise.all(
@@ -218,9 +469,6 @@ export const attachSockets = (io: ChatServer, deps: SocketDeps): void => {
             .filter((member) => member.role !== 'pending')
             .map(async (member) => {
               const join = async () => {
-                // findByUser is only a candidate list. Re-check inside the
-                // same lock used by membership revocation so a stale query
-                // cannot re-add a socket after socketsLeave has completed.
                 const current = await deps.roomMemberRepository.findMember(member.roomId, userId);
                 if (!current || current.role === 'pending') return;
                 await Promise.resolve(socket.join(`room_${member.roomId}`));
@@ -234,10 +482,7 @@ export const attachSockets = (io: ChatServer, deps: SocketDeps): void => {
         ))
       : Promise.resolve();
 
-    // The client must not begin its durable sync until every initial room
-    // subscription has been derived. This closes the snapshot/subscribe gap:
-    // changes committed after sync starts are either received live or appear
-    // in the next sync, rather than falling between both paths.
+    // Signal realtime ready only after all initial room rooms have been joined.
     void restoreSubscriptions.then(
       () => socket.emit('realtime_ready'),
       (error) => {
@@ -283,24 +528,7 @@ export const attachSockets = (io: ChatServer, deps: SocketDeps): void => {
         const ttl = typingTtlMs();
         const prior = typingClaims.get(key);
 
-        // Membership is re-checked once per TTL rather than once per keystroke.
-        // The client sends `typing` on every input change, and `findMember` is a
-        // three-table join with a correlated `EXISTS` over `blocks`, so the old
-        // per-event check put that query on every character typed.
-        //
-        // Bounded by the TTL rather than by "this socket has a live claim":
-        // a claim is refreshed by each keystroke, so trusting a live one would
-        // let a member whose access was revoked hold the indicator open for as
-        // long as they keep typing.
-        //
-        // The room subscription bounds it a second time, and that is what makes
-        // revocation take effect at once rather than within a TTL. Revocation
-        // runs `socketsLeave` (`realtime/publisher.ts`), which removes the
-        // socket from the room but does *not* stop it addressing that room:
-        // `socket.to(room)` broadcasts to a room the sender need not be in. So
-        // the subscription is not an authorization by itself — it only says
-        // whether the cached one may still be trusted. Losing it sends this
-        // straight back to the repository, which is authoritative.
+        // Check room membership at most once per typing TTL window.
         let checkedAt = prior?.checkedAt ?? 0;
         const subscribed = socket.rooms?.has(`room_${roomId}`) === true;
         if (!subscribed || Date.now() - checkedAt >= ttl) {
@@ -317,39 +545,21 @@ export const attachSockets = (io: ChatServer, deps: SocketDeps): void => {
           return;
         }
 
-        // Re-read rather than reuse `prior`, which was captured before the
-        // membership query: a concurrent event may have armed a newer expiry in
-        // the meantime, and that is the one this replaces.
+        // Arm or reset the typing expiration timer for this socket.
         const live = typingClaims.get(key);
         if (live) clearTimeout(live.expiry);
         const expiry: ReturnType<typeof setTimeout> = setTimeout(() => {
-          // Two `typing` events can be in flight at once — each awaits the
-          // membership query — and both would arm an expiry. Only the one the
-          // map still holds may retract the claim; a superseded timer firing
-          // would stop a user who is still typing.
           if (typingClaims.get(key)?.expiry !== expiry) return;
           typingClaims.delete(key);
-          // Cleared before the disconnect test, never after: a claim left in
-          // the aggregate is one the room can never be told about again.
           if (removeTypingSocket(roomId, userId, socket.id) && !disconnected) {
             emitTyping(roomId, false);
           }
         }, ttl);
-        // The reservation timer above already does this; an unreffed timer here
-        // would hold `bun test` and a draining container open for a full TTL.
         expiry.unref?.();
         typingClaims.set(key, { expiry, checkedAt });
 
         addTypingSocket(roomId, userId, socket.id);
-        // Every refresh is broadcast, not only the first claim. `true` is the
-        // heartbeat the client expiry runs on: it arms its own removal timer
-        // solely on receiving `true` (`frontend/src/context/ChatContext.tsx`),
-        // so collapsing refreshes into one edge event would hide the indicator
-        // after one client timeout while the user is still typing.
-        //
-        // Only the retraction is edge-triggered, and that asymmetry is the
-        // point: `false` is a statement that the *user* stopped, which no single
-        // socket is entitled to make on its own.
+        // Broadcast typing heartbeat to the room.
         emitTyping(roomId, true);
       } catch (err) {
         socket.emit('error', mapErrorToApiShape(err));
