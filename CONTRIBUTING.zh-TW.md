@@ -127,17 +127,20 @@ docker compose exec backend pnpm run db:seed
      ```bash
      docker compose exec backend pnpm run test:unit
      ```
-   - **整合測試**（會針對臨時的測試資料庫 `db-test` 執行）：
+   - **整合測試**（會針對臨時的測試資料庫 `db-test` 與真實 Redis 執行。`tests/integration/realtime/` 的欄位層級 TTL 需要 **Redis 7.4 以上**；compose 服務使用 `redis:8-alpine`）：
      ```bash
-     # 1. 啟動測試資料庫
+     # 1. 建立測試用 env 檔（提供 DATABASE_URL_TEST 與 REDIS_URL_TEST）
+     cp backend/.env.test.example backend/.env.test
+     # 2. 啟動測試資料庫與 Redis
      pnpm -C backend run test:db:up
-     # 2. 套用遷移至測試資料庫
+     # 3. 套用遷移至測試資料庫
      docker compose exec -e DATABASE_URL=postgresql://postgres:postgres@db-test:5432/ntnu_test backend pnpm run migrate:up
-     # 3. 執行測試
+     # 4. 執行測試
      docker compose exec backend pnpm run test:integration
-     # 4. 關閉測試資料庫
+     # 5. 關閉測試資料庫（`redis` 會保留給 dev stack 繼續使用）
      pnpm -C backend run test:db:down
      ```
+     範本中啟用的值是 backend **容器內**的位址（`db-test:5432`、`redis:6379`），也就是上述指令實際執行測試的位置；`localhost:5436` 與 `localhost:6385` 則是主機端的埠對應，已在範本中以註解形式附上，供改在主機端執行時使用。
 
 更多詳細資訊請參閱 [docs/ZH-TW/DEVELOPMENT.md](docs/ZH-TW/DEVELOPMENT.md)。
 

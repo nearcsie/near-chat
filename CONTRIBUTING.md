@@ -131,17 +131,20 @@ docker compose exec backend pnpm run db:seed
      ```bash
      docker compose exec backend pnpm run test:unit
      ```
-   - **Integration Tests** (Runs against the ephemeral test database `db-test`):
+   - **Integration Tests** (Run against the ephemeral test database `db-test` and a real Redis. `tests/integration/realtime/` needs **Redis 7.4 or newer** for per-field TTLs; the compose service ships `redis:8-alpine`):
      ```bash
-     # Start test DB
+     # Create the test env file (supplies DATABASE_URL_TEST and REDIS_URL_TEST)
+     cp backend/.env.test.example backend/.env.test
+     # Start test DB and Redis
      pnpm -C backend run test:db:up
      # Run migrations on test DB
      docker compose exec -e DATABASE_URL=postgresql://postgres:postgres@db-test:5432/ntnu_test backend pnpm run migrate:up
      # Run tests
      docker compose exec backend pnpm run test:integration
-     # Stop test DB
+     # Stop test DB (leaves redis running for the dev stack)
      pnpm -C backend run test:db:down
      ```
+     The example ships the addresses seen **inside** the backend container (`db-test:5432`, `redis:6379`), which is where the commands above run the suite; `localhost:5436` / `localhost:6385` are the host-side mappings and appear as commented alternatives for a run started on the host.
 
 For details, refer to [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 

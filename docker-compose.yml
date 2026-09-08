@@ -95,6 +95,13 @@ services:
       # empty value still counts as set and would shadow backend/.env.test, which
       # is where the documented in-container test workflow gets this from.
       - DATABASE_URL_TEST
+      # Same pass-through shape, and bare for the same reason. The value differs
+      # by where the suite runs: inside this container Redis is `redis:6379`,
+      # while `localhost:6385` is only the host-side mapping published above —
+      # pointing the in-container suite at that address is exactly what #652
+      # fixed. backend/.env.test carries the in-container value, so leave this
+      # unset unless you are aiming the tests at some other Redis.
+      - REDIS_URL_TEST
       # Resolved inside this container, so the host is the compose service name
       # `redis` — not `localhost:6385`, which is only the host-side mapping.
       # Defaulted rather than required so a checkout whose .env predates this
