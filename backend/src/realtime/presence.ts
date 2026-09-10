@@ -99,6 +99,32 @@ export const createPresenceTracker = ({
 
   let heartbeat: ReturnType<typeof setInterval> | number | undefined;
   let stopped = false;
+  // The `io` and `friendRepo` this instance took its leases through, kept so
+  // that the instance *itself* leaving can announce the users it was the last
+  // to hold. Every other announcement is driven by a socket, which carries the
+  // pair as arguments (`realtime/socketServer.ts`); an instance leaving is not,
+  // and nothing else in this module can reach a socket.
+  let boundIo: ChatServer | undefined;
+  let boundFriendRepo: FriendPresenceDeps | undefined;
+  // Releases already under way, which `stop()` has to wait for.
+  //
+  // `releaseUser` empties both maps *before* its first await, and
+  // `realtime/socketServer.ts` never awaits the disconnect it starts. With
+  // `PRESENCE_GRACE_MS` at 0 — a value the config parser accepts — the
+  // disconnects `index.ts` triggers on its way down therefore leave
+  // `heldUsers()` empty while their `store.release` and announcement are still
+  // in flight, and a `stop()` that only looked at `heldUsers()` would return
+  // straight away and let `redis.close()` cut them off.
+  const inflightReleases = new Set<Promise<void>>();
+
+  const trackRelease = (work: Promise<void>): Promise<void> => {
+    inflightReleases.add(work);
+    // `catch` before `finally`: a rejected `work` reaches its own handler at
+    // the call site, and a bare `finally` here would re-raise it as an
+    // unhandled rejection.
+    void work.catch(() => undefined).finally(() => inflightReleases.delete(work));
+    return work;
+  };
 
   const localSocketCount = (userId: string): number => userSockets.get(userId)?.size ?? 0;
 
@@ -194,6 +220,51 @@ export const createPresenceTracker = ({
     if (goneEverywhere) await broadcastStatus(io, userId, 'offline', friendRepo);
   };
 
+  /**
+   * Hands back every lease this instance holds, announcing the users it turns
+   * out to have been the last holder of.
+   *
+   * Releasing without announcing is what left a friend on another instance
+   * reading a departed user as online until their next `GET /api/v1/friends`
+   * (#654): the lease is gone, so `isUserOnline` is right everywhere, but a
+   * correct answer nobody asks for changes nothing on screen.
+   *
+   * Two phases on purpose. Every `store.release` is issued before the first
+   * `friendRepo.getFriends`, because the handback is a Redis round trip and the
+   * announcement is a Postgres one, and `stop()` runs both under a single
+   * deadline. Handing the leases back is the reason `stop()` exists — one kept
+   * here reads as an online user for the rest of its TTL — so when the deadline
+   * wins, it has to cost announcements rather than handbacks.
+   */
+  const releaseHeldUsers = async (users: string[]): Promise<void> => {
+    // No store is no cluster: `bootstrap/realtime.ts` gates the cluster adapter
+    // on the same `REDIS_URL`, so `io.to()` would reach only this process's own
+    // sockets — and `index.ts` has already disconnected those before it gets
+    // here. Nothing to tell, and two Postgres queries per user to tell it.
+    if (!store || users.length === 0) return;
+
+    const released = await Promise.all(
+      users.map(async (userId) => ({ userId, result: await store.release(userId) })),
+    );
+
+    const io = boundIo;
+    const friendRepo = boundFriendRepo;
+    if (!io || !friendRepo) return;
+
+    // Only an acknowledged release that emptied the hash means the user is gone
+    // from the cluster. A release Redis never confirmed left the lease in place
+    // to expire on its own TTL, so there is no departure to announce yet —
+    // announcing one would report every user this instance holds offline at
+    // once during a command outage, and the surviving lease would then swallow
+    // their next arrival, since `hold` returns a non-zero `before`.
+    // `releaseUser` above does read `!result.ok` as gone everywhere; #653
+    // tracks reconciling the two under one policy.
+    const goneEverywhere = released.filter(({ result }) => result.ok && result.value === 0);
+    await Promise.all(
+      goneEverywhere.map(({ userId }) => broadcastStatus(io, userId, 'offline', friendRepo)),
+    );
+  };
+
   const presenceOf = async (userId: string): Promise<PresenceState> => {
     if (isLocallyOnline(userId)) return 'online';
     if (!store) return 'offline';
@@ -204,6 +275,8 @@ export const createPresenceTracker = ({
 
   return {
     async trackUserConnection(io, userId, socketId, friendRepo) {
+      boundIo = io;
+      boundFriendRepo = friendRepo;
       if (stopped) return;
 
       const pending = pendingDisconnects.get(userId);
@@ -237,6 +310,12 @@ export const createPresenceTracker = ({
     },
 
     async trackUserDisconnection(io, userId, socketId, friendRepo) {
+      // Captured here too, not only on connect: `index.ts` disconnects every
+      // local socket before it stops presence, so on the shutdown path this is
+      // the last writer, and a tracker that only ever saw disconnects still has
+      // a way to announce.
+      boundIo = io;
+      boundFriendRepo = friendRepo;
       const sockets = userSockets.get(userId);
       if (!sockets || !sockets.has(socketId)) return;
 
@@ -245,7 +324,7 @@ export const createPresenceTracker = ({
 
       const delay = graceMs();
       if (delay === 0) {
-        await releaseUser(io, userId, friendRepo);
+        await trackRelease(releaseUser(io, userId, friendRepo));
         return;
       }
 
@@ -255,7 +334,7 @@ export const createPresenceTracker = ({
       const timer = setTimeout(() => {
         pendingDisconnects.delete(userId);
         if (localSocketCount(userId) > 0) return;
-        void releaseUser(io, userId, friendRepo).catch((err) => {
+        void trackRelease(releaseUser(io, userId, friendRepo)).catch((err) => {
           logger.debug({ err, userId }, 'Failed to release a presence lease after the grace period');
         });
       }, delay);
@@ -295,7 +374,7 @@ export const createPresenceTracker = ({
       const users = heldUsers();
       pendingDisconnects.clear();
       userSockets.clear();
-      if (store) await Promise.all(users.map((userId) => store.release(userId)));
+      await releaseHeldUsers(users);
     },
 
     async stop() {
@@ -308,9 +387,15 @@ export const createPresenceTracker = ({
       const users = heldUsers();
       pendingDisconnects.clear();
       userSockets.clear();
-      if (!store || users.length === 0) return;
+      // Each already settles on its own; awaiting them here is only about not
+      // exiting first, so a rejected one must not abort the wait for the rest.
+      const inflight = [...inflightReleases].map((work) => work.catch(() => undefined));
+      if (!store || (users.length === 0 && inflight.length === 0)) return;
+      // One deadline for the handbacks and the announcements together. A second
+      // one for the announcements would let a slow friend lookup push shutdown
+      // past the budget `docker-compose.release.yml` is built around.
       await withDeadline(
-        Promise.all(users.map((userId) => store.release(userId))),
+        Promise.all([releaseHeldUsers(users), ...inflight]),
         stopTimeoutMs,
       );
     },
@@ -323,6 +408,12 @@ let current: PresenceTracker = createPresenceTracker();
 export const configurePresence = (options: CreatePresenceTrackerOptions): PresenceTracker => {
   const previous = current;
   current = createPresenceTracker(options);
+  // Safe to leave unawaited only because `previous` is always the import-time
+  // singleton above: `bootstrap/presence.ts` is the sole caller and runs once,
+  // so the tracker being stopped holds no leases and has never been handed an
+  // `io` to announce through. Call this a second time on a tracker that has
+  // served sockets and this stop would announce offline for users who are still
+  // connected, after the new tracker has already announced them online.
   void previous.stop();
   return current;
 };

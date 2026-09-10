@@ -134,12 +134,19 @@ typing indication TTL 與握手名額保留時間；與其他後端變數一樣�
 而 `online` 只在全域第一條連線建立時發送、`offline` 只在最後一條消失時發送。
 `PRESENCE_TTL_MS` 界定「某個 instance 當掉後，它的使用者最多被誤顯示成在線多
 久」：行程已死就沒有人能把 lease 還回去，只剩過期能清掉它。後端每個 TTL 內會
-續約三次，而正常關機會主動把 lease 全數交還，不需要等 TTL 到期。但這件事成立的
+續約三次，而正常關機會主動把 lease 全數交還，不需要等 TTL 到期；交還後若某位使
+用者在所有 instance 上都已不再持有 lease，會一併宣告一次 `user_status` offline，
+讓連在其他 instance 的好友立即收到，而不必抱著過期的「在線」等到下一次
+`GET /friends`（#654）。若該次 release 未被 Redis 確認則不做任何宣告：lease 根本
+沒有交還成功，也就還沒有可宣告的離開。但這件事成立的
 前提是 SIGTERM 真的送達行程：container 必須讓應用程式位於 PID 1（因此
 `backend/Dockerfile.prod` 的 CMD 使用 `exec`），也必須留足夠時間讓 drain 完成
 （因此 backend service 設定 `stop_grace_period: 30s`）。兩者只要有一項不對，
 container 就會在 lease 尚未交還時被 SIGKILL，外觀上與「instance 當掉」完全相同
-——完整的關機約定見 docs/ZH-TW/RELEASE.md。`INSTANCE_ID`
+——完整的關機約定見 docs/ZH-TW/RELEASE.md。被 SIGKILL 的 instance 同樣完全不會
+宣告：它的 lease 只能靠自身 TTL 過期，而沒有任何元件在監看該過期事件，因此好友
+最多會停留在過期的「在線」達 `PRESENCE_TTL_MS`，之後還要等下一次 `GET /friends`
+（#654 追蹤此缺口）。`INSTANCE_ID`
 是本行程在該 hash 中的名稱；留空時每次啟動自行產生一個，除非編排器本來就有穩
 定的 per-replica 名稱可以沿用，否則不需要設定。欄位層級的 TTL 需要
 **Redis 7.4 以上** —— 對更舊的伺服器寫入會失敗，後端會記錄一次版本需求，
