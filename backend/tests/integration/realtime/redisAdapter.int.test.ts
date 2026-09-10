@@ -21,9 +21,15 @@ import type { ChatServer } from '../../../src/realtime/authSocket';
  * `PUBLISH`/`SUBSCRIBE` intact, that the subscriber is delivered a frame it did
  * not publish, and that the publisher is not delivered its own.
  *
- * `REDIS_URL_TEST` defaults to the dev compose mapping, so `docker compose up
- * -d redis` from the repo root is enough to run it locally; CI provides the
- * same service in `ci-database.yml`.
+ * `REDIS_URL_TEST` picks the server, and where the suite runs decides the
+ * address. `backend/.env.test` carries the in-container `redis:6379` used by the
+ * documented `docker compose exec backend` flow; the fallback below is the
+ * host-side mapping, for a run started from `backend/` on the host. Pointing the
+ * in-container run at that host mapping is what #652 fixed. CI sets the variable
+ * itself in `ci-database.yml`.
+ *
+ * Sharing the dev Redis is safe: every key below is namespaced by `run`, and
+ * nothing here flushes.
  */
 const url = process.env.REDIS_URL_TEST || 'redis://localhost:6385';
 
@@ -71,7 +77,7 @@ describe('redis cluster adapter against a real Redis', () => {
     await Promise.all([alphaRedis.connect(), betaRedis.connect()]);
     if (!(await alphaRedis.ping()) || !(await betaRedis.ping())) {
       throw new Error(
-        `Redis is not reachable at ${url}. Start it with \`docker compose up -d redis\`, or set REDIS_URL_TEST.`,
+        `Redis is not reachable at ${url}. Copy backend/.env.test.example to backend/.env.test — inside the backend container Redis is \`redis:6379\`, not the host-side \`localhost:6385\`. On the host, start it with \`docker compose up -d redis\`.`,
       );
     }
 

@@ -449,7 +449,7 @@ Testing database setup: Integration tests run against an ephemeral Postgres test
 docker compose up -d --wait db-test
 ```
 
-Naming the service auto-enables its profile, so `--profile test` is not required. From `backend/`, `pnpm run test:db:up` does the same and then applies migrations, and `pnpm run test:db:down` stops and removes **only** `db-test`, leaving a running dev stack untouched. Note that `docker compose down --remove-orphans` does cover `db-test`, so it will take a running test DB with it.
+Naming the service auto-enables its profile, so `--profile test` is not required. From `backend/`, `pnpm run test:db:up` does the same, additionally starts `redis` (the `tests/integration/realtime/` files need a real one), and then applies migrations. `pnpm run test:db:down` stops and removes **only** `db-test`, leaving `redis` and the rest of a running dev stack untouched. Note that `docker compose down --remove-orphans` does cover `db-test`, so it will take a running test DB with it.
 
 ### Installing Dependencies
 This repository is a **single-lockfile pnpm workspace**. There is exactly one
@@ -606,21 +606,29 @@ docker compose exec backend bun run test:unit
 ```
 
 ### Running Integration Tests
-Integration tests require starting the ephemeral test database (which automatically applies migrations via `test:db:up`):
+Integration tests need two services and one env file: the ephemeral test database, a Redis, and `backend/.env.test`, which is where `DATABASE_URL_TEST` and `REDIS_URL_TEST` come from. The files in `tests/integration/realtime/` pin real Redis semantics, so they need **Redis 7.4 or newer** for per-field TTLs — the compose service ships `redis:8-alpine`, so the flow below is already above that floor.
 
 ```bash
-# 1. Start the ephemeral test database & automatically apply migrations
+# 1. Create the test env file, if you have not already
+cp backend/.env.test.example backend/.env.test
+
+# 2. Start the ephemeral test database and Redis, applying migrations
 pnpm --filter near-chat-backend test:db:up
 
-# 2. Run the integration test suite
+# 3. Run the integration test suite
 docker compose exec backend bun run test:integration
 
-# 3. Stop the test database
+# 4. Stop the test database
 pnpm --filter near-chat-backend test:db:down
 ```
 
+The values shipped in `.env.test.example` are the addresses **inside** the backend container (`db-test:5432`, `redis:6379`), because step 3 runs the suite there. `localhost:5436` and `localhost:6385` are only the host-side published mappings — the example carries each of them as a commented alternative, for a run started from `backend/` on the host instead. A real environment variable overrides the file either way, which is how `ci-database.yml` aims the same suite at its own services.
+
+`test:db:down` deliberately stops only `db-test`. `redis` belongs to the plain dev stack, so stopping it would take a running dev backend's presence state with it.
+
 ### Running All Tests
 ```bash
+cp backend/.env.test.example backend/.env.test
 pnpm --filter near-chat-backend test:db:up
 docker compose exec backend bun run test
 pnpm --filter near-chat-backend test:db:down
@@ -707,6 +715,7 @@ describe('userRepository', () => {
   ```bash
   cp backend/.env.test.example backend/.env.test
   ```
+* **`Redis is not reachable at redis://localhost:6385`** while running the suite with `docker compose exec backend ...`: that is the *host-side* mapping, and nothing listens on it inside the container. Ensure `backend/.env.test` exists (same `cp` as above) so `REDIS_URL_TEST` resolves to the in-container `redis://redis:6379`. Running from `backend/` on the host instead is the mirror image: there `localhost:6385` is correct, and it is the commented alternative in the example.
 * **`db-test` connection hangs/timeouts**: Ensure `db-test` is running using `docker compose ps db-test`. Spin it up with `docker compose up -d --wait db-test` if down.
 * **`TRUNCATE` failures**: Make sure migrations were applied to the test DB using:
   ```bash

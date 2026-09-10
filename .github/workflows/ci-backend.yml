@@ -314,6 +314,13 @@ jobs:
           RATE_LIMIT_DISABLED=false
           EOF
 
+      # Written before the stack boots, so the bind-mounted file is already in
+      # place and nothing appears under a running `bun --watch` mid-job. The dev
+      # server itself never reads it: `bun run` loads `.env.<NODE_ENV>`, and only
+      # `bun test` loads `.env.test`.
+      - name: Create the test env file the documented flow depends on
+        run: cp backend/.env.test.example backend/.env.test
+
       - name: Build and start db, redis and backend from the dev compose
         run: |
           set -euo pipefail
@@ -332,6 +339,20 @@ jobs:
           done
           echo "::error::backend is healthy in-container but not reachable on :4005 — check the port mapping" >&2
           exit 1
+
+      # The flow docs/DEVELOPMENT.md and CONTRIBUTING.md actually document, which
+      # nothing else in CI runs: ci-database.yml runs the same files on the
+      # runner host with REDIS_URL_TEST already set, so it stayed green while
+      # `docker compose exec backend` could not pass for anyone (#652).
+      #
+      # Scoped to tests/integration/realtime because those two files are the ones
+      # that talk to Redis and the only ones that need no db-test — they never
+      # import tests/helpers/testPool.
+      - name: Run the Redis integration tests the documented way, in-container
+        run: |
+          set -euo pipefail
+          docker compose --env-file "$RUNNER_TEMP/dev.env" \
+            -f docker-compose.yml exec -T backend bun test tests/integration/realtime
 
       - name: Run the realtime smoke suite against the development image
         env:

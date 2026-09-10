@@ -24,7 +24,9 @@ Bun test integration tests for the backend service layer. Tests call the actual 
 - Do not reach for `mock.module()` to stub a collaborator. It is process-global *within* a tier too, and it cannot be undone: re-registering the module in `afterAll` via the `?original` specifier does not restore the binding, so every later test file in the same process keeps the stub. That made `utils/avatarUpload.test.ts` pass or fail purely on test-file enumeration order (issue #467). Inject the collaborator instead — give the service factory a trailing optional parameter that defaults to the real implementation (see `AvatarStore` / `defaultAvatarStore` in `src/utils/avatarUpload.ts`), and pass a stub from the test.
 
 ### Testing Requirements
-- `DATABASE_URL_TEST` env var must be set before running tests (points to the ephemeral test DB). Copy `.env.test.example` to `.env.test`.
+- `DATABASE_URL_TEST` and `REDIS_URL_TEST` env vars must be set before running tests (they point at the ephemeral test DB and at Redis). Copy `.env.test.example` to `.env.test`, which supplies both.
+- The example ships **in-container** addresses (`db-test:5432`, `redis:6379`) because the documented flow runs the suite via `docker compose exec backend ...`; the host-side mappings (`localhost:5436`, `localhost:6385`) are commented alternatives in the same file. `bun test` loads `.env.test` whatever `NODE_ENV` is, and a real env var overrides it.
+- `tests/integration/realtime/` talks to a real Redis and needs **Redis 7.4 or newer** (per-field TTLs). `tests/unit/config/envTestExample.test.ts` fails if a `*_TEST` var the suite reads is missing from the example — add it there rather than only in CI.
 - Tests are integration tests — they mutate real data. Do not run against a production database.
 
 ### Common Patterns (for new implementations)

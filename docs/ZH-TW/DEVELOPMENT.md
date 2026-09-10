@@ -403,7 +403,7 @@ Backend route E2E tests 透過共用的 `tests/helpers/http.ts`，直接呼叫 e
 docker compose up -d --wait db-test
 ```
 
-明確指定 service 名稱會自動啟用其 profile，所以不需要額外加上 `--profile test`。在 `backend/` 目錄下，`pnpm run test:db:up` 會做同樣的事並接著套用 migration；`pnpm run test:db:down` 則**只會**停止並移除 `db-test`，不影響正在運行的 dev stack。請注意 `docker compose down --remove-orphans` 仍會涵蓋 `db-test`，會一併把執行中的測試資料庫移除。
+明確指定 service 名稱會自動啟用其 profile，所以不需要額外加上 `--profile test`。在 `backend/` 目錄下，`pnpm run test:db:up` 會做同樣的事，另外再啟動 `redis`（`tests/integration/realtime/` 的檔案需要真實的 Redis），接著套用 migration；`pnpm run test:db:down` 則**只會**停止並移除 `db-test`，`redis` 與正在運行的 dev stack 其餘部分都不受影響。請注意 `docker compose down --remove-orphans` 仍會涵蓋 `db-test`，會一併把執行中的測試資料庫移除。
 
 ### 安裝相依套件
 本專案是**單一 lockfile 的 pnpm workspace**：整個 repo 只有根目錄一份 `pnpm-lock.yaml`，
@@ -553,21 +553,29 @@ docker compose exec backend bun run test:unit
 ```
 
 ### 執行整合測試
-整合測試需要啟動臨時的測試資料庫（`test:db:up` 會自動啟動容器並完成資料庫遷移）：
+整合測試需要兩個服務與一個 env 檔：臨時測試資料庫、一個 Redis，以及提供 `DATABASE_URL_TEST` 與 `REDIS_URL_TEST` 的 `backend/.env.test`。`tests/integration/realtime/` 的檔案驗證的是真實 Redis 語意，其中的欄位層級 TTL 需要 **Redis 7.4 以上**——compose 服務使用 `redis:8-alpine`，因此依下列流程執行時已滿足此下限。
 
 ```bash
-# 1. 啟動臨時測試資料庫並自動套用遷移
+# 1. 若尚未建立，先產生測試用 env 檔
+cp backend/.env.test.example backend/.env.test
+
+# 2. 啟動臨時測試資料庫與 Redis，並自動套用遷移
 pnpm --filter near-chat-backend test:db:up
 
-# 2. 執行整合測試套件
+# 3. 執行整合測試套件
 docker compose exec backend bun run test:integration
 
-# 3. 關閉測試資料庫
+# 4. 關閉測試資料庫
 pnpm --filter near-chat-backend test:db:down
 ```
 
+`.env.test.example` 內啟用的值都是 backend **容器內**的位址（`db-test:5432`、`redis:6379`），因為步驟 3 是在容器內執行測試。`localhost:5436` 與 `localhost:6385` 只是發布到主機端的埠對應——範本中已將兩者各自以註解形式附上，供改在主機端的 `backend/` 目錄執行時使用。無論哪一種情況，真實環境變數都會覆寫此檔案的值，`ci-database.yml` 正是以此讓同一套測試指向它自己的服務。
+
+`test:db:down` 刻意只停止 `db-test`：`redis` 屬於一般 dev stack，停掉它會一併影響正在執行的 dev backend 的 presence 狀態。
+
 ### 執行所有測試
 ```bash
+cp backend/.env.test.example backend/.env.test
 pnpm --filter near-chat-backend test:db:up
 docker compose exec backend bun run test
 pnpm --filter near-chat-backend test:db:down
@@ -648,6 +656,7 @@ describe('userRepository', () => {
   ```bash
   cp backend/.env.test.example backend/.env.test
   ```
+* **以 `docker compose exec backend ...` 執行測試時出現 `Redis is not reachable at redis://localhost:6385`**：那是**主機端**的埠對應，容器內沒有任何服務監聽該位址。請確認 `backend/.env.test` 已存在（同上方的 `cp` 指令），讓 `REDIS_URL_TEST` 解析為容器內的 `redis://redis:6379`。若改在主機端的 `backend/` 目錄執行則情況相反：該情境下 `localhost:6385` 才是正確位址，範本中已附上這個註解版本。
 * **`db-test` 連線掛起或逾時**：請確認 `db-test` 正在運行，指令為：`docker compose ps db-test`。若沒啟動，請以 `docker compose up -d --wait db-test` 啟動它。
 * **`TRUNCATE` 失敗**：請確認已透過以下指令在測試資料庫中套用了遷移：
   ```bash
