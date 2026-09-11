@@ -636,6 +636,132 @@ describe('presence tracker', () => {
       expect(leases.holders.has('user-1')).toBe(false);
     });
 
+    /**
+     * The #664 defect. A command-connection outage longer than the lease TTL
+     * expires every lease this instance holds while its sockets stay up, and the
+     * beat after recovery takes them back. Handing them back without a word is
+     * harmless only until something watches for the expiry: #665 adds a
+     * reconciler that announces offline on exactly that signal, and nothing else
+     * in the module would ever take it back.
+     */
+    it('announces online when it re-takes a lease that had lapsed', async () => {
+      const leases = makeSharedLeases();
+      let beat: (() => void | Promise<void>) | undefined;
+      const heartbeatTracker = createPresenceTracker({
+        store: leases.viewFor('alpha'),
+        graceMs: () => 0,
+        ttlMs: 300,
+        refreshDivisor: 3,
+        setIntervalFn: (handler) => {
+          beat = handler;
+          return 0;
+        },
+        clearIntervalFn: () => {},
+      });
+
+      await heartbeatTracker.trackUserConnection(io, 'user-1', 'socket-1', friendRepo);
+      roomEmit.mockClear();
+
+      // The lease expired on its own TTL while the socket stayed up.
+      leases.holders.delete('user-1');
+      await beat!();
+
+      expect(io.to).toHaveBeenCalledWith(['user_friend-1', 'user_friend-2']);
+      expect(roomEmit).toHaveBeenCalledTimes(1);
+      expect(roomEmit).toHaveBeenCalledWith('user_status', { userId: 'user-1', status: 'online' });
+    });
+
+    it('says nothing on the next beat, because the lease is already in hand', async () => {
+      const leases = makeSharedLeases();
+      let beat: (() => void | Promise<void>) | undefined;
+      const heartbeatTracker = createPresenceTracker({
+        store: leases.viewFor('alpha'),
+        graceMs: () => 0,
+        ttlMs: 300,
+        refreshDivisor: 3,
+        setIntervalFn: (handler) => {
+          beat = handler;
+          return 0;
+        },
+        clearIntervalFn: () => {},
+      });
+
+      await heartbeatTracker.trackUserConnection(io, 'user-1', 'socket-1', friendRepo);
+      leases.holders.delete('user-1');
+      await beat!();
+      roomEmit.mockClear();
+
+      // `hold` now reports `before === 1`: this instance is the holder, so there
+      // is no transition to announce.
+      await beat!();
+
+      expect(roomEmit).not.toHaveBeenCalled();
+    });
+
+    /**
+     * The post-await re-check. The user's `hold` is still in flight when they
+     * disconnect, so the lease comes back reporting `before === 0` for someone
+     * who no longer has a socket — and `releaseUser` has already announced them
+     * offline. An `online` behind that would leave every friend showing a
+     * disconnected user as present, with nothing to correct it.
+     */
+    it('does not announce online for a user who left while the hold was in flight', async () => {
+      const leases = makeSharedLeases();
+      const view = leases.viewFor('alpha');
+      let gate: Promise<void> | undefined;
+      let openGate: (() => void) | undefined;
+      const gatedStore: PresenceStore = {
+        ...view,
+        async hold(userId, connections) {
+          const outcome = await view.hold(userId, connections);
+          if (gate) {
+            const pending = gate;
+            gate = undefined;
+            await pending;
+          }
+          return outcome;
+        },
+      };
+      let beat: (() => void | Promise<void>) | undefined;
+      const heartbeatTracker = createPresenceTracker({
+        store: gatedStore,
+        graceMs: () => 0,
+        ttlMs: 300,
+        refreshDivisor: 3,
+        setIntervalFn: (handler) => {
+          beat = handler;
+          return 0;
+        },
+        clearIntervalFn: () => {},
+      });
+
+      await heartbeatTracker.trackUserConnection(io, 'user-1', 'socket-1', friendRepo);
+      leases.holders.delete('user-1');
+
+      gate = new Promise<void>((resolve) => {
+        openGate = resolve;
+      });
+      const round = beat!();
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      expect(openGate).toBeDefined();
+
+      // The socket goes while the beat is parked inside its own `hold`.
+      await heartbeatTracker.trackUserDisconnection(io, 'user-1', 'socket-1', friendRepo);
+      expect(roomEmit).toHaveBeenCalledWith('user_status', {
+        userId: 'user-1',
+        status: 'offline',
+      });
+      roomEmit.mockClear();
+
+      openGate!();
+      await round;
+
+      expect(roomEmit).not.toHaveBeenCalledWith('user_status', {
+        userId: 'user-1',
+        status: 'online',
+      });
+    });
+
     it('starts no timer at all without a store', async () => {
       const setIntervalFn = mock(() => 0);
       const local = createPresenceTracker({ graceMs: () => 0, setIntervalFn });
