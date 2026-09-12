@@ -2,7 +2,7 @@
 
 [繁體中文](ZH-TW/RELEASE.md) | English
 
-Near Chat release tags represent a deployable stack, not only one application package. Starting with `v1.0.1`, every release contains the frontend image, backend image, PostgreSQL 18 runtime digest, database migration runner, and a Docker Compose bundle. The existing `v1.0.0` backend-only release is immutable and remains available for rollback.
+Near Chat release tags represent a deployable stack, not only one application package. Starting with `v1.0.1`, every release contains the frontend image, backend image, PostgreSQL 18 runtime digest, database migration runner, and a Docker Compose bundle. Releases that contain the cross-instance realtime work also pin a Redis 8 runtime digest. The existing `v1.0.0` backend-only release is immutable and remains available for rollback.
 
 ## Publish a version
 
@@ -65,7 +65,9 @@ The workflow publishes two immutable application images, each with a version tag
 - `ghcr.io/nearcsie/near-chat-frontend:1.0.1`
 - `ghcr.io/nearcsie/near-chat-frontend:sha-<12-character-commit>`
 
-It also records the pinned PostgreSQL runtime (`postgres:18-alpine`), both image digests, provenance attestations, a comparison link, and a `near-chat-stack-vX.Y.Z.tar.gz` deployment bundle in the English GitHub Release. No mutable `latest` tag is published.
+It also records the pinned PostgreSQL runtime (`postgres:18-alpine`), the pinned Redis runtime (`redis:8-alpine`), both image digests, provenance attestations, a comparison link, and a `near-chat-stack-vX.Y.Z.tar.gz` deployment bundle in the English GitHub Release. No mutable `latest` tag is published.
+
+Both third-party runtimes are pinned twice on purpose — in `docker-compose.release.yml` and in `release-stack.yml`'s `POSTGRES_IMAGE` / `REDIS_IMAGE` — because the workflow records them in `release-manifest.json` and greps the bundled compose file for them. `backend/tests/unit/deploy/releaseComposeRuntime.test.ts` holds the two sides equal on every pull request, so a pin edited on one side alone fails review rather than the release.
 
 ## Deploy the release bundle
 
@@ -78,7 +80,9 @@ cp near-chat.env.example .env
 docker compose --env-file .env -f docker-compose.release.yml up -d
 ```
 
-The Compose bundle starts PostgreSQL, runs `bun run migrate:up` once from the pinned backend image, starts the backend with `bun src/index.ts`, then starts the frontend. Both backend commands are bun-only because the backend production image ships TypeScript sources on a bun runtime — it contains no `node`, no `pnpm`, and no build output. PostgreSQL data and uploaded files remain in deployment-managed volumes; they are never included in the image or Release archive.
+The Compose bundle starts PostgreSQL and Redis, runs `bun run migrate:up` once from the pinned backend image, starts the backend with `bun src/index.ts`, then starts the frontend. Both backend commands are bun-only because the backend production image ships TypeScript sources on a bun runtime — it contains no `node`, no `pnpm`, and no build output. PostgreSQL data and uploaded files remain in deployment-managed volumes; they are never included in the image or Release archive.
+
+Redis is ordered before the backend but deliberately does not gate it: the backend depends on it with `service_started`, not `service_healthy`, because Redis holds derived realtime state only. A Redis that fails to start therefore costs cross-instance realtime, not the REST API. The `migrate` service does not depend on Redis at all.
 
 Apply an upgraded bundle with `up -d`, not `restart`: `docker compose restart backend` does not re-evaluate `depends_on`, so it never runs the `migrate` service and would leave the backend on an unmigrated schema.
 
@@ -99,6 +103,14 @@ For production deployments, keep `BACKEND_IMAGE` and `FRONTEND_IMAGE` pinned to 
 ## Database compatibility
 
 The database runtime is fixed to PostgreSQL 18 Alpine by digest. The schema is versioned by `backend/migrations` and shipped inside the backend image; the `migrate` service applies pending migrations before the application starts. Never publish a database volume or real data dump as a release artifact. Destructive schema changes must follow expand-and-contract and remain compatible with the legacy Express deployment during the migration window.
+
+## Realtime runtime
+
+The realtime runtime is fixed to Redis 8 Alpine by digest, which satisfies the Redis 7.4 or newer requirement presence leases have for hash-field TTLs. It holds derived state only — presence leases, typing TTLs, and cross-instance event fan-out — with PostgreSQL remaining canonical, so persistence is switched off, `/data` is a tmpfs, and `docker compose restart redis` is safe: leases are re-established within one refresh period, roughly a third of `PRESENCE_TTL_MS`. Eviction stays at the `noeviction` default so presence leases fail loudly rather than disappearing, and no `maxmemory` cap is set.
+
+`REDIS_URL` resolves to the bundled service when the variable is unset, so a deployment gets cross-instance realtime without configuring anything. Point it at a managed endpoint (`rediss://` included) to use that instead, or set it to an empty value to run realtime single-node on one backend replica; the bundled service then idles.
+
+**Upgrading from `v2.1.x`:** an environment file written before this change has no `REDIS_URL` line, so the backend moves from in-memory presence to Redis-backed presence on the first `up -d`. The one behavioural difference to expect is after an *ungraceful* stop (`docker kill`, OOM, host loss): presence leases survive up to `PRESENCE_TTL_MS`, so those users can show as online for that long. Every graceful path — `docker compose stop`, `down`, and the stop half of `up -d` — hands the leases back instead. Set `REDIS_URL=` empty to keep the previous single-node behaviour.
 
 ## Immutability and failure handling
 
