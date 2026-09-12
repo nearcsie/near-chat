@@ -163,6 +163,19 @@ function composeServices(file: string): Record<string, { image?: string; command
   return parsed.services ?? {};
 }
 
+/**
+ * The release workflow's top-level `env`, which is where the third-party runtime
+ * pins the bundle ships are declared a second time. Only `env` is read: YAML 1.1
+ * and 1.2 disagree on whether the `on:` key is the string `on` or the boolean
+ * `true`, so nothing here may depend on the rest of the document.
+ */
+function releaseWorkflowEnv(): Record<string, string> {
+  const parsed = Bun.YAML.parse(
+    readFileSync(path.join(repoRoot, '.github/workflows/release-stack.yml'), 'utf8'),
+  ) as { env?: Record<string, string> };
+  return parsed.env ?? {};
+}
+
 /** Services that run the backend production image, keyed by `<file>:<service>`. */
 function backendImageCommands(): Array<{ id: string; command: unknown }> {
   const found: Array<{ id: string; command: unknown }> = [];
@@ -335,5 +348,80 @@ describe('release compose migrate ordering', () => {
 
   it('holds the backend until migrate has completed successfully', () => {
     expect(services.backend?.depends_on?.migrate?.condition).toBe('service_completed_successfully');
+  });
+});
+
+/**
+ * The bundle's third-party runtimes are pinned in two places by necessity: the
+ * compose file the bundle ships, and `.github/workflows/release-stack.yml`, which
+ * records the same reference in `release-manifest.json` and greps the bundled
+ * compose file for it. That grep runs only on a tag, so a pin edited on one side
+ * alone stays green on every pull request and fails the release itself — the
+ * drift issue #527 was opened to prevent. `ci.yml` runs this suite for changes to
+ * `docker-compose*.yml` and `.github/workflows/**`, so holding the two sides
+ * equal here moves that failure to review time.
+ */
+describe('release compose third-party runtime pins', () => {
+  const services = composeServices('docker-compose.release.yml');
+  const workflowEnv = releaseWorkflowEnv();
+
+  // A minimum major, not only the digest shape: a bumped pin can satisfy
+  // `<name>:<major>-alpine@sha256:…` and still be a runtime this application
+  // cannot use. Presence leases need hash-field TTLs, which is Redis 7.4 or newer
+  // and is otherwise enforced only by a runtime warning in
+  // src/realtime/presenceStore.ts; the schema targets PostgreSQL 18.
+  const pins = [
+    { service: 'db', variable: 'POSTGRES_IMAGE', repository: 'postgres', minimumMajor: 18 },
+    { service: 'redis', variable: 'REDIS_IMAGE', repository: 'redis', minimumMajor: 8 },
+  ] as const;
+
+  for (const { service, variable, repository, minimumMajor } of pins) {
+    describe(service, () => {
+      const image = services[service]?.image;
+
+      it('is pinned to a digest rather than a floating tag', () => {
+        expect(image).toMatch(new RegExp(`^${repository}:\\d+-alpine@sha256:[0-9a-f]{64}$`));
+      });
+
+      it(`is ${repository} ${minimumMajor} or newer`, () => {
+        const major = Number(new RegExp(`^${repository}:(\\d+)-alpine@`).exec(image ?? '')?.[1]);
+        expect(major).toBeGreaterThanOrEqual(minimumMajor);
+      });
+
+      it(`is the same reference as ${variable} in the release workflow`, () => {
+        // `image!` only narrows the type: a missing service leaves this undefined,
+        // which still fails against the workflow's own value.
+        expect(workflowEnv[variable]).toBe(image!);
+      });
+    });
+  }
+});
+
+/**
+ * How the bundled Redis is wired in. Redis carries derived realtime state only
+ * (presence leases, typing TTLs, cross-instance fan-out), so it orders the
+ * backend's startup without being allowed to block it.
+ */
+describe('release compose redis wiring', () => {
+  const services = composeServices('docker-compose.release.yml') as Record<
+    string,
+    { depends_on?: Record<string, { condition?: string }>; healthcheck?: unknown }
+  >;
+
+  it('starts redis before the backend without gating the API on it', () => {
+    // service_started, not service_healthy, as in docker-compose.yml and
+    // docker-compose.prod.yml: src/utils/redis.ts treats Redis as a degraded mode
+    // rather than a boot dependency, so gating here would let a Redis that cannot
+    // start take down every REST route that never touches Redis — and it would do
+    // so after the migrate service had already applied the schema.
+    expect(services.backend?.depends_on?.redis?.condition).toBe('service_started');
+  });
+
+  it('keeps redis out of the migrate path, which needs the database alone', () => {
+    expect(services.migrate?.depends_on?.redis).toBeUndefined();
+  });
+
+  it('gives redis a healthcheck, so a deployment can see it come up', () => {
+    expect(services.redis?.healthcheck).toBeDefined();
   });
 });
