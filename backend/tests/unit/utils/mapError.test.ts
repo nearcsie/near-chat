@@ -2,6 +2,7 @@ import { describe, it, expect, spyOn } from 'bun:test';
 
 import { mapErrorToApiShape } from '../../../src/utils/mapError';
 import { AppError, ValidationError, ForbiddenError, NotFoundError, ConflictError } from '../../../src/utils/AppError';
+import { logger } from '../../../src/utils/logger';
 
 describe('mapErrorToApiShape', () => {
   it('maps ValidationError (400)', () => {
@@ -58,17 +59,14 @@ describe('mapErrorToApiShape', () => {
     });
   });
 
-  it('logs unknown errors outside the test environment', () => {
-    const consoleSpy = spyOn(console, 'error').mockImplementation(() => {});
-    const originalNodeEnv = process.env.NODE_ENV;
-    process.env.NODE_ENV = 'development';
+  it('reports unknown errors through the logger', () => {
+    const errorSpy = spyOn(logger, 'error').mockImplementation(() => {});
     try {
       const err = new Error('unexpected');
       expect(mapErrorToApiShape(err).statusCode).toBe(500);
-      expect(consoleSpy).toHaveBeenCalledWith('APP ERROR:', err);
+      expect(errorSpy).toHaveBeenCalledWith({ err }, 'APP ERROR');
     } finally {
-      process.env.NODE_ENV = originalNodeEnv;
-      consoleSpy.mockRestore();
+      errorSpy.mockRestore();
     }
   });
 

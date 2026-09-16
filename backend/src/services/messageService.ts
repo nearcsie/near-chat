@@ -8,6 +8,7 @@ import {
   recallMessageSchema,
   sendMessageSchema,
 } from '../routes/messageSchemas';
+import { logger } from '../utils/logger';
 
 const validationMessage = (issues: { message: string }[]) =>
   issues[0]?.message ?? 'Invalid message payload';
@@ -132,9 +133,9 @@ export const makeMessageService = (
           await roomMemberRepo.update(parsed.data.roomId, userId, { lastReadId: message.messageId });
         }
       } catch (readCursorError) {
-        console.error(
-          `Failed to advance the sender read cursor after creating message ${message.messageId}:`,
-          readCursorError,
+        logger.error(
+          { err: readCursorError, messageId: message.messageId },
+          'Failed to advance the sender read cursor after creating message',
         );
       }
       return message;

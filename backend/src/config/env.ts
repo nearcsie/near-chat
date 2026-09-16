@@ -494,6 +494,12 @@ export const assertStartupEnv = (source: NodeJS.ProcessEnv = process.env): void 
   const ignored = problems.filter((problem) => !problem.fatal);
 
   if (ignored.length > 0) {
+    // The logger cannot be used here: `utils/logger` imports this module and
+    // builds its instance eagerly at module load via `resolveLogLevel()` ->
+    // `env()`. Importing it back would close a cycle whose initialisation order
+    // decides whether `env` is still in its temporal dead zone, turning a
+    // warning about configuration into a boot crash.
+    // eslint-disable-next-line no-console
     console.warn(`Ignoring unusable environment values:\n${ignored.map(formatProblem).join('\n')}`);
   }
 
