@@ -120,7 +120,13 @@
     "noResults": "找不到符合的使用者。",
     "requested": "已送出",
     "blockConfirmTitle": "確認封鎖好友",
-    "blockEmergencyWarning": "此好友為您的緊急聯絡人，封鎖後緊急聯絡關係將會失效。確定要繼續封鎖嗎？"
+    "blockEmergencyWarning": "此好友為您的緊急聯絡人，封鎖後緊急聯絡關係將會失效。確定要繼續封鎖嗎？",
+    "inviteLinkTitle": "你的好友邀請連結",
+    "inviteLinkDesc": "分享這個連結或 QR Code。對方開啟後會詢問是否要向你發送好友邀請。",
+    "copyInviteLink": "複製邀請連結",
+    "inviteLinkCopied": "已複製邀請連結！",
+    "inviteLinkManualCopy": "請手動複製邀請連結：",
+    "inviteQrLabel": "好友邀請連結的 QR Code"
   },
   "profile": {
     "profile": "個人資料",
@@ -405,5 +411,21 @@
     "sortCustom": "自定義",
     "sortUnread": "未讀優先",
     "emptyResult": "沒有符合的聊天室"
+  },
+  "friendInvite": {
+    "pageTitle": "Near | 好友邀請",
+    "loading": "載入邀請中...",
+    "invalidInvite": "這個邀請連結無效，或該帳號已不存在。",
+    "backToNear": "返回 Near",
+    "thisUser": "這位使用者",
+    "prompt": "是否發送好友邀請？",
+    "cancel": "取消",
+    "confirm": "發送邀請",
+    "sending": "發送中...",
+    "sendFailed": "好友邀請發送失敗。",
+    "requestSent": "已向 {name} 發送好友邀請。",
+    "alreadyFriends": "你和 {name} 已經是好友了。",
+    "alreadyRequested": "你已經向 {name} 發送過好友邀請了。",
+    "ownLink": "這是你自己的邀請連結。把它分享給其他人，他們就能加你為好友。"
   }
 }

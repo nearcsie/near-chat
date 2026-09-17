@@ -13,6 +13,7 @@ import { getActiveAccessToken } from "@/lib/api";
 import type { SearchUserResult } from "@shared/types";
 import { resolveAssetUrl } from "@/lib/assets";
 import { Modal } from "@/components/ui/Modal";
+import { FriendInviteCard } from "@/components/settings/FriendInviteCard";
 
 type Tab = "friends" | "incoming" | "outgoing" | "blocked" | "add";
 type SearchMode = "name" | "userId" | "email";
@@ -233,6 +234,7 @@ export default function FriendsPanel() {
                 <div className="p-8 text-center text-xs text-text-muted">{t("friends.noMatch")}</div>
               )}
             </div>
+            <FriendInviteCard />
           </div>
         )}
 
