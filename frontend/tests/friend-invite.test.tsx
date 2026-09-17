@@ -18,7 +18,13 @@ const api = vi.hoisted(() => ({
   knownProfiles: {} as Record<string, { userId: string; name: string }>,
   profileLookups: [] as string[],
   sendFails: false,
+  /** When set, `sendFriendRequest` rejects with this HTTP status attached. */
+  sendFailStatus: undefined as number | undefined,
+  /** Mimics the backend accepting both sides when a reciprocal request exists. */
+  sendAutoAccepts: false,
   sent: [] as Array<[string, string]>,
+  meFails: false,
+  friendsFail: false,
 }));
 
 vi.mock("@/lib/api", () => ({
@@ -28,19 +34,29 @@ vi.mock("@/lib/api", () => ({
     return { token: "refreshed-token" };
   },
   getMySettings: async () => ({ language: "en" }),
-  getMe: async () => ({ userId: ME_ID, name: "Me" }),
+  getMe: async () => {
+    if (api.meFails) throw new Error("getMe unavailable");
+    return { userId: ME_ID, name: "Me" };
+  },
   getUserProfile: async (userId: string) => {
     api.profileLookups.push(userId);
     const profile = api.knownProfiles[userId];
     if (!profile) throw new Error(`Unknown user ${userId}`);
     return profile;
   },
-  listFriends: async () => api.friends,
+  listFriends: async () => {
+    if (api.friendsFail) throw new Error("presence read failed");
+    return api.friends;
+  },
   listFriendRequests: async () => api.requests,
   sendFriendRequest: async (token: string, targetUserId: string) => {
-    if (api.sendFails) throw new Error("Friend request already sent");
+    if (api.sendFails) {
+      const err = new Error("Friend request already sent") as Error & { status?: number };
+      if (api.sendFailStatus !== undefined) err.status = api.sendFailStatus;
+      throw err;
+    }
     api.sent.push([token, targetUserId]);
-    return { status: "pending" };
+    return { status: api.sendAutoAccepts ? "accepted" : "pending" };
   },
 }));
 
@@ -83,7 +99,11 @@ describe("FriendInviteAcceptPageContent", () => {
     api.knownProfiles = { [TARGET_ID]: { userId: TARGET_ID, name: "Target User" } };
     api.profileLookups = [];
     api.sendFails = false;
+    api.sendFailStatus = undefined;
+    api.sendAutoAccepts = false;
     api.sent = [];
+    api.meFails = false;
+    api.friendsFail = false;
     // Pin the language: the page only learns the account preference after it
     // authenticates, so paths that bail earlier would otherwise fall back to the
     // default locale and assertions on wording would depend on which path ran.
@@ -106,6 +126,65 @@ describe("FriendInviteAcceptPageContent", () => {
       expect(screen.getByText("Your friend request to Target User has been sent.")).toBeTruthy();
     });
     expect(api.sent).toEqual([["test-token", TARGET_ID]]);
+  });
+
+  test("says the two are now friends when the backend accepts both sides at once", async () => {
+    // The target already had a request out to us, so the backend accepts rather
+    // than queueing. "Request sent" would be wrong: the friendship exists now.
+    api.requests = [{ requesterId: TARGET_ID, addresseeId: ME_ID }];
+    api.sendAutoAccepts = true;
+    renderAt(TARGET_ID);
+
+    await waitFor(() => {
+      expect(screen.getByText("Send Request")).toBeTruthy();
+    });
+    fireEvent.click(screen.getByText("Send Request"));
+
+    await waitFor(() => {
+      expect(screen.getByText(/You and Target User are now friends/)).toBeTruthy();
+    });
+    expect(screen.queryByText(/has been sent/)).toBeNull();
+  });
+
+  test("still offers to confirm when an enrichment read fails", async () => {
+    // `listFriends` also performs a Redis presence read. A blip there must not
+    // turn a perfectly good invite into "this link is invalid".
+    api.friendsFail = true;
+    api.meFails = true;
+    renderAt(TARGET_ID);
+
+    await waitFor(() => {
+      expect(screen.getByText("Send Request")).toBeTruthy();
+    });
+    expect(screen.queryByText(/invalid/)).toBeNull();
+  });
+
+  test("tolerates a friend entry with no friend payload", async () => {
+    // `friendService.getFriends` guards `f && f.friend`, so the field is nullable
+    // on the wire; a TypeError here would surface as a bogus invalid-link screen.
+    api.friends = [{} as { friend: { userId: string; name: string } }];
+    renderAt(TARGET_ID);
+
+    await waitFor(() => {
+      expect(screen.getByText("Send Request")).toBeTruthy();
+    });
+  });
+
+  test("treats a 409 on confirm as the request already being in flight", async () => {
+    api.sendFails = true;
+    api.sendFailStatus = 409;
+    renderAt(TARGET_ID);
+
+    await waitFor(() => {
+      expect(screen.getByText("Send Request")).toBeTruthy();
+    });
+    fireEvent.click(screen.getByText("Send Request"));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("You have already sent Target User a friend request."),
+      ).toBeTruthy();
+    });
   });
 
   test("recognises the visitor's own link instead of sending to themselves", async () => {

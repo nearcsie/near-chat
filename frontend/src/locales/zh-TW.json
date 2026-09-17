@@ -424,6 +424,7 @@
     "sending": "發送中...",
     "sendFailed": "好友邀請發送失敗。",
     "requestSent": "已向 {name} 發送好友邀請。",
+    "nowFriends": "你和 {name} 現在是好友了 —— 對方先前已經向你發送過邀請。",
     "alreadyFriends": "你和 {name} 已經是好友了。",
     "alreadyRequested": "你已經向 {name} 發送過好友邀請了。",
     "ownLink": "這是你自己的邀請連結。把它分享給其他人，他們就能加你為好友。"

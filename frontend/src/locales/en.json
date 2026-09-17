@@ -424,6 +424,7 @@
     "sending": "Sending...",
     "sendFailed": "Failed to send the friend request.",
     "requestSent": "Your friend request to {name} has been sent.",
+    "nowFriends": "You and {name} are now friends — they had already sent you a request.",
     "alreadyFriends": "You and {name} are already friends.",
     "alreadyRequested": "You have already sent {name} a friend request.",
     "ownLink": "This is your own invite link. Share it with someone else so they can add you."

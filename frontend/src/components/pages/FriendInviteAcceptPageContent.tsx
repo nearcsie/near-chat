@@ -36,10 +36,20 @@ type Status =
   | "ready"
   | "sending"
   | "sent"
+  | "nowFriends"
   | "alreadyFriends"
   | "alreadyRequested"
   | "self"
   | "error";
+
+/** Outcome screens that replace the confirm step, mapped to their message key. */
+const OUTCOME_KEYS: Partial<Record<Status, string>> = {
+  sent: "requestSent",
+  nowFriends: "nowFriends",
+  alreadyFriends: "alreadyFriends",
+  alreadyRequested: "alreadyRequested",
+  self: "ownLink",
+};
 
 /**
  * Ids reach the backend as `uuid` comparisons, where a non-UUID makes PostgreSQL
@@ -57,7 +67,9 @@ export default function FriendInviteAcceptPageContent() {
 
   const [status, setStatus] = useState<Status>("checking");
   const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [errorMessage, setErrorMessage] = useState("");
+  // Held as a translation key, not a translated string: the load effect must not
+  // depend on `t`, or changing the locale would re-run it (see the effect below).
+  const [errorKey, setErrorKey] = useState("");
   const [token, setToken] = useState<string | null>(null);
   // The server cannot see the visitor's stored language, so it renders the
   // default locale and React re-renders with the real one right after hydration.
@@ -74,13 +86,31 @@ export default function FriendInviteAcceptPageContent() {
     document.title = t("pageTitle");
   }, [t]);
 
+  // A browser that has never run the main app has no stored language, and this
+  // page never mounts the ChatProvider that would load it, so pull the account
+  // preference directly. Kept out of the load effect below: `setStoredLocale`
+  // notifies its listeners synchronously, so a locale change there would give
+  // `t` a new identity and re-run the load — discarding a completed outcome.
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    void getMySettings(token)
+      .then((settings) => {
+        if (!cancelled && isLocale(settings?.language)) setStoredLocale(settings.language);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
+
   useEffect(() => {
     if (!userId) return;
     let cancelled = false;
 
     void (async () => {
       if (!UUID_PATTERN.test(userId)) {
-        setErrorMessage(t("invalidInvite"));
+        setErrorKey("invalidInvite");
         setStatus("error");
         return;
       }
@@ -105,77 +135,98 @@ export default function FriendInviteAcceptPageContent() {
       setToken(activeToken);
       setStatus("loading");
 
-      // A browser that has never run the main app has no stored language, and
-      // this page never mounts the ChatProvider that would load it, so pull the
-      // account preference directly. Failure here only affects wording.
-      void getMySettings(activeToken)
-        .then((settings) => {
-          if (!cancelled && isLocale(settings?.language)) setStoredLocale(settings.language);
-        })
-        .catch(() => {});
-
+      let target: UserProfile;
       try {
-        // Resolve the relationship from typed reads rather than from the error
-        // text of a speculative POST: `api.ts` keeps only a failure's message
-        // string, so branching on it would be string-matching English prose.
-        const [target, me, friends, requests] = await Promise.all([
-          getUserProfile(userId, activeToken),
-          getMe(activeToken),
-          listFriends(activeToken),
-          listFriendRequests(activeToken),
-        ]);
-        if (cancelled) return;
-        setProfile(target);
-
-        if (me.userId === userId) {
-          setStatus("self");
-          return;
-        }
-        if (friends.some((entry) => entry.friend.userId === userId)) {
-          setStatus("alreadyFriends");
-          return;
-        }
-        // Only an outgoing request is "already sent". An incoming one from this
-        // same person is left alone: confirming then trips the backend's
-        // reciprocal branch, which accepts both sides at once.
-        if (requests.some((req) => req.requesterId === me.userId && req.addresseeId === userId)) {
-          setStatus("alreadyRequested");
-          return;
-        }
-        setStatus("ready");
+        // Only this read decides whether the link is valid.
+        target = await getUserProfile(userId, activeToken);
       } catch (err) {
         if (cancelled) return;
         // The API layer surfaces the backend's English text, so show a localized
         // message and keep the original for debugging only.
         console.error("Failed to load friend invite:", err);
-        setErrorMessage(t("invalidInvite"));
+        setErrorKey("invalidInvite");
         setStatus("error");
+        return;
       }
+      if (cancelled) return;
+      setProfile(target);
+
+      // The relationship comes from typed reads rather than from the failure of a
+      // speculative POST: a self-request and an existing friendship both come back
+      // as VALIDATION_ERROR, so the error code cannot tell them apart and only the
+      // English message could. These three reads are an optimisation of the
+      // wording, though — `listFriends` also performs a Redis presence read, and a
+      // blip there must not turn a good invite into "this link is invalid". On
+      // failure, fall through to the confirm step and let the POST enforce the
+      // rules, which it does regardless.
+      const [meResult, friendsResult, requestsResult] = await Promise.allSettled([
+        getMe(activeToken),
+        listFriends(activeToken),
+        listFriendRequests(activeToken),
+      ]);
+      if (cancelled) return;
+
+      const me = meResult.status === "fulfilled" ? meResult.value : null;
+      if (me && me.userId === userId) {
+        setStatus("self");
+        return;
+      }
+      if (
+        friendsResult.status === "fulfilled" &&
+        friendsResult.value.some((entry) => entry?.friend?.userId === userId)
+      ) {
+        setStatus("alreadyFriends");
+        return;
+      }
+      // Only an outgoing request is "already sent". An incoming one from this
+      // same person is left alone: confirming then trips the backend's
+      // reciprocal branch, which accepts both sides at once.
+      if (
+        me &&
+        requestsResult.status === "fulfilled" &&
+        requestsResult.value.some(
+          (req) => req.requesterId === me.userId && req.addresseeId === userId,
+        )
+      ) {
+        setStatus("alreadyRequested");
+        return;
+      }
+      setStatus("ready");
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [userId, t]);
+  }, [userId]);
 
   const handleConfirm = useCallback(async () => {
     if (!token || !userId) return;
     setStatus("sending");
-    setErrorMessage("");
+    setErrorKey("");
     try {
-      await sendFriendRequest(token, userId);
-      setStatus("sent");
+      const result = await sendFriendRequest(token, userId);
+      // If this person had already requested us, the backend accepts both sides
+      // instead of queueing a request and reopens the private room. Saying
+      // "request sent" there would be wrong: we are friends as of now.
+      setStatus(result?.status === "accepted" ? "nowFriends" : "sent");
     } catch (err) {
-      // Every rejection here — already friends, already sent, blocked, a race
-      // with the other side — leaves the same thing to do: say it did not go
-      // through. The backend's reason is English prose, so it stays in the log.
       console.error("Failed to send friend request from invite:", err);
-      setErrorMessage(t("sendFailed"));
+      // A 409 means the request landed between this page loading and the click —
+      // the desired state, not a failure.
+      if ((err as { status?: number })?.status === 409) {
+        setStatus("alreadyRequested");
+        return;
+      }
+      // Anything else — blocked, a fresh friendship, a self-request the degraded
+      // read above could not rule out — leaves the same thing to say: it did not
+      // go through. The backend's reason is English prose, so it stays in the log.
+      setErrorKey("sendFailed");
       setStatus("ready");
     }
-  }, [token, userId, t]);
+  }, [token, userId]);
 
   const displayName = profile?.name ?? t("thisUser");
+  const outcomeKey = OUTCOME_KEYS[status];
 
   return (
     <div className="flex min-h-dvh flex-col items-center justify-center p-4 bg-background transition-colors overflow-y-auto">
@@ -190,7 +241,7 @@ export default function FriendInviteAcceptPageContent() {
 
         {status === "error" && (
           <>
-            <p className="text-sm text-red-600 font-sans text-center mb-6">{errorMessage}</p>
+            <p className="text-sm text-red-600 font-sans text-center mb-6">{t(errorKey)}</p>
             <Button variant="secondary" className="w-full" onClick={() => router.push("/")}>
               {t("backToNear")}
             </Button>
@@ -203,8 +254,8 @@ export default function FriendInviteAcceptPageContent() {
             <h1 className="text-lg font-bold text-foreground mb-1 text-center font-sans">{displayName}</h1>
             <p className="text-xs text-text-muted select-none font-sans mb-8 text-center">{t("prompt")}</p>
 
-            {errorMessage && (
-              <p className="text-xs text-red-600 font-sans text-center mb-4">{errorMessage}</p>
+            {errorKey && (
+              <p className="text-xs text-red-600 font-sans text-center mb-4">{t(errorKey)}</p>
             )}
 
             <div className="w-full flex gap-3">
@@ -228,24 +279,12 @@ export default function FriendInviteAcceptPageContent() {
           </>
         )}
 
-        {(status === "sent" ||
-          status === "alreadyFriends" ||
-          status === "alreadyRequested" ||
-          status === "self") && (
+        {outcomeKey && (
           <>
             <Avatar name={displayName} src={profile?.avatarUrl} size="lg" className="mb-4" />
             <h1 className="text-lg font-bold text-foreground mb-1 text-center font-sans">{displayName}</h1>
             <p className="text-sm text-foreground font-sans text-center mb-6">
-              {t(
-                status === "sent"
-                  ? "requestSent"
-                  : status === "alreadyFriends"
-                    ? "alreadyFriends"
-                    : status === "alreadyRequested"
-                      ? "alreadyRequested"
-                      : "ownLink",
-                { name: displayName },
-              )}
+              {t(outcomeKey, { name: displayName })}
             </p>
             <Button variant="secondary" className="w-full" onClick={() => router.push("/")}>
               {t("backToNear")}
