@@ -3,6 +3,7 @@ import {
   createRedisManager,
   DEFAULT_WATCHDOG_INTERVAL_MS,
   REDIS_ROLES,
+  type CreateRedisManagerOptions,
   type IntervalHandle,
   type RedisConnection,
   type RedisMessageHandler,
@@ -76,7 +77,16 @@ interface FakeConnection extends RedisConnection {
    * operation arriving in the middle of one observes.
    */
   deferSubscribe: boolean;
+  /**
+   * Holds `publish()` open until `settlePublish()` is called.
+   *
+   * The window a real round trip leaves open on the publisher, and the only way
+   * to observe what `close()` does about a frame still on the wire.
+   */
+  deferPublish: boolean;
   settleConnect(): void;
+  /** Release the held `publish()`, and stop holding later ones. */
+  settlePublish(): void;
   /** Release the held `subscribe()`, and stop holding later ones. */
   settleSubscribe(): void;
   /** Drop the connection the way Bun does for a retryable blip: silently. */
@@ -88,6 +98,7 @@ interface FakeConnection extends RedisConnection {
 const createFakeConnection = (role: RedisRole): FakeConnection => {
   let pendingConnect: (() => void) | undefined;
   let pendingSubscribe: (() => void) | undefined;
+  let pendingPublish: (() => void) | undefined;
   const fake: FakeConnection = {
     role,
     connected: false,
@@ -107,7 +118,14 @@ const createFakeConnection = (role: RedisRole): FakeConnection => {
     deferConnect: false,
     announceOnConnect: true,
     deferSubscribe: false,
+    deferPublish: false,
 
+    settlePublish() {
+      fake.deferPublish = false;
+      const release = pendingPublish;
+      pendingPublish = undefined;
+      release?.();
+    },
     settleConnect() {
       const release = pendingConnect;
       pendingConnect = undefined;
@@ -143,6 +161,11 @@ const createFakeConnection = (role: RedisRole): FakeConnection => {
     },
     async publish(channel, message) {
       if (fake.failCommands) throw new Error('publish failed');
+      if (fake.deferPublish) {
+        await new Promise<void>((resolve) => {
+          pendingPublish = resolve;
+        });
+      }
       fake.published.push({ channel, message });
       return 1;
     },
@@ -194,7 +217,7 @@ interface Harness {
   intervals: number[];
 }
 
-const createHarness = () => {
+const createHarness = (overrides: Partial<CreateRedisManagerOptions> = {}) => {
   const connections: FakeConnection[] = [];
   const cleared: IntervalHandle[] = [];
   const intervals: number[] = [];
@@ -238,6 +261,7 @@ const createHarness = () => {
       cleared.push(handle);
       scheduled = undefined;
     },
+    ...overrides,
   });
 
   return { manager, harness };
@@ -943,6 +967,58 @@ describe('redis manager', () => {
       // handle alive and the process then never exits on its own.
       expect(harness.byRole('subscriber').unsubscribes).toBe(1);
       for (const role of REDIS_ROLES) expect(harness.byRole(role).closes).toBe(1);
+      expect(manager.status.roles.every((entry) => entry.state === 'closed')).toBe(true);
+    });
+
+    /**
+     * Nothing above this module can await a publish: Socket.IO's `emit` returns
+     * as soon as it has called `Adapter#broadcast`, and the cluster adapter
+     * reaches `publish` only afterwards. Closing the socket underneath an
+     * in-flight frame drops it with no error anyone sees — for presence, the
+     * graceful-shutdown `offline` this manager was handed to carry.
+     */
+    it('lets a publish already on the wire land before closing the socket', async () => {
+      const { manager, harness } = createHarness();
+      await manager.connect();
+      const publisher = harness.byRole('publisher');
+      publisher.deferPublish = true;
+
+      // Fire and forget, as the cluster adapter does.
+      const published = manager.publish('near-chat-ws', 'offline-frame');
+      await settle();
+      expect(publisher.published).toHaveLength(0);
+
+      let closed = false;
+      const closing = manager.close().then(() => {
+        closed = true;
+      });
+      await settle();
+      expect(closed).toBe(false);
+      expect(publisher.closes).toBe(0);
+
+      publisher.settlePublish();
+      await closing;
+
+      expect(publisher.published).toEqual([
+        { channel: 'near-chat-ws', message: 'offline-frame' },
+      ]);
+      expect((await published).ok).toBe(true);
+      expect(publisher.closes).toBe(1);
+    });
+
+    it('gives up on a publish that never lands rather than hanging shutdown', async () => {
+      const { manager, harness } = createHarness({ closeTimeoutMs: 5 });
+      await manager.connect();
+      const publisher = harness.byRole('publisher');
+      publisher.deferPublish = true;
+
+      void manager.publish('near-chat-ws', 'never-lands');
+      await settle();
+
+      await manager.close();
+
+      expect(publisher.published).toHaveLength(0);
+      expect(publisher.closes).toBe(1);
       expect(manager.status.roles.every((entry) => entry.state === 'closed')).toBe(true);
     });
 

@@ -427,6 +427,27 @@ export const createRedisManager = (options: CreateRedisManagerOptions): RedisMan
     };
   };
 
+  /**
+   * Publishes already handed to the connection, which `close()` waits out.
+   *
+   * Nothing above this module can await one. Socket.IO's `emit` returns as soon
+   * as it has called `Adapter#broadcast`, and the cluster adapter reaches its
+   * `doPublish` — and so this `publish` — only afterwards, so a caller that has
+   * finished its own work may still have a frame in flight here. Closing the
+   * socket underneath it drops that frame with no error anyone sees: for
+   * presence, exactly the graceful-shutdown `offline` this manager was handed
+   * to carry.
+   */
+  const inflightPublishes = new Set<Promise<unknown>>();
+
+  const trackPublish = <T>(work: Promise<T>): Promise<T> => {
+    inflightPublishes.add(work);
+    // `catch` before `finally`: the caller attaches its own handler to `work`,
+    // and a bare `finally` here would re-raise a rejection as an unhandled one.
+    void work.catch(() => undefined).finally(() => inflightPublishes.delete(work));
+    return work;
+  };
+
   /** Gracefully unsubscribes and closes a retired connection. */
   const retire = async (connection: RedisConnection, role: RedisRole): Promise<void> => {
     if (role === 'subscriber') {
@@ -603,7 +624,10 @@ export const createRedisManager = (options: CreateRedisManagerOptions): RedisMan
         return unavailable<number>('publisher', `PUBLISH ${channel}`);
       }
       try {
-        return { ok: true as const, value: await connection.publish(channel, message) };
+        return {
+          ok: true as const,
+          value: await trackPublish(connection.publish(channel, message)),
+        };
       } catch (error) {
         failedPublishes += 1;
         return { ok: false as const, error: recordError('publisher', error) };
@@ -676,6 +700,17 @@ export const createRedisManager = (options: CreateRedisManagerOptions): RedisMan
       if (watchdog !== undefined) {
         clearIntervalFn(watchdog);
         watchdog = undefined;
+      }
+
+      // Let the frames already on the wire land before the socket carrying them
+      // goes away. Bounded by the same deadline the subscriber leave uses: a
+      // shutdown that hangs on an unreachable Redis is worse than a lost frame,
+      // and `withTimeout` swallows a rejected publish the caller already owns.
+      if (inflightPublishes.size > 0) {
+        await withTimeout(
+          Promise.all([...inflightPublishes].map((work) => work.catch(() => undefined))),
+          closeTimeoutMs,
+        );
       }
 
       channels.clear();

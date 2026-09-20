@@ -1,5 +1,6 @@
 import type { ServerToClientEvents } from '@shared/types';
 import type { ChatServer } from './authSocket';
+import { logger } from '../utils/logger';
 
 export type RealtimeEventName = keyof ServerToClientEvents;
 
@@ -104,7 +105,7 @@ export const createRealtimePublisher = (): RealtimePublisher => {
       // Keep the reason out of the Socket.IO close API, which only accepts a
       // force flag. It is still useful in a bounded operational log, without
       // logging message contents, tokens, or credentials.
-      console.info('Realtime sessions disconnected', { userId, reason });
+      logger.info({ userId, reason }, 'Realtime sessions disconnected');
       // Deliberately cluster-wide: revoking a user's access has to end the
       // sessions they hold on every instance, not only this one.
       io.in(`user_${userId}`).disconnectSockets(true);
@@ -112,7 +113,7 @@ export const createRealtimePublisher = (): RealtimePublisher => {
 
     shutdown(reason) {
       if (!io) return;
-      console.info('Realtime server shutting down', { reason });
+      logger.info({ reason }, 'Realtime server shutting down');
       // `local` is what keeps this process's shutdown from being the whole
       // cluster's. This runs on SIGTERM, and with a cross-instance adapter
       // installed an unqualified `disconnectSockets` publishes the request to

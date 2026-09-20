@@ -148,13 +148,22 @@ announced online only on the first connection anywhere and offline only when the
 last one goes. `PRESENCE_TTL_MS` bounds how long a crashed instance keeps its
 users showing as online: nothing runs on a dead process to hand the leases back,
 so only the expiry does it. Every lease is refreshed three times per TTL, and a
-graceful shutdown hands them all back rather than waiting the TTL out. That last
-part only holds if SIGTERM actually reaches the process: the container has to
+graceful shutdown hands them all back rather than waiting the TTL out —
+announcing `user_status` offline for each user the handback leaves with no lease
+on any instance, so friends connected elsewhere are told at once instead of
+holding a stale `online` until their next `GET /friends` (#654). A release Redis
+did not acknowledge announces nothing: the lease was not handed back, so there is
+no departure to announce yet. That last part only holds if SIGTERM actually
+reaches the process: the container has to
 leave the application at PID 1 (hence the `exec` in `backend/Dockerfile.prod`'s
 CMD) and allow enough time for the drain to finish (hence
 `stop_grace_period: 30s` on the backend service). Get either wrong and the
 container is SIGKILLed with its leases still held, which looks exactly like a
-crashed instance — see docs/RELEASE.md for the full stop contract.
+crashed instance — see docs/RELEASE.md for the full stop contract. A SIGKILLed
+instance also announces nothing at all: its leases expire on their own TTL and
+no component watches for that expiry, so friends keep the stale `online` for up
+to `PRESENCE_TTL_MS` and then until their next `GET /friends` (#654 tracks
+closing this).
 `INSTANCE_ID` names this process in that hash; left unset one is generated per
 start, which is fine unless your orchestrator already has a stable per-replica
 name to reuse. Per-field TTLs need **Redis 7.4 or newer** — against an older

@@ -1,5 +1,5 @@
 import { AppError } from './AppError';
-import { env } from '../config/env';
+import { logger } from './logger';
 import type { ApiError } from '@shared/types';
 
 export const mapErrorToApiShape = (err: unknown): ApiError => {
@@ -24,9 +24,7 @@ export const mapErrorToApiShape = (err: unknown): ApiError => {
   }
 
   // Unknown / unexpected errors
-  if (!env().isTest) {
-    console.error("APP ERROR:", err);
-  }
+  logger.error({ err }, 'APP ERROR');
   return {
     statusCode: 500,
     message: 'Internal Server Error',

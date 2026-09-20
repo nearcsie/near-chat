@@ -37,9 +37,9 @@ export const startServer = async ({
   const version = await resolveVersion();
 
   server.listen(config.port, '0.0.0.0', () =>
-    // The message text is unchanged from the `console.log` this replaced, so
-    // anything tailing container logs for it keeps matching; the structured
-    // fields are additive.
+    // The message text is unchanged from the line this replaced, so anything
+    // tailing container logs for it keeps matching; the structured fields are
+    // additive.
     logger.info(
       { version, port: config.port, address: '0.0.0.0' },
       `Backend server (v${version}) successfully listening on port ${config.port} (0.0.0.0)`,

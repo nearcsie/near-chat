@@ -1,8 +1,9 @@
-import { describe, it, expect, beforeEach, mock, spyOn } from 'bun:test';
+import { describe, it, expect, beforeEach, mock } from 'bun:test';
 import { createPresenceTracker, type PresenceTracker } from '../../../src/realtime/presence';
 import type { PresenceStore } from '../../../src/realtime/presenceStore';
 import type { RedisOutcome } from '../../../src/utils/redis';
 import type { ChatServer } from '../../../src/realtime/authSocket';
+import type { Logger } from 'pino';
 
 /**
  * One shared lease table, viewed through as many instances as a test needs.
@@ -78,6 +79,12 @@ describe('presence tracker', () => {
   let friendRepo: { getFriends: ReturnType<typeof mock> };
   let tracker: PresenceTracker;
 
+  /** Records what the tracker reports, standing in for the shared logger. */
+  const makeLogger = () => {
+    const error = mock();
+    return { logger: { error, warn: mock(), info: mock(), debug: mock() } as unknown as Logger, error };
+  };
+
   beforeEach(() => {
     ({ io, roomEmit } = makeIo());
     friendRepo = {
@@ -116,27 +123,27 @@ describe('presence tracker', () => {
 
     it('suppresses and logs errors from getFriends during trackUserConnection', async () => {
       const errorRepo = { getFriends: mock().mockRejectedValue(new Error('DB down')) };
-      const consoleSpy = spyOn(console, 'error').mockImplementation(() => {});
+      const { logger, error } = makeLogger();
+      const logged = createPresenceTracker({ graceMs: () => 0, logger });
 
       await expect(
-        tracker.trackUserConnection(io, 'user-x', 'socket-1', errorRepo),
+        logged.trackUserConnection(io, 'user-x', 'socket-1', errorRepo),
       ).resolves.toBeUndefined();
 
-      expect(consoleSpy).toHaveBeenCalled();
-      consoleSpy.mockRestore();
+      expect(error).toHaveBeenCalled();
     });
 
     it('suppresses and logs errors from getFriends during trackUserDisconnection', async () => {
-      await tracker.trackUserConnection(io, 'user-y', 'socket-1', friendRepo);
+      const { logger, error } = makeLogger();
+      const logged = createPresenceTracker({ graceMs: () => 0, logger });
+      await logged.trackUserConnection(io, 'user-y', 'socket-1', friendRepo);
       const errorRepo = { getFriends: mock().mockRejectedValue(new Error('DB down')) };
-      const consoleSpy = spyOn(console, 'error').mockImplementation(() => {});
 
       await expect(
-        tracker.trackUserDisconnection(io, 'user-y', 'socket-1', errorRepo),
+        logged.trackUserDisconnection(io, 'user-y', 'socket-1', errorRepo),
       ).resolves.toBeUndefined();
 
-      expect(consoleSpy).toHaveBeenCalled();
-      consoleSpy.mockRestore();
+      expect(error).toHaveBeenCalled();
     });
 
     it('handles multiple socket connections per user and tracks disconnection', async () => {
@@ -159,6 +166,21 @@ describe('presence tracker', () => {
       expect(await tracker.isUserOnline('user-1')).toBe(false);
       expect(io.to).toHaveBeenCalledWith(['user_friend-1', 'user_friend-2']);
       expect(roomEmit).toHaveBeenCalledWith('user_status', { userId: 'user-1', status: 'offline' });
+    });
+
+    /**
+     * Without a store there is no cluster adapter either, so `io.to()` reaches
+     * only this process's sockets — and `index.ts` disconnects those before it
+     * stops presence. Nobody left to tell, and two Postgres queries per held
+     * user to tell them.
+     */
+    it('announces nothing on shutdown, because its only audience was its own sockets', async () => {
+      await tracker.trackUserConnection(io, 'user-1', 'socket-1', friendRepo);
+      roomEmit.mockClear();
+
+      await tracker.stop();
+
+      expect(roomEmit).not.toHaveBeenCalled();
     });
 
     it('answers offline rather than unknown, because one process is the whole deployment', async () => {
@@ -339,6 +361,196 @@ describe('presence tracker', () => {
 
       await alpha.stop();
       expect(leases.holders.has('user-1')).toBe(false);
+    });
+
+    /**
+     * The defect #654 names. Handing the lease back makes `isUserOnline` right
+     * on every instance, but nobody asks it: the friend's client applies what
+     * it is pushed, so without an announcement it holds a stale `online` until
+     * its next `GET /api/v1/friends`.
+     */
+    describe('when the instance itself leaves', () => {
+      it('announces offline for the users it was the last to hold', async () => {
+        await beta.trackUserConnection(betaIo, 'friend-1', 'socket-f-b', friendRepo);
+        await alpha.trackUserConnection(io, 'user-1', 'socket-a', friendRepo);
+        roomEmit.mockClear();
+
+        await alpha.stop();
+
+        expect(io.to).toHaveBeenCalledWith(['user_friend-1', 'user_friend-2']);
+        expect(roomEmit).toHaveBeenCalledWith('user_status', {
+          userId: 'user-1',
+          status: 'offline',
+        });
+      });
+
+      /**
+       * The shape a real SIGTERM takes: `index.ts` disconnects every local
+       * socket before it stops presence, so with a non-zero grace period the
+       * users are in `pendingDisconnects` — held, but with no socket — by the
+       * time `stop()` runs. A test that connects and stops immediately never
+       * exercises this.
+       */
+      it('announces for a user still inside the reconnect grace period', async () => {
+        const gracefulAlpha = createPresenceTracker({
+          store: leases.viewFor('alpha'),
+          graceMs: () => 50_000,
+        });
+        await gracefulAlpha.trackUserConnection(io, 'user-1', 'socket-a', friendRepo);
+        await gracefulAlpha.trackUserDisconnection(io, 'user-1', 'socket-a', friendRepo);
+        roomEmit.mockClear();
+
+        await gracefulAlpha.stop();
+
+        expect(roomEmit).toHaveBeenCalledTimes(1);
+        expect(roomEmit).toHaveBeenCalledWith('user_status', {
+          userId: 'user-1',
+          status: 'offline',
+        });
+        expect(leases.holders.has('user-1')).toBe(false);
+      });
+
+      it('says nothing for a user another instance still holds', async () => {
+        await alpha.trackUserConnection(io, 'user-1', 'socket-a', friendRepo);
+        await beta.trackUserConnection(betaIo, 'user-1', 'socket-b', friendRepo);
+        roomEmit.mockClear();
+
+        await alpha.stop();
+
+        expect(roomEmit).not.toHaveBeenCalledWith('user_status', {
+          userId: 'user-1',
+          status: 'offline',
+        });
+        expect(await beta.isUserOnline('user-1')).toBe(true);
+      });
+
+      /**
+       * A release Redis never acknowledged left the lease in place to expire on
+       * its TTL, so there is nothing to announce the end of. Announcing anyway
+       * would report every held user offline at once during a command outage —
+       * and the surviving lease would then swallow their next `online`.
+       * `releaseUser` still reads `!result.ok` as gone everywhere; #653 owns
+       * bringing the two under one policy, and this test is what a change of
+       * policy has to come back and update.
+       */
+      it('announces nothing when Redis never confirmed the release', async () => {
+        await alpha.trackUserConnection(io, 'user-1', 'socket-a', friendRepo);
+        roomEmit.mockClear();
+        leases.breakRedis();
+
+        await alpha.stop();
+
+        expect(roomEmit).not.toHaveBeenCalled();
+      });
+
+      /** The `io.to([])` guard, reached in a loop by the new path. */
+      it('never addresses an empty room list', async () => {
+        const friendless = { getFriends: mock().mockResolvedValue([]) };
+        await alpha.trackUserConnection(io, 'loner', 'socket-a', friendless);
+
+        await alpha.stop();
+
+        expect(io.to).not.toHaveBeenCalled();
+        expect(roomEmit).not.toHaveBeenCalled();
+      });
+
+      it('announces once however many times it is stopped', async () => {
+        await alpha.trackUserConnection(io, 'user-1', 'socket-a', friendRepo);
+        roomEmit.mockClear();
+
+        await alpha.stop();
+        await alpha.stop();
+
+        expect(roomEmit).toHaveBeenCalledTimes(1);
+      });
+
+      it('resolves without announcing when it never held anything', async () => {
+        await expect(alpha.stop()).resolves.toBeUndefined();
+        expect(roomEmit).not.toHaveBeenCalled();
+      });
+
+      it('still hands the leases back when the friend lookup fails', async () => {
+        const errorRepo = { getFriends: mock().mockRejectedValue(new Error('DB down')) };
+        await alpha.trackUserConnection(io, 'user-1', 'socket-a', errorRepo);
+
+        await expect(alpha.stop()).resolves.toBeUndefined();
+
+        expect(leases.holders.has('user-1')).toBe(false);
+      });
+
+      /**
+       * With `PRESENCE_GRACE_MS` at 0 — a value the config parser accepts —
+       * `releaseUser` empties both maps before its first await, and
+       * `socketServer.ts` never awaits the disconnect it starts. So the
+       * disconnects `index.ts` triggers on its way down leave `heldUsers()`
+       * empty while the release is still in flight; a `stop()` that only
+       * consulted `heldUsers()` would return immediately and let `redis.close()`
+       * cut the announcement off.
+       */
+      it('waits for a zero-grace release that is still in flight', async () => {
+        const view = leases.viewFor('alpha');
+        let openGate: (() => void) | undefined;
+        const gatedStore: PresenceStore = {
+          ...view,
+          async release(userId) {
+            await new Promise<void>((resolve) => {
+              openGate = resolve;
+            });
+            return view.release(userId);
+          },
+        };
+        const zeroGrace = createPresenceTracker({ store: gatedStore, graceMs: () => 0 });
+        await zeroGrace.trackUserConnection(io, 'user-1', 'socket-a', friendRepo);
+        roomEmit.mockClear();
+
+        // Fire and forget, exactly as `socketServer.ts` calls it.
+        void zeroGrace.trackUserDisconnection(io, 'user-1', 'socket-a', friendRepo);
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        expect(openGate).toBeDefined();
+
+        let settled = false;
+        const stopping = zeroGrace.stop().then(() => {
+          settled = true;
+        });
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        expect(settled).toBe(false);
+
+        openGate!();
+        await stopping;
+
+        expect(roomEmit).toHaveBeenCalledWith('user_status', {
+          userId: 'user-1',
+          status: 'offline',
+        });
+        expect(leases.holders.has('user-1')).toBe(false);
+      });
+
+      /**
+       * The handback is what `stop()` exists for, so it must survive a deadline
+       * the announcement loses. Asserting only that `stop()` returned would
+       * still pass if a hung friend lookup had starved the releases.
+       */
+      it('hands the leases back within the deadline even if the friend lookup hangs', async () => {
+        let lookups = 0;
+        const hangingRepo = {
+          getFriends: mock(() => {
+            lookups += 1;
+            return lookups === 1
+              ? Promise.resolve([{ friend: { userId: 'friend-1' } }])
+              : new Promise<never>(() => {});
+          }),
+        };
+        const bounded = createPresenceTracker({
+          store: leases.viewFor('alpha'),
+          graceMs: () => 0,
+          stopTimeoutMs: 20,
+        });
+        await bounded.trackUserConnection(io, 'user-1', 'socket-a', hangingRepo);
+
+        await bounded.stop();
+
+        expect(leases.holders.has('user-1')).toBe(false);
+      });
     });
   });
 
