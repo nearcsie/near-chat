@@ -307,7 +307,16 @@ export const makeMessageService = (
       if (!messageRepo.findChangesForUser) {
         throw new ValidationError('Realtime sync is not available');
       }
-      return messageRepo.findChangesForUser(userId, cursor, limit);
+      const changes = await messageRepo.findChangesForUser(userId, cursor, limit);
+      // An empty page is the ordinary "caught up" answer, so the log is only
+      // probed once it cannot be told apart from a cursor that has outrun it.
+      // That keeps the extra query off the hot path and out of the first sync
+      // of a session, where the cursor is still 0.
+      const resyncRequired = changes.length === 0
+        && cursor > 0
+        && messageRepo.hasChangeAtOrBefore !== undefined
+        && !(await messageRepo.hasChangeAtOrBefore(cursor));
+      return { changes, resyncRequired };
     },
   };
 };

@@ -125,7 +125,8 @@ NEXT_PUBLIC_API_URL=http://localhost:4005
 | `VALIDATION_ERROR` | 400 | 請求參數不合法 |
 | `NOT_FOUND` | 404 | 資源不存在 |
 | `FORBIDDEN` | 403 | 無操作權限 |
-| `CONFLICT` | 409 | 資源衝突（如重複的好友邀請） |
+| `CONFLICT` | 409 | 資源衝突（如重複的好友邀請，或 `If-Match` revision 過期）。客戶端重新取得目前狀態後可重試 |
+| `IDEMPOTENCY_CONFLICT` | 409 | `Idempotency-Key` 已被另一則訊息或另一種操作用掉。receipt 是持久的，重試永遠不會成功，該命令必須放棄 |
 | `INTERNAL_ERROR` | 500 | 伺服器內部錯誤 |
 
 ---
@@ -1216,24 +1217,28 @@ NEXT_PUBLIC_API_URL=http://localhost:4005
 - **說明**: 編輯訊息。
 - **標頭**: 必須提供 `Idempotency-Key` 與包含預期整數 `revision` 的 `If-Match`。
 - **回應**: `200 OK`，回傳更新後且 revision 增加的訊息。
-- **衝突**: revision 過期時回傳 `409 CONFLICT`。
+- **衝突**: revision 過期時回傳 `409 CONFLICT`；重新取得訊息後以新的 revision 重試即可。
+- **冪等衝突**: 該 key 已被另一則訊息或另一種操作用掉時回傳 `409 IDEMPOTENCY_CONFLICT`。此為永久失敗，同一個 key 重試永遠不會成功。
 
 #### `POST /rooms/:roomId/messages/:messageId/recall`
 - **說明**: 收回訊息。
 - **標頭**: 必須提供 `Idempotency-Key` 與 `If-Match`。
 - **回應**: `200 OK`，回傳收回後的訊息投影。
-- **重試規則**: 對已收回的訊息再次收回會直接成功，不會配發新的變更，也不會再發布事件；但該 key 仍算已使用。建立、編輯與收回共用同一個 idempotency namespace，把同一個 key 用於其他操作會得到 `409 CONFLICT`。
+- **重試規則**: 對已收回的訊息再次收回會直接成功，不會配發新的變更，也不會再發布事件；但該 key 仍算已使用。建立、編輯與收回共用同一個 idempotency namespace，把同一個 key 用於其他操作會得到 `409 IDEMPOTENCY_CONFLICT`。
 
 #### `PUT /rooms/:roomId/read-position`
 - **說明**: 將呼叫者的持久化已讀位置推進至指定訊息。
 - **標頭**: 必須提供 `Idempotency-Key`。
 - **請求主體**: `{ "messageId": "..." }`。
 - **回應**: `200 OK`，已讀位置只會向前推進。
+- **冪等衝突**: 該 key 已被另一個聊天室或另一則訊息用掉時回傳 `409 IDEMPOTENCY_CONFLICT`。已讀位置命令有自己的 receipt，因此不會出現在 `GET /sync`。
 
 #### `GET /sync`
 - **說明**: 依 cursor 復原目前使用者可見的持久化 Message Change。
 - **查詢參數**: `cursor`（非負整數，預設 `0`）與 `limit`（1–500，預設 `100`）。
-- **回應**: `{ "changes": [...], "nextCursor": 42, "hasMore": false }`；每筆變更含 `changeSequence`、`messageSequence`、`revision`、`changeType` 與 `message`。
+- **回應**: `{ "changes": [...], "nextCursor": 42, "hasMore": false }`；每筆變更含 `changeSequence`、`messageSequence`、`revision`、`changeType`、`message` 與 `commandId`。
+- **`commandId`**: 產生該變更的命令所用的 `Idempotency-Key`，只會出現在呼叫者自己的變更上，其他成員的變更永遠不會帶。客戶端可藉此認出自己已送出的命令，不必重送。**沒有帶 `commandId` 不等於命令沒有生效**：no-op 的收回與已讀位置命令把 receipt 記在 change log 之外，本來就不會出現於此；命令本身的 `2xx` 回應仍是唯一的 ack。
+- **不可用的 cursor**: 當 change log 中沒有任何序號位於該 cursor 或其之前時，代表這個 cursor 是對一份伺服器已不再持有的 log 發出的，之後的任何 delta 都不可能把它往前帶。此時回應為 `{ "changes": [], "nextCursor": 0, "hasMore": false, "resyncRequired": true }`，客戶端應丟棄本地快取的歷史，改以聊天室端點重新取得，並從 `0` 重新開始。其餘情況一律不會出現 `resyncRequired`；單純已追上的 cursor 仍然是原值回傳、變更為空。
 - **可見性**: 每次請求都重新檢查成員資格；隱藏歷史的聊天室會排除 Join Boundary 以前的變更。
 
 #### `POST /attachments`

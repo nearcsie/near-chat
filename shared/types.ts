@@ -172,12 +172,25 @@ export interface MessageChange {
   revision: number;
   changeType: MessageChangeType;
   message: MessageWithSender;
+  /**
+   * The Idempotency-Key of the command that produced this change, echoed back
+   * only to the actor who sent it. Other members always read `undefined`, so a
+   * client can recognise its own commands without learning anyone else's.
+   */
+  commandId?: string;
 }
 
 export interface SyncResponse {
   changes: MessageChange[];
   nextCursor: number;
   hasMore: boolean;
+  /**
+   * Set when the cursor points into a change log the server no longer has, so
+   * no delta can ever carry the client forward. Present only in that case; the
+   * client discards its cached history, refetches it through the room
+   * endpoints, and resumes from the `nextCursor` of `0` returned alongside.
+   */
+  resyncRequired?: boolean;
 }
 
 // ---------------------------------------------------------------------------

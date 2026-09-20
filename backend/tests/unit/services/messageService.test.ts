@@ -429,4 +429,66 @@ describe('messageService', () => {
     await expect(messageService.recallMessage('user-1', 'room-1', 'missing')).rejects.toThrow(NotFoundError);
     expect(messageRepo.markRecalled).not.toHaveBeenCalled();
   });
+
+  describe('sync', () => {
+    const change = {
+      changeSequence: 12,
+      messageSequence: 4,
+      revision: 1,
+      changeType: 'created' as const,
+      message: messageWithSender,
+    };
+
+    beforeEach(() => {
+      messageRepo.findChangesForUser = mock().mockResolvedValue([]);
+      messageRepo.hasChangeAtOrBefore = mock().mockResolvedValue(true);
+    });
+
+    it('returns the repository changes and does not probe the log when there is a page', async () => {
+      messageRepo.findChangesForUser.mockResolvedValue([change]);
+
+      const result = await messageService.sync('user-1', 5, 100);
+
+      expect(result).toEqual({ changes: [change], resyncRequired: false });
+      expect(messageRepo.hasChangeAtOrBefore).not.toHaveBeenCalled();
+    });
+
+    it('reports no resync for a caught-up cursor the log still reaches', async () => {
+      const result = await messageService.sync('user-1', 5, 100);
+
+      expect(result).toEqual({ changes: [], resyncRequired: false });
+      expect(messageRepo.hasChangeAtOrBefore).toHaveBeenCalledWith(5);
+    });
+
+    it('reports a resync when nothing in the log reaches back to the cursor', async () => {
+      messageRepo.hasChangeAtOrBefore.mockResolvedValue(false);
+
+      const result = await messageService.sync('user-1', 5, 100);
+
+      expect(result).toEqual({ changes: [], resyncRequired: true });
+    });
+
+    it('never reports a resync for the opening cursor of a session', async () => {
+      messageRepo.hasChangeAtOrBefore.mockResolvedValue(false);
+
+      const result = await messageService.sync('user-1', 0, 100);
+
+      expect(result.resyncRequired).toBe(false);
+      expect(messageRepo.hasChangeAtOrBefore).not.toHaveBeenCalled();
+    });
+
+    it('falls back to no resync when the repository cannot answer', async () => {
+      delete messageRepo.hasChangeAtOrBefore;
+
+      const result = await messageService.sync('user-1', 5, 100);
+
+      expect(result.resyncRequired).toBe(false);
+    });
+
+    it('rejects when the repository cannot serve sync at all', async () => {
+      delete messageRepo.findChangesForUser;
+
+      await expect(messageService.sync('user-1', 0, 100)).rejects.toThrow(ValidationError);
+    });
+  });
 });

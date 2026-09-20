@@ -2,7 +2,7 @@ import { SQL } from "bun";
 import defaultSql from "./db";
 import type { RoomMember } from '@shared/types';
 import type { IRoomMemberRepository } from './IRoomMemberRepository';
-import { ConflictError, ForbiddenError } from '../utils/AppError';
+import { ConflictError, ForbiddenError, IdempotencyConflictError } from '../utils/AppError';
 
 export interface RoomMemberRow {
   room_id: string;
@@ -204,9 +204,9 @@ export class RoomMemberRepository implements IRoomMemberRepository {
           WHERE user_id = ${userId} AND command_id = ${commandId}
         `;
         if (prior.length > 0) {
-          if (prior[0].room_id !== roomId) throw new ConflictError('Idempotency-Key was already used for another room');
+          if (prior[0].room_id !== roomId) throw new IdempotencyConflictError('Idempotency-Key was already used for another room');
           if (prior[0].message_id && prior[0].message_id !== messageId) {
-            throw new ConflictError('Idempotency-Key was already used for another message');
+            throw new IdempotencyConflictError('Idempotency-Key was already used for another message');
           }
           replayedCommand = true;
           updated = memberRows[0];

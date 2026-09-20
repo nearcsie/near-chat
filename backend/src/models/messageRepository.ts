@@ -2,7 +2,7 @@ import { SQL } from "bun";
 import defaultSql from "./db";
 import type { Attachment, Message, MessageChange, MessageWithSender } from '@shared/types';
 import type { IMessageRepository } from './IMessageRepository';
-import { ConflictError, ForbiddenError, ValidationError } from '../utils/AppError';
+import { ConflictError, ForbiddenError, IdempotencyConflictError, ValidationError } from '../utils/AppError';
 
 export interface MessageRow {
   message_id: string;
@@ -414,7 +414,7 @@ export class MessageRepository implements IMessageRepository {
         `;
         if (prior.length > 0) {
           if (prior[0].change_type !== 'created') {
-            throw new ConflictError('Idempotency-Key was already used for another operation');
+            throw new IdempotencyConflictError('Idempotency-Key was already used for another operation');
           }
           createdMessageId = prior[0].message_id;
           responseChangeSequence = Number(prior[0].change_sequence);
@@ -613,8 +613,8 @@ export class MessageRepository implements IMessageRepository {
           ORDER BY change_sequence DESC NULLS LAST LIMIT 1
         `;
         if (prior.length > 0) {
-          if (prior[0].message_id !== messageId) throw new ConflictError('Idempotency-Key was already used for another message');
-          if (prior[0].change_type !== 'recalled') throw new ConflictError('Idempotency-Key was already used for another operation');
+          if (prior[0].message_id !== messageId) throw new IdempotencyConflictError('Idempotency-Key was already used for another message');
+          if (prior[0].change_type !== 'recalled') throw new IdempotencyConflictError('Idempotency-Key was already used for another operation');
           responseChangeSequence = prior[0].change_sequence === null
             ? undefined
             : Number(prior[0].change_sequence);
@@ -768,8 +768,8 @@ export class MessageRepository implements IMessageRepository {
           ORDER BY change_sequence DESC NULLS LAST LIMIT 1
         `;
         if (prior.length > 0) {
-          if (prior[0].message_id !== messageId) throw new ConflictError('Idempotency-Key was already used for another message');
-          if (prior[0].change_type !== 'edited') throw new ConflictError('Idempotency-Key was already used for another operation');
+          if (prior[0].message_id !== messageId) throw new IdempotencyConflictError('Idempotency-Key was already used for another message');
+          if (prior[0].change_type !== 'edited') throw new IdempotencyConflictError('Idempotency-Key was already used for another operation');
           responseChangeSequence = Number(prior[0].change_sequence);
           replayedCommand = true;
           return;
@@ -853,12 +853,33 @@ export class MessageRepository implements IMessageRepository {
     return markCommandReplay(message, replayedCommand);
   }
 
+  /**
+   * Whether the durable change log still reaches back to `cursor`.
+   *
+   * Asked globally rather than per viewer: the question is whether the log a
+   * cursor was issued against still exists, not whether this member may read
+   * it. A `false` means every sequence at or below the cursor is gone, so no
+   * future delta can carry that client forward and it has to resynchronise.
+   * `TRUNCATE ... CASCADE` from `db:seed` empties `message_changes` while
+   * leaving `realtime_counters` at its old high-water mark, which is exactly
+   * the case a counter comparison would miss.
+   */
+  async hasChangeAtOrBefore(cursor: number): Promise<boolean> {
+    const rows = await this.sql<Array<{ has_change: boolean }>>`
+      SELECT EXISTS (
+        SELECT 1 FROM message_changes WHERE change_sequence <= ${cursor}
+      ) AS has_change
+    `;
+    return rows[0]?.has_change === true;
+  }
+
   async findChangesForUser(userId: string, cursor: number, limit: number): Promise<MessageChange[]> {
     const rows = await this.sql<Array<{
       change_sequence: number | string;
       message_sequence: number | string;
       revision: number;
       change_type: MessageChange['changeType'];
+      command_id: string | null;
       message_id: string;
       room_id: string;
       sender_id: string | null;
@@ -876,6 +897,10 @@ export class MessageRepository implements IMessageRepository {
     }>>`
       SELECT
         mc.change_sequence, mc.message_sequence, mc.revision, mc.change_type,
+        -- Only the actor who issued the command learns its id; for everyone
+        -- else the projection is NULL, so one member's Idempotency-Key never
+        -- reaches another member's client.
+        CASE WHEN mc.actor_id = ${userId} THEN mc.command_id END AS command_id,
         mc.message_id, mc.room_id, mc.sender_id, mc.content, mc.is_recalled,
         mc.reply_to_id, mc.sent_at,
         mc.mentions, mc.attachments,
@@ -938,13 +963,15 @@ export class MessageRepository implements IMessageRepository {
       message.mentions = !isRecalled && Array.isArray(row.mentions)
         ? row.mentions.filter((userId): userId is string => typeof userId === 'string')
         : [];
-      return {
+      const change: MessageChange = {
         changeSequence: Number(row.change_sequence),
         messageSequence: Number(row.message_sequence),
         revision: row.revision,
         changeType: row.change_type,
         message,
       };
+      if (row.command_id !== null) change.commandId = row.command_id;
+      return change;
     });
   }
 }
