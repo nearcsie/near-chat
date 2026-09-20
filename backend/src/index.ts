@@ -10,6 +10,7 @@ import { createBunRuntimeServer, createRealtime } from './bootstrap/realtime';
 import { createRealtimePublisher } from './realtime/publisher';
 import { startJobs } from './bootstrap/jobs';
 import { startServer } from './bootstrap/start';
+import { logger } from './utils/logger';
 
 /**
  * Main application composition root.
@@ -33,6 +34,11 @@ if (require.main === module) {
     assertStartupEnv();
   } catch (error) {
     if (!(error instanceof EnvConfigError)) throw error;
+    // Deliberately not the logger. Its level is resolved from the very
+    // environment that just failed validation (`resolveLogLevel` -> `env()`),
+    // so routing this through it would let a misconfigured LOG_LEVEL swallow
+    // the one message that explains why the process refuses to boot.
+    // eslint-disable-next-line no-console
     console.error(error.message);
     process.exit(1);
   }
@@ -53,10 +59,10 @@ if (require.main === module) {
 
     // Hard fallback timer to ensure process terminates within deadline.
     const deadline = setTimeout(() => {
-      console.error('Shutdown deadline exceeded, exiting anyway', {
-        signal,
-        deadlineMs: SHUTDOWN_DEADLINE_MS,
-      });
+      logger.error(
+        { signal, deadlineMs: SHUTDOWN_DEADLINE_MS },
+        'Shutdown deadline exceeded, exiting anyway',
+      );
       process.exit(0);
     }, SHUTDOWN_DEADLINE_MS);
 
