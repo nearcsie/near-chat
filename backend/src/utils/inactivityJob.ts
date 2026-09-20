@@ -1,6 +1,7 @@
 import type { makeUserService } from '../services/userService';
 import type { IUserRepository } from '../models/IUserRepository';
 import { presenceOf, type PresenceState } from '../realtime/presence';
+import { logger } from './logger';
 
 export function startInactivityJob(
   userRepo: IUserRepository,
@@ -31,11 +32,11 @@ export function startInactivityJob(
           if (presence === 'unknown') continue;
           await userService.checkInactivity(user.userId, now);
         } catch (err) {
-          console.error(`Error checking inactivity for user ${user.userId}:`, err);
+          logger.error({ err, userId: user.userId }, 'Error checking inactivity for user');
         }
       }
     } catch (err) {
-      console.error('Error running inactivity job:', err);
+      logger.error({ err }, 'Error running inactivity job');
     } finally {
       isRunning = false;
     }

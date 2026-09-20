@@ -8,6 +8,7 @@ import type { IRoomMemberRepository } from '../models/IRoomMemberRepository';
 import type { IUserRepository } from '../models/IUserRepository';
 import type { IMessageRepository } from '../models/IMessageRepository';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../utils/AppError';
+import { logger } from '../utils/logger';
 import {
   createRoomSchema,
   updateRoomSchema,
@@ -140,7 +141,7 @@ export const makeRoomService = (
           try {
             await repo.delete(room.roomId);
           } catch (cleanupError) {
-            console.error('Failed to remove a private room rejected by a block:', cleanupError);
+            logger.error({ err: cleanupError }, 'Failed to remove a private room rejected by a block');
           }
           throw new ForbiddenError('Cannot create a private room with a blocked user');
         }

@@ -1,6 +1,7 @@
 import type { UploadedFile } from '../utils/fileUpload';
 import type { IUserRepository } from '../models/IUserRepository';
 import type { IEmergencyContactRepository, EmergencyContact } from '../models/IEmergencyContactRepository';
+import { logger } from '../utils/logger';
 import type {
   RegisterRequest,
   LoginRequest,
@@ -122,9 +123,9 @@ export const makeUserService = (
         if (delivered) recipients.push(contact.contactId);
       } catch (error) {
         failed.push(contact.contactId);
-        console.error(
-          `Failed to deliver emergency alert to contact ${contact.contactId} for user ${userId}:`,
-          error,
+        logger.error(
+          { err: error, contactId: contact.contactId, userId },
+          'Failed to deliver emergency alert to contact',
         );
       }
     }
