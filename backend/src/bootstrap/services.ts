@@ -8,6 +8,7 @@ import { makeMessageService } from '../services/messageService';
 import { makeFolderService } from '../services/folderService';
 import { makeAttachmentService } from '../services/attachmentService';
 import { makeFriendService } from '../services/friendService';
+import { logger } from '../utils/logger';
 
 export interface Services {
   user: ReturnType<typeof makeUserService>;
@@ -97,7 +98,7 @@ export const createServices = ({ repositories, publisher }: CreateServicesDeps):
           });
         }
       } catch (err) {
-        console.error('Failed to broadcast user update:', err);
+        logger.error({ err }, 'Failed to broadcast user update');
       }
     },
     undefined,

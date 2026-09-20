@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, mock, spyOn } from 'bun:test';
 import { startInactivityJob } from '../../../src/utils/inactivityJob';
+import { logger } from '../../../src/utils/logger';
 import type { IUserRepository } from '../../../src/models/IUserRepository';
 
 describe('inactivityJob', () => {
@@ -70,7 +71,7 @@ describe('inactivityJob', () => {
   });
 
   it('continues with remaining users when checkInactivity fails for one user', async () => {
-    const consoleSpy = spyOn(console, 'error').mockImplementation(() => {});
+    const errorSpy = spyOn(logger, 'error').mockImplementation(() => {});
     mockUserRepo.findAllWarningEnabled.mockResolvedValue([
       { userId: 'u1' },
       { userId: 'u2' }
@@ -87,12 +88,12 @@ describe('inactivityJob', () => {
     await Promise.resolve();
 
     expect(mockUserService.checkInactivity).toHaveBeenCalledTimes(2);
-    expect(consoleSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Error checking inactivity for user u1'),
-      expect.any(Error)
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ err: expect.any(Error), userId: 'u1' }),
+      'Error checking inactivity for user'
     );
 
-    consoleSpy.mockRestore();
+    errorSpy.mockRestore();
   });
 
   it('refreshes lastActivity instead of escalating when the user is online', async () => {
@@ -126,7 +127,7 @@ describe('inactivityJob', () => {
   });
 
   it('logs and releases the lock when findAllWarningEnabled fails', async () => {
-    const consoleSpy = spyOn(console, 'error').mockImplementation(() => {});
+    const errorSpy = spyOn(logger, 'error').mockImplementation(() => {});
     mockUserRepo.findAllWarningEnabled
       .mockRejectedValueOnce(new Error('db down'))
       .mockResolvedValue([] as any);
@@ -138,13 +139,16 @@ describe('inactivityJob', () => {
     await new Promise(resolve => setTimeout(resolve, 3));
     await Promise.resolve();
 
-    expect(consoleSpy).toHaveBeenCalledWith('Error running inactivity job:', expect.any(Error));
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ err: expect.any(Error) }),
+      'Error running inactivity job'
+    );
 
     // The lock must be released so the next tick runs again
     await new Promise(resolve => setTimeout(resolve, 3));
     await Promise.resolve();
     expect(mockUserRepo.findAllWarningEnabled.mock.calls.length).toBeGreaterThanOrEqual(2);
 
-    consoleSpy.mockRestore();
+    errorSpy.mockRestore();
   });
 });

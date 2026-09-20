@@ -214,4 +214,42 @@ return before
     expect(result.ok).toBe(true);
     expect(result.ok && result.value).toContain(user('listed'));
   });
+
+  /**
+   * The one thing only a real server can answer: whether the digest this
+   * process computes is the digest Redis filed the body under.
+   *
+   * A digest that disagreed would still give correct answers — every call would
+   * miss and fall back to sending the body — so nothing except the commands on
+   * the wire distinguishes a working cache from one that never hits. Hence a
+   * `RedisManager` that records the verbs and forwards.
+   *
+   * Uses `areOnline` because its script is `HLEN` only, so this case says
+   * nothing about hash-field TTLs and holds on any server the rest of this file
+   * would reject.
+   */
+  it('sends a dropped script once, then goes back to the digest', async () => {
+    const sent: string[] = [];
+    const watched = {
+      async command<T>(command: string, args: string[] = []) {
+        sent.push(command);
+        return redis.command<T>(command, args);
+      },
+    } as unknown as RedisManager;
+    const store = createRedisPresenceStore({ redis: watched, instanceId: `${run}-sha`, ttlMs });
+
+    // SYNC because an asynchronous flush could let the next EVALSHA still hit,
+    // and the test would pass without ever exercising the fallback. The flush
+    // is server-wide, so it empties the cache for any run sharing this Redis
+    // too — harmless, since recovering from exactly that is what is asserted
+    // here.
+    await redis.command('SCRIPT', ['FLUSH', 'SYNC']);
+
+    expect((await store.areOnline([user('page-a')])).ok).toBe(true);
+    expect(sent).toEqual(['EVALSHA', 'EVAL']);
+
+    sent.length = 0;
+    expect((await store.areOnline([user('page-a')])).ok).toBe(true);
+    expect(sent).toEqual(['EVALSHA']);
+  });
 });
