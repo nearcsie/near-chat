@@ -238,4 +238,47 @@ describe('MessageRepository (pg)', () => {
     expect(messages[0].isRecalled).toBe(true);
     expect(messages[0].attachments).toBeUndefined();
   });
+
+  it('echoes a command id back to its actor and withholds it from other members', async () => {
+    const senderId = await createUser('command-id-sender@test.com');
+    const viewerId = await createUser('command-id-viewer@test.com');
+    const roomId = await createRoom(senderId);
+    await testPool`
+      INSERT INTO room_members (room_id, user_id, role)
+      VALUES (${roomId}, ${viewerId}, 'member')
+    `;
+
+    await repo.create({
+      roomId,
+      senderId,
+      content: 'from the sender',
+      commandId: 'sender-command-1',
+    });
+
+    const own = await repo.findChangesForUser(senderId, 0, 10);
+    expect(own).toHaveLength(1);
+    expect(own[0].commandId).toBe('sender-command-1');
+
+    // Same change, different viewer: the CASE projects NULL, so the key never
+    // leaves the member who issued it.
+    const other = await repo.findChangesForUser(viewerId, 0, 10);
+    expect(other).toHaveLength(1);
+    expect(other[0].message.content).toBe('from the sender');
+    expect(other[0].commandId).toBeUndefined();
+  });
+
+  it('reports whether the change log still reaches back to a cursor', async () => {
+    const senderId = await createUser('cursor-probe@test.com');
+    const roomId = await createRoom(senderId);
+
+    // resetDb() empties message_changes, which is the shape db:seed leaves
+    // behind: a client can still be holding a cursor the log no longer covers.
+    expect(await repo.hasChangeAtOrBefore(5)).toBe(false);
+
+    await repo.create({ roomId, senderId, content: 'first change' });
+    const [change] = await repo.findChangesForUser(senderId, 0, 10);
+
+    expect(await repo.hasChangeAtOrBefore(change.changeSequence)).toBe(true);
+    expect(await repo.hasChangeAtOrBefore(change.changeSequence - 1)).toBe(false);
+  });
 });
