@@ -128,7 +128,13 @@
     "noResults": "No matching users found.",
     "requested": "Requested",
     "blockConfirmTitle": "Block Friend Confirmation",
-    "blockEmergencyWarning": "This friend is your emergency contact. Blocking them will disable your emergency contact relationship. Are you sure you want to proceed?"
+    "blockEmergencyWarning": "This friend is your emergency contact. Blocking them will disable your emergency contact relationship. Are you sure you want to proceed?",
+    "inviteLinkTitle": "Your Friend Invite Link",
+    "inviteLinkDesc": "Share this link or QR code. Opening it asks the other person to send you a friend request.",
+    "copyInviteLink": "Copy Invite Link",
+    "inviteLinkCopied": "Invite link copied to clipboard!",
+    "inviteLinkManualCopy": "Please copy the invite link manually:",
+    "inviteQrLabel": "QR code for your friend invite link"
   },
   "profile": {
     "profile": "Profile",
@@ -405,5 +411,22 @@
     "sortCustom": "Custom",
     "sortUnread": "Unread first",
     "emptyResult": "No matching chats"
+  },
+  "friendInvite": {
+    "pageTitle": "Near | Friend Invite",
+    "loading": "Loading invite...",
+    "invalidInvite": "This invite link is invalid or the account no longer exists.",
+    "backToNear": "Back to Near",
+    "thisUser": "This user",
+    "prompt": "Send a friend request to this person?",
+    "cancel": "Cancel",
+    "confirm": "Send Request",
+    "sending": "Sending...",
+    "sendFailed": "Failed to send the friend request.",
+    "requestSent": "Your friend request to {name} has been sent.",
+    "nowFriends": "You and {name} are now friends — they had already sent you a request.",
+    "alreadyFriends": "You and {name} are already friends.",
+    "alreadyRequested": "You have already sent {name} a friend request.",
+    "ownLink": "This is your own invite link. Share it with someone else so they can add you."
   }
 }

@@ -52,6 +52,8 @@ export function useParams(): Record<string, string> {
   const pathname = usePathname();
   const chatMatch = pathname.match(/^\/chat\/([^/]+)$/);
   if (chatMatch) return { chatId: chatMatch[1] };
+  const friendInviteMatch = pathname.match(/^\/friend-invite\/([^/]+)$/);
+  if (friendInviteMatch) return { userId: friendInviteMatch[1] };
   return {};
 }
 
