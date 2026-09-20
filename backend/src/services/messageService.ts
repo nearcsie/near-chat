@@ -307,16 +307,19 @@ export const makeMessageService = (
       if (!messageRepo.findChangesForUser) {
         throw new ValidationError('Realtime sync is not available');
       }
-      const changes = await messageRepo.findChangesForUser(userId, cursor, limit);
-      // An empty page is the ordinary "caught up" answer, so the log is only
-      // probed once it cannot be told apart from a cursor that has fallen
-      // outside it. That keeps the extra query off the hot path and out of the
-      // first sync of a session, where the cursor is still 0.
-      const resyncRequired = changes.length === 0
-        && cursor > 0
-        && messageRepo.isCursorWithinChangeLog !== undefined
-        && !(await messageRepo.isCursorWithinChangeLog(cursor));
-      return { changes, resyncRequired };
+      // A page with changes on it does not mean the cursor is sound. Once a
+      // reseeded log has taken one new change above the old high-water mark,
+      // that change comes back as if it continued the history the client
+      // cached, and the client advances past it still holding rows the reset
+      // threw away. So the coverage of a positive cursor is checked on every
+      // page, not only an empty one, and issued alongside the page rather than
+      // after it, to keep sync at one round trip.
+      const probeCursor = cursor > 0 && messageRepo.isCursorWithinChangeLog !== undefined;
+      const [changes, cursorWithinLog] = await Promise.all([
+        messageRepo.findChangesForUser(userId, cursor, limit),
+        probeCursor ? messageRepo.isCursorWithinChangeLog!(cursor) : Promise.resolve(true),
+      ]);
+      return { changes, resyncRequired: !cursorWithinLog };
     },
   };
 };

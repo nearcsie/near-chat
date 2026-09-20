@@ -444,13 +444,25 @@ describe('messageService', () => {
       messageRepo.isCursorWithinChangeLog = mock().mockResolvedValue(true);
     });
 
-    it('returns the repository changes and does not probe the log when there is a page', async () => {
+    it('returns the repository changes when the cursor still covers the log', async () => {
       messageRepo.findChangesForUser.mockResolvedValue([change]);
 
       const result = await messageService.sync('user-1', 5, 100);
 
       expect(result).toEqual({ changes: [change], resyncRequired: false });
-      expect(messageRepo.isCursorWithinChangeLog).not.toHaveBeenCalled();
+      expect(messageRepo.isCursorWithinChangeLog).toHaveBeenCalledWith(5);
+    });
+
+    it('reports a resync even when the page has changes on it', async () => {
+      // A reseeded log that has since taken one new change: the delta looks
+      // like ordinary history, and without this the client would advance its
+      // cursor past it while keeping the rows the reset discarded.
+      messageRepo.findChangesForUser.mockResolvedValue([change]);
+      messageRepo.isCursorWithinChangeLog.mockResolvedValue(false);
+
+      const result = await messageService.sync('user-1', 5, 100);
+
+      expect(result.resyncRequired).toBe(true);
     });
 
     it('reports no resync for a caught-up cursor the log still reaches', async () => {

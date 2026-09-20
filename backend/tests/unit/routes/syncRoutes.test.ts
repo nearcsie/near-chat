@@ -107,6 +107,19 @@ describe('GET /sync', () => {
     expect(body.hasMore).toBe(false);
   });
 
+  it('withholds the page when the cursor it came from is unusable', async () => {
+    // The changes are real, but they sit on the far side of a reset: handing
+    // them over would let the client advance past the break it has to hear
+    // about.
+    service.sync.mockResolvedValue({ changes: [change(501)], resyncRequired: true });
+
+    const body = await (await get('?cursor=500&limit=100')).json() as any;
+
+    expect(body.changes).toEqual([]);
+    expect(body.nextCursor).toBe(0);
+    expect(body.resyncRequired).toBe(true);
+  });
+
   it('still rejects a malformed cursor before reaching the service', async () => {
     const res = await get('?cursor=-1&limit=100');
 
