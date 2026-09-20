@@ -441,7 +441,7 @@ describe('messageService', () => {
 
     beforeEach(() => {
       messageRepo.findChangesForUser = mock().mockResolvedValue([]);
-      messageRepo.hasChangeAtOrBefore = mock().mockResolvedValue(true);
+      messageRepo.isCursorWithinChangeLog = mock().mockResolvedValue(true);
     });
 
     it('returns the repository changes and does not probe the log when there is a page', async () => {
@@ -450,18 +450,18 @@ describe('messageService', () => {
       const result = await messageService.sync('user-1', 5, 100);
 
       expect(result).toEqual({ changes: [change], resyncRequired: false });
-      expect(messageRepo.hasChangeAtOrBefore).not.toHaveBeenCalled();
+      expect(messageRepo.isCursorWithinChangeLog).not.toHaveBeenCalled();
     });
 
     it('reports no resync for a caught-up cursor the log still reaches', async () => {
       const result = await messageService.sync('user-1', 5, 100);
 
       expect(result).toEqual({ changes: [], resyncRequired: false });
-      expect(messageRepo.hasChangeAtOrBefore).toHaveBeenCalledWith(5);
+      expect(messageRepo.isCursorWithinChangeLog).toHaveBeenCalledWith(5);
     });
 
     it('reports a resync when nothing in the log reaches back to the cursor', async () => {
-      messageRepo.hasChangeAtOrBefore.mockResolvedValue(false);
+      messageRepo.isCursorWithinChangeLog.mockResolvedValue(false);
 
       const result = await messageService.sync('user-1', 5, 100);
 
@@ -469,16 +469,16 @@ describe('messageService', () => {
     });
 
     it('never reports a resync for the opening cursor of a session', async () => {
-      messageRepo.hasChangeAtOrBefore.mockResolvedValue(false);
+      messageRepo.isCursorWithinChangeLog.mockResolvedValue(false);
 
       const result = await messageService.sync('user-1', 0, 100);
 
       expect(result.resyncRequired).toBe(false);
-      expect(messageRepo.hasChangeAtOrBefore).not.toHaveBeenCalled();
+      expect(messageRepo.isCursorWithinChangeLog).not.toHaveBeenCalled();
     });
 
     it('falls back to no resync when the repository cannot answer', async () => {
-      delete messageRepo.hasChangeAtOrBefore;
+      delete messageRepo.isCursorWithinChangeLog;
 
       const result = await messageService.sync('user-1', 5, 100);
 

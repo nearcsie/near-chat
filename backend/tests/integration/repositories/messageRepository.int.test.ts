@@ -267,18 +267,19 @@ describe('MessageRepository (pg)', () => {
     expect(other[0].commandId).toBeUndefined();
   });
 
-  it('reports whether the change log still reaches back to a cursor', async () => {
+  it('reports whether a cursor still falls inside the change log', async () => {
     const senderId = await createUser('cursor-probe@test.com');
     const roomId = await createRoom(senderId);
 
     // resetDb() empties message_changes, which is the shape db:seed leaves
     // behind: a client can still be holding a cursor the log no longer covers.
-    expect(await repo.hasChangeAtOrBefore(5)).toBe(false);
+    expect(await repo.isCursorWithinChangeLog(5)).toBe(false);
 
     await repo.create({ roomId, senderId, content: 'first change' });
     const [change] = await repo.findChangesForUser(senderId, 0, 10);
 
-    expect(await repo.hasChangeAtOrBefore(change.changeSequence)).toBe(true);
-    expect(await repo.hasChangeAtOrBefore(change.changeSequence - 1)).toBe(false);
+    expect(await repo.isCursorWithinChangeLog(change.changeSequence)).toBe(true);
+    expect(await repo.isCursorWithinChangeLog(change.changeSequence - 1)).toBe(false);
+    expect(await repo.isCursorWithinChangeLog(change.changeSequence + 1)).toBe(false);
   });
 });

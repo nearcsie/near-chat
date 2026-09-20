@@ -126,7 +126,7 @@ All errors return the following JSON structure:
 | `VALIDATION_ERROR` | 400 | Invalid request parameters |
 | `NOT_FOUND` | 404 | Resource not found |
 | `FORBIDDEN` | 403 | Forbidden / insufficient permissions |
-| `CONFLICT` | 409 | Resource conflict (e.g., duplicate friend request, or a stale `If-Match` revision). Retryable once the client refetches the current state |
+| `CONFLICT` | 409 | Resource conflict (e.g., duplicate friend request, an email already in use, or a stale `If-Match` revision). Whether a retry can succeed depends on the conflict: a stale revision does once the client refetches the message, a resource that already exists does not |
 | `IDEMPOTENCY_CONFLICT` | 409 | The `Idempotency-Key` was already consumed by a different message or a different operation. The receipt is durable, so this never succeeds on retry and the command must be abandoned |
 | `INTERNAL_ERROR` | 500 | Internal server error |
 
@@ -1239,7 +1239,7 @@ All errors return the following JSON structure:
 - **Query parameters**: `cursor` (non-negative integer, default `0`) and `limit` (1–500, default `100`).
 - **Response**: `{ "changes": [...], "nextCursor": 42, "hasMore": false }` where each change contains `changeSequence`, `messageSequence`, `revision`, `changeType`, `message`, and `commandId`.
 - **`commandId`**: The `Idempotency-Key` of the command that produced the change, present only on the caller's own changes; another member's changes never carry it. It lets a client recognise commands it already sent instead of re-posting them. **Its absence does not mean the command was not applied**: a no-op recall and a read-position command record their receipt outside the change log and so never appear here, and the `2xx` response to the command itself remains the acknowledgement.
-- **Unusable cursor**: When nothing in the change log sits at or below the cursor, that cursor was issued against a log the server no longer has, and no future delta can carry it forward. The response is then `{ "changes": [], "nextCursor": 0, "hasMore": false, "resyncRequired": true }`. The client discards its cached history, refetches it through the room endpoints, and resumes from `0`. `resyncRequired` is absent on every other response; a cursor that is merely caught up still gets the cursor echoed back with no changes.
+- **Unusable cursor**: When the cursor falls outside the range the change log currently spans — below its oldest sequence, as a reseeded log leaves it, or above its newest, as restoring an older dump leaves it — that cursor was issued against a log the server no longer has, and no future delta can carry it forward. The response is then `{ "changes": [], "nextCursor": 0, "hasMore": false, "resyncRequired": true }`. The client discards its cached history, refetches it through the room endpoints, and resumes from `0`. `resyncRequired` is absent on every other response; a cursor that is merely caught up still gets the cursor echoed back with no changes.
 - **Visibility**: Membership is checked on every request. For rooms with hidden history, changes at or before the member's Join Boundary are excluded.
 
 #### `POST /attachments`

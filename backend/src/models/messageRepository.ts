@@ -854,23 +854,38 @@ export class MessageRepository implements IMessageRepository {
   }
 
   /**
-   * Whether the durable change log still reaches back to `cursor`.
+   * Whether `cursor` still falls inside the durable change log.
    *
    * Asked globally rather than per viewer: the question is whether the log a
    * cursor was issued against still exists, not whether this member may read
-   * it. A `false` means every sequence at or below the cursor is gone, so no
-   * future delta can carry that client forward and it has to resynchronise.
-   * `TRUNCATE ... CASCADE` from `db:seed` empties `message_changes` while
-   * leaving `realtime_counters` at its old high-water mark, which is exactly
-   * the case a counter comparison would miss.
+   * it. Both ends matter, and each catches a failure the other misses:
+   *
+   * - **Below the log.** `TRUNCATE ... CASCADE` from `db:seed` empties
+   *   `message_changes` while leaving `realtime_counters` at its old
+   *   high-water mark, so the next change lands above the cursor a client is
+   *   still holding and every delta stays out of its `change_sequence >
+   *   cursor` window.
+   * - **Above the log.** Restoring an older dump leaves the log topping out
+   *   below that same cursor. Sequences at or below it still exist, so asking
+   *   only about those would call the cursor fine while the client silently
+   *   misses everything the restore rolled back.
+   *
+   * `change_sequence` is the primary key, so both aggregates are index scans.
    */
-  async hasChangeAtOrBefore(cursor: number): Promise<boolean> {
-    const rows = await this.sql<Array<{ has_change: boolean }>>`
-      SELECT EXISTS (
-        SELECT 1 FROM message_changes WHERE change_sequence <= ${cursor}
-      ) AS has_change
+  async isCursorWithinChangeLog(cursor: number): Promise<boolean> {
+    const rows = await this.sql<Array<{
+      min_seq: number | string | null;
+      max_seq: number | string | null;
+    }>>`
+      SELECT MIN(change_sequence) AS min_seq, MAX(change_sequence) AS max_seq
+      FROM message_changes
     `;
-    return rows[0]?.has_change === true;
+    const minSeq = rows[0]?.min_seq;
+    const maxSeq = rows[0]?.max_seq;
+    // An empty log answers NULL for both: nothing to be inside of.
+    if (minSeq === null || minSeq === undefined) return false;
+    if (maxSeq === null || maxSeq === undefined) return false;
+    return cursor >= Number(minSeq) && cursor <= Number(maxSeq);
   }
 
   async findChangesForUser(userId: string, cursor: number, limit: number): Promise<MessageChange[]> {

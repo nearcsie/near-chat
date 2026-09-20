@@ -1,17 +1,11 @@
-import { describe, it, expect, beforeEach, afterAll, mock } from 'bun:test';
+import { describe, it, expect, beforeEach, mock } from 'bun:test';
 import { Hono } from 'hono';
 import type { MessageChange, MessageWithSender } from '@shared/types';
 import { makeSyncRoutes } from '../../../src/routes/syncRoutes';
-import { authMiddleware } from '../../../src/middlewares/authMiddleware';
 import { errorHandler } from '../../../src/middlewares/errorHandler';
-import { signToken } from '../../../src/utils/jwt';
 
 const CALLER_ID = '11111111-1111-4111-8111-111111111111';
 const OTHER_ID = '22222222-2222-4222-8222-222222222222';
-
-const mockSqlFn: any = mock().mockResolvedValue([{ user_id: CALLER_ID }]);
-mockSqlFn.unsafe = mock().mockResolvedValue([{}]);
-mock.module('../../../src/models/db', () => ({ default: mockSqlFn }));
 
 const message = (senderId: string): MessageWithSender => ({
   messageId: '33333333-3333-4333-8333-333333333333',
@@ -37,27 +31,28 @@ const change = (changeSequence: number, commandId?: string): MessageChange => {
 
 describe('GET /sync', () => {
   let service: any;
-  let token: string;
 
-  // Mounted the way `bootstrap/httpApp.ts` mounts it: an auth-guarded sub-app
-  // routed at the prefix, so the test exercises the same path the server does.
+  // Mounted at the same prefix `bootstrap/httpApp.ts` uses, but with the auth
+  // context set directly rather than through `authMiddleware`: the middleware
+  // reads the shared SQL client, and stubbing that module would leak a fake
+  // `models/db` into every unit file loaded after this one
+  // (`backend/tests/AGENTS.md`). What is under test here is the route, and it
+  // only ever reads `c.get('user')`.
   const get = (query: string) => {
     const app = new Hono();
     app.onError(errorHandler);
     const syncApi = new Hono();
-    syncApi.use('*', authMiddleware);
+    syncApi.use('*', async (c, next) => {
+      c.set('user', { userId: CALLER_ID, name: 'Caller' });
+      await next();
+    });
     syncApi.route('/', makeSyncRoutes(service));
     app.route('/api/v1/sync', syncApi);
-    return app.request(`/api/v1/sync${query}`, { headers: { authorization: `Bearer ${token}` } });
+    return app.request(`/api/v1/sync${query}`);
   };
 
-  beforeEach(async () => {
-    token = await signToken({ userId: CALLER_ID, email: 'caller@test.com' } as any);
+  beforeEach(() => {
     service = { sync: mock().mockResolvedValue({ changes: [], resyncRequired: false }) };
-  });
-
-  afterAll(() => {
-    mock.restore();
   });
 
   it('advances the cursor to the last change of the page', async () => {

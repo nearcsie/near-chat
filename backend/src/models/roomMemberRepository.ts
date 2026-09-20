@@ -199,15 +199,21 @@ export class RoomMemberRepository implements IRoomMemberRepository {
       if (messageRows.length === 0) throw new Error('Message not found');
 
       if (commandId) {
+        // Throws when the key is already spent on something else; returning
+        // means the receipt describes this very command, so it is a replay.
+        const rejectMismatchedReceipt = (receipt: { room_id: string; message_id: string | null }) => {
+          if (receipt.room_id !== roomId) throw new IdempotencyConflictError('Idempotency-Key was already used for another room');
+          if (receipt.message_id && receipt.message_id !== messageId) {
+            throw new IdempotencyConflictError('Idempotency-Key was already used for another message');
+          }
+        };
+
         const prior = await tx<{ room_id: string; message_id: string | null }[]>`
           SELECT room_id, message_id FROM read_position_commands
           WHERE user_id = ${userId} AND command_id = ${commandId}
         `;
         if (prior.length > 0) {
-          if (prior[0].room_id !== roomId) throw new IdempotencyConflictError('Idempotency-Key was already used for another room');
-          if (prior[0].message_id && prior[0].message_id !== messageId) {
-            throw new IdempotencyConflictError('Idempotency-Key was already used for another message');
-          }
+          rejectMismatchedReceipt(prior[0]);
           replayedCommand = true;
           updated = memberRows[0];
           return;
@@ -218,7 +224,25 @@ export class RoomMemberRepository implements IRoomMemberRepository {
           ON CONFLICT (user_id, command_id) DO NOTHING
           RETURNING command_id
         `;
-        if (receipt.length === 0) throw new ConflictError('The read-position command could not be applied');
+        if (receipt.length === 0) {
+          // The `FOR UPDATE` above locks one room's membership row, so the
+          // same key aimed at two rooms at once reads an empty `prior` in both
+          // transactions and only one insert survives. The loser must classify
+          // itself off the winner's receipt: the key is spent either way, and
+          // reporting a plain `CONFLICT` here would tell a client to retry a
+          // command that can never succeed.
+          const winner = await tx<{ room_id: string; message_id: string | null }[]>`
+            SELECT room_id, message_id FROM read_position_commands
+            WHERE user_id = ${userId} AND command_id = ${commandId}
+          `;
+          if (winner.length === 0) throw new ConflictError('The read-position command could not be applied');
+          rejectMismatchedReceipt(winner[0]);
+          // Same user, key, room and message: an identical command applied
+          // concurrently, which is the replay the receipt exists to absorb.
+          replayedCommand = true;
+          updated = memberRows[0];
+          return;
+        }
       }
 
       const rows = await tx<RoomMemberRow[]>`
