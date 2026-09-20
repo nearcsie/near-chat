@@ -194,6 +194,18 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | undefined>(undefined);
   const [user, setUser] = useState<User>({ username: "", email: "", avatar: "" });
+
+  /**
+   * Drops a sync cursor the server has told us it can no longer honour, so the
+   * next request re-reads the change log from the start. The stored value goes
+   * with it: keeping it would send the same dead cursor again on the next
+   * mount. Only the cursor is reset here — rebuilding cached history belongs to
+   * the local storage layer (#678) and the cache read path (#679).
+   */
+  const resetSyncCursor = useCallback(() => {
+    syncCursorRef.current = 0;
+    if (currentUserId) sessionStorage.removeItem(`near:syncCursor:${currentUserId}`);
+  }, [currentUserId]);
   const [adminAccess, setAdminAccess] = useState<AdminAccessState>("checking");
   const [adminMonitoring, setAdminMonitoring] = useState<AdminMonitoringState>(emptyAdminMonitoringState);
   const [adminError, setAdminError] = useState<AdminError>(null);
@@ -767,6 +779,10 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           // The effect may have been replaced while the request was in flight.
           // Do not let an obsolete connection mutate the new session's state.
           if (disposed) return;
+          if (response.resyncRequired) {
+            resetSyncCursor();
+            continue;
+          }
           applySyncChanges(response.changes);
           if (response.nextCursor > syncCursorRef.current) {
             syncCursorRef.current = response.nextCursor;
@@ -939,6 +955,10 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         while (hasMore) {
           const response = await syncChanges(token, syncCursorRef.current, 250);
           if (disposed) return;
+          if (response.resyncRequired) {
+            resetSyncCursor();
+            continue;
+          }
           applySyncChanges(response.changes);
           if (response.nextCursor > syncCursorRef.current) {
             syncCursorRef.current = response.nextCursor;

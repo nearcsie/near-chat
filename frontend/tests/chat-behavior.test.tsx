@@ -15,6 +15,7 @@ import {
   __failNextRevisionCommand,
   __gateNextSync,
   __getApiCallLog,
+  __queueResyncRequired,
 } from "./mocks/api";
 import { useChat } from "@/context/ChatContext";
 
@@ -475,5 +476,44 @@ describe("right panel", () => {
     fireEvent.click(screen.getByTitle("Show Info Panel"));
     await app.settle();
     expect(screen.getByText("Members (8)")).toBeTruthy();
+  });
+});
+
+describe("sync cursor recovery", () => {
+  test("restarts from zero when the server reports the cursor is unusable", async () => {
+    // A cursor left over from before a reseed or a restore: the server can no
+    // longer honour it, and every delta after it is outside the client's
+    // window, so holding on to it strands this session for good.
+    sessionStorage.setItem(`near:syncCursor:${ME_ID}`, "500");
+    const app = await mountChatApp("/chat/room-1");
+    expect(__getApiCallLog("syncChanges")[0]?.args[0]).toBe(500);
+
+    // The reconnect is what re-runs the sync loop; queue the server's answer
+    // for it. (Mounting resets the API mock, so this cannot be queued sooner.)
+    __queueResyncRequired();
+    act(() => {
+      app.socket().disconnect();
+      app.socket().connect();
+    });
+    await app.settle();
+
+    const cursors = __getApiCallLog("syncChanges").map((call) => call.args[0]);
+    expect(cursors.at(-1)).toBe(0);
+    // The stored cursor goes too, or the next mount sends the dead one again.
+    expect(sessionStorage.getItem(`near:syncCursor:${ME_ID}`)).toBeNull();
+  });
+
+  test("keeps the cursor when the server answers normally", async () => {
+    sessionStorage.setItem(`near:syncCursor:${ME_ID}`, "500");
+    const app = await mountChatApp("/chat/room-1");
+
+    act(() => {
+      app.socket().disconnect();
+      app.socket().connect();
+    });
+    await app.settle();
+
+    expect(__getApiCallLog("syncChanges").map((call) => call.args[0])).not.toContain(0);
+    expect(sessionStorage.getItem(`near:syncCursor:${ME_ID}`)).toBe("500");
   });
 });
