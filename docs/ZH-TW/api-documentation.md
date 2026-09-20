@@ -1238,7 +1238,7 @@ NEXT_PUBLIC_API_URL=http://localhost:4005
 - **查詢參數**: `cursor`（非負整數，預設 `0`）與 `limit`（1–500，預設 `100`）。
 - **回應**: `{ "changes": [...], "nextCursor": 42, "hasMore": false }`；每筆變更含 `changeSequence`、`messageSequence`、`revision`、`changeType`、`message` 與 `commandId`。
 - **`commandId`**: 產生該變更的命令所用的 `Idempotency-Key`，只會出現在呼叫者自己的變更上，其他成員的變更永遠不會帶。客戶端可藉此認出自己已送出的命令，不必重送。**沒有帶 `commandId` 不等於命令沒有生效**：no-op 的收回與已讀位置命令把 receipt 記在 change log 之外，本來就不會出現於此；命令本身的 `2xx` 回應仍是唯一的 ack。
-- **不可用的 cursor**: 當 cursor 落在 change log 目前涵蓋的範圍之外——低於最舊的序號（重新 seed 後的狀態），或高於最新的序號（還原較舊備份後的狀態）——代表這個 cursor 是對一份伺服器已不再持有的 log 發出的，之後的任何 delta 都不可能把它往前帶。此時回應為 `{ "changes": [], "nextCursor": 0, "hasMore": false, "resyncRequired": true }`，客戶端應丟棄本地快取的歷史，改以聊天室端點重新取得，並從 `0` 重新開始。其餘情況一律不會出現 `resyncRequired`；單純已追上的 cursor 仍然是原值回傳、變更為空。
+- **不可用的 cursor**: 當 cursor 落在 change log 目前涵蓋的範圍之外——低於最舊的序號（重新 seed 後的狀態），或高於最新的序號（還原較舊備份後的狀態）——代表這個 cursor 是對一份伺服器已不再持有的 log 發出的，之後的任何 delta 都不可能把它往前帶。該頁最尾端的序號同樣受此上界檢查，因此在請求進行中落地的還原不會把 log 已不再涵蓋的序號交出去。此時回應為 `{ "changes": [], "nextCursor": 0, "hasMore": false, "resyncRequired": true }`，客戶端應丟棄本地快取的歷史，改以聊天室端點重新取得，並從 `0` 重新開始。其餘情況一律不會出現 `resyncRequired`；單純已追上的 cursor 仍然是原值回傳、變更為空。
 - **可見性**: 每次請求都重新檢查成員資格；隱藏歷史的聊天室會排除 Join Boundary 以前的變更。
 
 #### `POST /attachments`

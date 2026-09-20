@@ -91,57 +91,33 @@ describe('findChangesForUser command id projection', () => {
   });
 });
 
-describe('isCursorWithinChangeLog', () => {
+describe('readChangeLogBounds', () => {
   it('asks the log for both of its ends in one query', async () => {
     const { sql, calls } = makeSql([{ min_seq: 1, max_seq: 50 }]);
 
-    const result = await new MessageRepository(sql).isCursorWithinChangeLog(42);
+    const bounds = await new MessageRepository(sql).readChangeLogBounds();
 
-    expect(result).toBe(true);
+    expect(bounds).toEqual({ oldest: 1, newest: 50 });
     expect(calls).toHaveLength(1);
     expect(calls[0].text.replace(/\s+/g, ' '))
       .toInclude('MIN(change_sequence) AS min_seq, MAX(change_sequence) AS max_seq');
   });
 
-  it('rejects a cursor the log no longer reaches back to', async () => {
-    // What `db:seed` leaves behind: `message_changes` emptied by TRUNCATE
-    // CASCADE while `realtime_counters` keeps its old high-water mark, so the
-    // log resumes above the cursor the client is still holding.
-    const { sql } = makeSql([{ min_seq: 100, max_seq: 200 }]);
-
-    expect(await new MessageRepository(sql).isCursorWithinChangeLog(42)).toBe(false);
-  });
-
-  it('rejects a cursor above the high-water mark, which an older restore leaves behind', async () => {
-    // Sequences at or below 100 still exist here, so asking only about those
-    // would call this cursor fine while every change the restore rolled back
-    // stays outside the client's `change_sequence > cursor` window.
-    const { sql } = makeSql([{ min_seq: 1, max_seq: 50 }]);
-
-    expect(await new MessageRepository(sql).isCursorWithinChangeLog(100)).toBe(false);
-  });
-
-  it('accepts a cursor sitting exactly at the head of the log', async () => {
-    const { sql } = makeSql([{ min_seq: 1, max_seq: 42 }]);
-
-    expect(await new MessageRepository(sql).isCursorWithinChangeLog(42)).toBe(true);
-  });
-
-  it('rejects every cursor while the log is empty', async () => {
+  it('reports no bounds at all while the log is empty', async () => {
     const { sql } = makeSql([{ min_seq: null, max_seq: null }]);
 
-    expect(await new MessageRepository(sql).isCursorWithinChangeLog(42)).toBe(false);
+    expect(await new MessageRepository(sql).readChangeLogBounds()).toBeNull();
   });
 
   it('reads the aggregates as numbers when the driver hands back BIGINT strings', async () => {
     const { sql } = makeSql([{ min_seq: '1', max_seq: '50' }]);
 
-    expect(await new MessageRepository(sql).isCursorWithinChangeLog(42)).toBe(true);
+    expect(await new MessageRepository(sql).readChangeLogBounds()).toEqual({ oldest: 1, newest: 50 });
   });
 
-  it('answers false rather than throwing when the probe comes back empty', async () => {
+  it('answers null rather than throwing when the probe comes back empty', async () => {
     const { sql } = makeSql([]);
 
-    expect(await new MessageRepository(sql).isCursorWithinChangeLog(42)).toBe(false);
+    expect(await new MessageRepository(sql).readChangeLogBounds()).toBeNull();
   });
 });

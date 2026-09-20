@@ -314,22 +314,31 @@ export const makeMessageService = (
       // threw away. So the coverage of a positive cursor is checked on every
       // page, not only an empty one.
       const changes = await messageRepo.findChangesForUser(userId, cursor, limit);
-      if (cursor === 0 || messageRepo.isCursorWithinChangeLog === undefined) {
+      if (cursor === 0 || messageRepo.readChangeLogBounds === undefined) {
         return { changes, resyncRequired: false };
       }
-      // **The probe runs after the page, and the order is load-bearing.** The
-      // two statements take separate snapshots, so a reset landing between
+      // **The bounds are read after the page, and the order is load-bearing.**
+      // The two statements take separate snapshots, so a reset landing between
       // them decides what each one sees. Reading the page first makes every
       // interleaving fail safe: a reset after the page read is still visible
-      // to the probe, which then finds the cursor outside the new log and the
-      // page gets withheld. Issuing them together, or probing first, leaves
-      // the one ordering where the probe clears a cursor against the old log
-      // while the page already carries post-reset changes -- and that client
-      // advances onto a cursor the new log does consider valid, so no later
-      // sync ever corrects it. The cost is a second round trip on a call made
-      // per reconnect, not per message.
-      const cursorWithinLog = await messageRepo.isCursorWithinChangeLog(cursor);
-      return { changes, resyncRequired: !cursorWithinLog };
+      // here, the cursor or the page then falls outside the log, and the page
+      // gets withheld. Reading the bounds first, or together, leaves the one
+      // ordering where they clear a cursor against the old log while the page
+      // already carries post-reset changes -- and that client advances onto a
+      // cursor the new log does consider valid, so no later sync ever corrects
+      // it. The cost is a second round trip on a call made per reconnect, not
+      // per message.
+      const bounds = await messageRepo.readChangeLogBounds();
+      // Both ends of the cursor, and the far end of the page: a restore that
+      // lands mid-request can leave the page carrying sequences the log no
+      // longer reaches, and handing those over would advance the client onto
+      // rows that no longer exist.
+      const pageEnd = changes.at(-1)?.changeSequence ?? cursor;
+      const resyncRequired = bounds === null
+        || cursor < bounds.oldest
+        || cursor > bounds.newest
+        || pageEnd > bounds.newest;
+      return { changes, resyncRequired };
     },
   };
 };

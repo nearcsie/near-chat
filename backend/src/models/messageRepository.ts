@@ -854,11 +854,12 @@ export class MessageRepository implements IMessageRepository {
   }
 
   /**
-   * Whether `cursor` still falls inside the durable change log.
+   * The oldest and newest sequences the durable change log currently holds, or
+   * `null` while it holds nothing.
    *
-   * Asked globally rather than per viewer: the question is whether the log a
-   * cursor was issued against still exists, not whether this member may read
-   * it. Both ends matter, and each catches a failure the other misses:
+   * Read globally rather than per viewer: the question is what the log
+   * contains, not what this member may see. Callers decide what to do with the
+   * bounds, and both ends matter, each catching what the other misses:
    *
    * - **Below the log.** `TRUNCATE ... CASCADE` from `db:seed` empties
    *   `message_changes` while leaving `realtime_counters` at its old
@@ -872,7 +873,7 @@ export class MessageRepository implements IMessageRepository {
    *
    * `change_sequence` is the primary key, so both aggregates are index scans.
    */
-  async isCursorWithinChangeLog(cursor: number): Promise<boolean> {
+  async readChangeLogBounds(): Promise<{ oldest: number; newest: number } | null> {
     const rows = await this.sql<Array<{
       min_seq: number | string | null;
       max_seq: number | string | null;
@@ -882,10 +883,10 @@ export class MessageRepository implements IMessageRepository {
     `;
     const minSeq = rows[0]?.min_seq;
     const maxSeq = rows[0]?.max_seq;
-    // An empty log answers NULL for both: nothing to be inside of.
-    if (minSeq === null || minSeq === undefined) return false;
-    if (maxSeq === null || maxSeq === undefined) return false;
-    return cursor >= Number(minSeq) && cursor <= Number(maxSeq);
+    // An empty log answers NULL for both: there are no bounds to report.
+    if (minSeq === null || minSeq === undefined) return null;
+    if (maxSeq === null || maxSeq === undefined) return null;
+    return { oldest: Number(minSeq), newest: Number(maxSeq) };
   }
 
   async findChangesForUser(userId: string, cursor: number, limit: number): Promise<MessageChange[]> {
