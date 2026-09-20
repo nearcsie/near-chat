@@ -265,6 +265,12 @@
     },
     {
       "model": "prod",
+      "path": "services.backend.environment.REALTIME_CLUSTER_ID",
+      "expect": null,
+      "why": "#631: a bare pass-through, like LOG_LEVEL and INSTANCE_ID above -- unset reaches the container unset. it must stay deployer-settable rather than becoming a committed literal. backend/src/config/env.ts:410 reads it and backend/src/realtime/redisAdapter.ts:38 scopes the Socket.IO cluster channel to `near-chat-ws:<id>` when it is set, bare `near-chat-ws` when it is not. A literal here would hand every deployment using this file the SAME scope, which is precisely the collision the variable exists to prevent: two stacks on one Redis treat each other's frames as a peer's, and seed.ts gives every seeded deployment the same room and user ids. Arrived on main after this contract was written; the environment key-set row is what caught it."
+    },
+    {
+      "model": "prod",
       "path": "services.backend.stop_grace_period",
       "expect": "30s",
       "why": "#586: the drain in src/index.ts has a ~14s worst case and arms a 20s deadline. Docker's 10s default SIGKILLs the process while it is handing presence leases back, leaving users showing online until PRESENCE_TTL_MS expires."
@@ -363,6 +369,7 @@
           "PRESENCE_GRACE_MS",
           "PRESENCE_TTL_MS",
           "RATE_LIMIT_DISABLED",
+          "REALTIME_CLUSTER_ID",
           "REDIS_URL",
           "TRUST_PROXY_HOPS",
           "TYPING_TTL_MS"
@@ -1033,6 +1040,7 @@
           "PRESENCE_GRACE_MS",
           "PRESENCE_TTL_MS",
           "RATE_LIMIT_DISABLED",
+          "REALTIME_CLUSTER_ID",
           "REDIS_URL",
           "TRUST_PROXY_HOPS",
           "TYPING_TTL_MS"
@@ -1322,6 +1330,14 @@
         "$matches": "^\\$\\{INSTANCE_ID(\\}|:?-[^{}]*\\})$"
       },
       "why": "#631: shape, not default. Unset means the backend generates one per process; a stable per-replica name lets a restarted process replace its own presence lease instead of adding a second one that waits out the TTL. Hardcoded, every replica shares one id and they overwrite each other's leases."
+    },
+    {
+      "model": "release",
+      "path": "services.backend.environment.REALTIME_CLUSTER_ID",
+      "expect": {
+        "$matches": "^\\$\\{REALTIME_CLUSTER_ID(\\}|:?-[^{}]*\\})$"
+      },
+      "why": "#631: shape, not default -- as with INSTANCE_ID above. it must stay deployer-settable rather than becoming a committed literal. backend/src/config/env.ts:410 reads it and backend/src/realtime/redisAdapter.ts:38 scopes the Socket.IO cluster channel to `near-chat-ws:<id>` when it is set, bare `near-chat-ws` when it is not. A literal here would hand every deployment using this file the SAME scope, which is precisely the collision the variable exists to prevent: two stacks on one Redis treat each other's frames as a peer's, and seed.ts gives every seeded deployment the same room and user ids. Arrived on main after this contract was written; the environment key-set row is what caught it."
     },
     {
       "model": "prod",
