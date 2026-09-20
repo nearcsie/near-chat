@@ -361,12 +361,23 @@ jobs:
           RATE_LIMIT_DISABLED=false
           EOF
 
+      # Deliberately the *pre-#652* shape of this file rather than a copy of the
+      # current example: `.env.test` is gitignored, so an existing checkout keeps
+      # whatever it already had and never gains REDIS_URL_TEST by pulling. That
+      # upgrade path is the one that stayed broken, so it is the one worth
+      # asserting — the compose default is what has to carry it, and copying the
+      # example here would supply the variable and hide that.
+      #
       # Written before the stack boots, so the bind-mounted file is already in
       # place and nothing appears under a running `bun --watch` mid-job. The dev
       # server itself never reads it: `bun run` loads `.env.<NODE_ENV>`, and only
       # `bun test` loads `.env.test`.
-      - name: Create the test env file the documented flow depends on
-        run: cp backend/.env.test.example backend/.env.test
+      - name: Write a pre-#652 test env file, to prove the upgrade path
+        run: |
+          set -euo pipefail
+          cat > backend/.env.test <<'EOF'
+          DATABASE_URL_TEST=postgresql://postgres:postgres@db-test:5432/ntnu_test
+          EOF
 
       - name: Build and start db, redis and backend from the dev compose
         run: |

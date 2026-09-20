@@ -586,6 +586,8 @@ pnpm --filter near-chat-backend test:db:down
 
 `.env.test.example` 內啟用的值都是 backend **容器內**的位址（`db-test:5432`、`redis:6379`），因為步驟 3 是在容器內執行測試。`localhost:5436` 與 `localhost:6385` 只是發布到主機端的埠對應——範本中已將兩者各自以註解形式附上，供改在主機端的 `backend/` 目錄執行時使用。無論哪一種情況，真實環境變數都會覆寫此檔案的值，`ci-database.yml` 正是以此讓同一套測試指向它自己的服務。
 
+**在這次 Redis 變更之前就已經有 `.env.test` 了？** 步驟 3 不需要重做。`.env.test` 已被 gitignore，拉取更新不會改到你本機那一份，因此它不會自動獲得 `REDIS_URL_TEST`——但 `docker-compose.yml` 已將該變數預設為容器內的 `redis://redis:6379`，所以不論你的檔案內容為何，容器內的測試都能正常連線。只有**主機端**的執行才會從該檔案讀取這個值，也只有那種情況需要自行補上 `REDIS_URL_TEST=redis://localhost:6385`。
+
 `test:db:down` 刻意只停止 `db-test`：`redis` 屬於一般 dev stack，停掉它會一併影響正在執行的 dev backend 的 presence 狀態。
 
 ### 執行所有測試
@@ -671,7 +673,7 @@ describe('userRepository', () => {
   ```bash
   cp backend/.env.test.example backend/.env.test
   ```
-* **以 `docker compose exec backend ...` 執行測試時出現 `Redis is not reachable at redis://localhost:6385`**：那是**主機端**的埠對應，容器內沒有任何服務監聽該位址。請確認 `backend/.env.test` 已存在（同上方的 `cp` 指令），讓 `REDIS_URL_TEST` 解析為容器內的 `redis://redis:6379`。若改在主機端的 `backend/` 目錄執行則情況相反：該情境下 `localhost:6385` 才是正確位址，範本中已附上這個註解版本。
+* **以 `docker compose exec backend ...` 執行測試時出現 `Redis is not reachable at redis://localhost:6385`**：那是**主機端**的埠對應，容器內沒有任何服務監聽該位址。`docker-compose.yml` 已將 `REDIS_URL_TEST` 預設為容器內的 `redis://redis:6379`，因此會看到這個位址代表該預設值被覆寫了——通常是執行 `docker compose up` 的那個 shell 匯出了 `REDIS_URL_TEST`，而該值在容器建立時就已固定。請取消該變數並重建容器（`docker compose up -d --force-recreate backend`）。若改在主機端的 `backend/` 目錄執行則情況相反：該情境下 `localhost:6385` 才是正確位址，且完全不經過 Compose，值來自你的 `backend/.env.test`——範本中已附上這個註解版本。
 * **`db-test` 連線掛起或逾時**：請確認 `db-test` 正在運行，指令為：`docker compose ps db-test`。若沒啟動，請以 `docker compose up -d --wait db-test` 啟動它。
 * **`TRUNCATE` 失敗**：請確認已透過以下指令在測試資料庫中套用了遷移：
   ```bash

@@ -640,6 +640,8 @@ pnpm --filter near-chat-backend test:db:down
 
 The values shipped in `.env.test.example` are the addresses **inside** the backend container (`db-test:5432`, `redis:6379`), because step 3 runs the suite there. `localhost:5436` and `localhost:6385` are only the host-side published mappings — the example carries each of them as a commented alternative, for a run started from `backend/` on the host instead. A real environment variable overrides the file either way, which is how `ci-database.yml` aims the same suite at its own services.
 
+**Already had a `.env.test` before this Redis change?** You do not need to redo it for step 3. `.env.test` is gitignored, so pulling never updates yours and it will not have gained `REDIS_URL_TEST` — but `docker-compose.yml` defaults that variable to the in-container `redis://redis:6379`, so the containerised run works regardless of what your file contains. Only a **host-side** run reads the value from the file, and only there do you need to add `REDIS_URL_TEST=redis://localhost:6385` yourself.
+
 `test:db:down` deliberately stops only `db-test`. `redis` belongs to the plain dev stack, so stopping it would take a running dev backend's presence state with it.
 
 ### Running All Tests
@@ -731,7 +733,7 @@ describe('userRepository', () => {
   ```bash
   cp backend/.env.test.example backend/.env.test
   ```
-* **`Redis is not reachable at redis://localhost:6385`** while running the suite with `docker compose exec backend ...`: that is the *host-side* mapping, and nothing listens on it inside the container. Ensure `backend/.env.test` exists (same `cp` as above) so `REDIS_URL_TEST` resolves to the in-container `redis://redis:6379`. Running from `backend/` on the host instead is the mirror image: there `localhost:6385` is correct, and it is the commented alternative in the example.
+* **`Redis is not reachable at redis://localhost:6385`** while running the suite with `docker compose exec backend ...`: that is the *host-side* mapping, and nothing listens on it inside the container. `docker-compose.yml` defaults `REDIS_URL_TEST` to the in-container `redis://redis:6379`, so seeing this address means something overrode that default — an exported `REDIS_URL_TEST` in the shell that ran `docker compose up`, which is baked in at container-create time. Clear it and recreate the container (`docker compose up -d --force-recreate backend`). Running from `backend/` on the host instead is the mirror image: there `localhost:6385` is correct, and Compose is not involved, so the value comes from your `backend/.env.test` — the example carries it as a commented alternative.
 * **`db-test` connection hangs/timeouts**: Ensure `db-test` is running using `docker compose ps db-test`. Spin it up with `docker compose up -d --wait db-test` if down.
 * **`TRUNCATE` failures**: Make sure migrations were applied to the test DB using:
   ```bash
