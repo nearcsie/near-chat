@@ -23,6 +23,12 @@ if (!connectionString && !isTestEnv) {
 }
 
 // Log the target, never the connection string — it embeds the DB credentials.
+// Deliberately not the logger: this is a boot breadcrumb telling an operator
+// which database the container attached to, so it must not be suppressible by
+// their own LOG_LEVEL. It is also `silent` under the test runner, where
+// tests/unit/models/dbBootstrap.test.ts reads this line off a subprocess's
+// stdout to pin both the target selection and the absence of credentials.
+// eslint-disable-next-line no-console
 console.log(
   `DB INIT: env=${nodeEnv ?? "unknown"} target=${describeDatabaseTarget(connectionString)}`,
 );

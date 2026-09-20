@@ -173,7 +173,7 @@ export const createPresenceTracker = ({
       if (rooms.length === 0) return;
       io.to(rooms).emit('user_status', { userId, status });
     } catch (err) {
-      console.error(`Failed to broadcast ${status} status for user ${userId}:`, err);
+      logger.error({ err, userId, status }, 'Failed to broadcast presence status');
     }
   };
 

@@ -5,6 +5,7 @@ import type { ChatServer } from './authSocket';
 import { trackUserConnection, trackUserDisconnection, type PresenceTracker } from './presence';
 import { mapErrorToApiShape } from '../utils/mapError';
 import { env } from '../config/env';
+import { logger } from '../utils/logger';
 
 interface SocketDeps {
   roomMemberRepository: Pick<IRoomMemberRepository, 'findMember' | 'findByUser'>;
@@ -209,7 +210,7 @@ export const attachSockets = (io: ChatServer, deps: SocketDeps): void => {
         // access, and guessing would drop the user out of rooms they still
         // hold. The cost is that this user stays unverified, which is why the
         // caller retries rather than treating the pass as finished.
-        console.error('Failed to read membership while reconciling subscriptions:', error);
+        logger.error({ err: error }, 'Failed to read membership while reconciling subscriptions');
         return undefined;
       }
     };
@@ -351,7 +352,7 @@ export const attachSockets = (io: ChatServer, deps: SocketDeps): void => {
       // something already struggling.
       await pause(retryDelay * 2 ** (attempt - 1));
     }
-    console.error(
+    logger.error(
       'Gave up reconciling room subscriptions after repeated membership read failures; '
       + 'sockets may still hold rooms that have been revoked',
     );
@@ -399,7 +400,7 @@ export const attachSockets = (io: ChatServer, deps: SocketDeps): void => {
           return;
         }
       } catch (error) {
-        console.error('Failed to reconcile room subscriptions:', error);
+        logger.error({ err: error }, 'Failed to reconcile room subscriptions');
       } finally {
         reconciling = undefined;
       }
@@ -486,7 +487,7 @@ export const attachSockets = (io: ChatServer, deps: SocketDeps): void => {
     void restoreSubscriptions.then(
       () => socket.emit('realtime_ready'),
       (error) => {
-        console.error('Failed to restore room subscriptions:', error);
+        logger.error({ err: error }, 'Failed to restore room subscriptions');
         if (typeof (socket as unknown as { disconnect?: (close?: boolean) => void }).disconnect === 'function') {
           socket.disconnect(true);
         }
@@ -495,7 +496,7 @@ export const attachSockets = (io: ChatServer, deps: SocketDeps): void => {
 
     if (deps.friendRepository) {
       presence.trackUserConnection(io, userId, socket.id, deps.friendRepository).catch((err) => {
-        console.error('trackUserConnection error:', err);
+        logger.error({ err }, 'trackUserConnection error');
       });
     }
 
@@ -506,7 +507,7 @@ export const attachSockets = (io: ChatServer, deps: SocketDeps): void => {
 
       if (deps.friendRepository) {
         presence.trackUserDisconnection(io, userId, socket.id, deps.friendRepository).catch((err) => {
-          console.error('trackUserDisconnection error:', err);
+          logger.error({ err }, 'trackUserDisconnection error');
         });
       }
     });
