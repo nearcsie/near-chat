@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import type pino from 'pino';
 import type { RedisManager, RedisOutcome } from '../utils/redis';
 import { DEFAULT_PRESENCE_TTL_MS } from '../config/env';
@@ -25,11 +26,34 @@ export interface PresenceStore {
   onlineUsers(): Promise<RedisOutcome<string[]>>;
 }
 
+/** A Lua script together with the digest Redis will know it by. */
+interface CachedScript {
+  body: string;
+  sha: string;
+}
+
+/**
+ * Pairs a script with its digest so the two cannot drift apart.
+ *
+ * Redis names a cached script by the SHA1 of the exact bytes it was sent, so
+ * the digest is derived here rather than fetched: a `SCRIPT LOAD` at startup
+ * would buy nothing and would need a connection that may not be up yet. Kept
+ * in one value because a digest that disagreed with the body sent alongside it
+ * would turn every call into a silent `EVALSHA` miss followed by an `EVAL` —
+ * still correct, but strictly more traffic than sending the body alone, and
+ * nothing would ever report it. The integration tier pins this by asserting
+ * that a second call sends `EVALSHA` and nothing else.
+ */
+const cachedScript = (source: string): CachedScript => {
+  const body = source.trim();
+  return { body, sha: createHash('sha1').update(body).digest('hex') };
+};
+
 /**
  * Lua script: Sets instance field with TTL using HPEXPIRE.
  * Returns the holder count before the write. Rolls back if HPEXPIRE fails.
  */
-const HOLD_SCRIPT = `
+const HOLD_SCRIPT = cachedScript(`
 local before = redis.call('HLEN', KEYS[1])
 redis.call('HSET', KEYS[1], ARGV[1], ARGV[3])
 local expiry = redis.pcall('HPEXPIRE', KEYS[1], ARGV[2], 'FIELDS', 1, ARGV[1])
@@ -38,20 +62,63 @@ if type(expiry) == 'table' and expiry.err then
   return expiry
 end
 return before
-`.trim();
+`);
 
 /** Lua script: Deletes instance field and returns remaining holder count. */
-const RELEASE_SCRIPT = `
+const RELEASE_SCRIPT = cachedScript(`
 redis.call('HDEL', KEYS[1], ARGV[1])
 return redis.call('HLEN', KEYS[1])
-`.trim();
+`);
 
 /** Lua script: Queries holder counts for multiple user keys in one call. */
-const ONLINE_AMONG_SCRIPT = `
+const ONLINE_AMONG_SCRIPT = cachedScript(`
 local out = {}
 for i = 1, #KEYS do out[i] = redis.call('HLEN', KEYS[i]) end
 return out
-`.trim();
+`);
+
+/**
+ * True for Redis's "that digest is not in my script cache" rejection.
+ *
+ * Matched on the message because the outcome carries no code that separates
+ * one server error from another — `utils/redis.ts` surfaces them all the same
+ * way, exactly as the Redis 7.4 requirement below is recognised. `startsWith`
+ * rather than `includes` so that an error merely quoting the word cannot be
+ * read as a miss: a Lua runtime error embeds the script's own digest and
+ * `@user_script` in its text. The only error these three scripts raise
+ * themselves is `HPEXPIRE`'s, which begins with `ERR`.
+ */
+const isNoScript = (error: Error): boolean => error.message.startsWith('NOSCRIPT');
+
+/**
+ * Runs a script by digest, sending the body only when the server has to be
+ * told what that digest means.
+ *
+ * `EVALSHA` first every time, with no "already loaded" flag: the cache is the
+ * server's, not the connection's, and it can empty without the client
+ * observing anything at all — `SCRIPT FLUSH`, a restart, a replica promoted
+ * after a resync, since an RDB carries no script cache. A flag would have no
+ * correct moment to clear. The `EVAL` that answers a miss loads the script as
+ * a side effect, so a miss costs one extra round trip per script per server
+ * rather than one per call.
+ *
+ * Retried on `NOSCRIPT` and on nothing else, which is what makes the retry
+ * safe: Redis refuses an unknown digest *before* running anything, so sending
+ * the body cannot apply the script twice. A transient failure gives no such
+ * promise, and `HOLD_SCRIPT` is not idempotent — it reads `HLEN` before its
+ * own `HSET`, so a second run counts the caller's own field as a prior holder
+ * and `presence.ts` swallows the `online` it owed. Do not widen this to
+ * connection errors.
+ */
+const evalScript = async <T>(
+  redis: RedisManager,
+  { body, sha }: CachedScript,
+  args: string[],
+): Promise<RedisOutcome<T>> => {
+  const cached = await redis.command<T>('EVALSHA', [sha, ...args]);
+  if (cached.ok || !isNoScript(cached.error)) return cached;
+  return redis.command<T>('EVAL', [body, ...args]);
+};
 
 /** Coerces Redis reply values into a non-negative count. */
 const asCount = (value: unknown): number => {
@@ -97,8 +164,7 @@ export const createRedisPresenceStore = ({
 
   return {
     async hold(userId, connections) {
-      const result = await redis.command('EVAL', [
-        HOLD_SCRIPT,
+      const result = await evalScript(redis, HOLD_SCRIPT, [
         '1',
         presenceKey(userId),
         instanceId,
@@ -113,8 +179,7 @@ export const createRedisPresenceStore = ({
     },
 
     async release(userId) {
-      const result = await redis.command('EVAL', [
-        RELEASE_SCRIPT,
+      const result = await evalScript(redis, RELEASE_SCRIPT, [
         '1',
         presenceKey(userId),
         instanceId,
@@ -137,8 +202,11 @@ export const createRedisPresenceStore = ({
       const unique = [...new Set(userIds)];
       if (unique.length === 0) return { ok: true as const, value: new Set<string>() };
 
-      const result = await redis.command<unknown>('EVAL', [
-        ONLINE_AMONG_SCRIPT,
+      // One key per user in a single script: a Redis Cluster would refuse this
+      // with CROSSSLOT, since the keys are spread across slots. Recorded rather
+      // than worked around — Bun's client does not support Cluster at all, so
+      // the key schema is not what stands in the way. See docs/DEVELOPMENT.md.
+      const result = await evalScript<unknown>(redis, ONLINE_AMONG_SCRIPT, [
         String(unique.length),
         ...unique.map(presenceKey),
       ]);

@@ -1,4 +1,5 @@
 import { describe, it, expect, mock } from 'bun:test';
+import { createHash } from 'crypto';
 import pino from 'pino';
 import {
   createRedisPresenceStore,
@@ -40,6 +41,17 @@ const makeRedis = (replies: unknown[] | ((call: RecordedCommand) => unknown)) =>
 const makeStore = (redis: RedisManager, logger?: pino.Logger) =>
   createRedisPresenceStore({ redis, instanceId: 'alpha', ttlMs: 30_000, logger });
 
+/** The rejection Redis sends for a digest it does not have cached. */
+const noScript = new Error('NOSCRIPT No matching script. Please use EVAL.');
+
+/**
+ * Answers the first `EVALSHA` with a cache miss and the following `EVAL` with
+ * `reply`, which is the round trip every script makes against a server that has
+ * not seen it yet.
+ */
+const missThenLoad = (reply: unknown) => (call: RecordedCommand) =>
+  call.command === 'EVALSHA' ? noScript : reply;
+
 describe('redis presence store', () => {
   it('takes a lease and reports how many instances held one before', async () => {
     const { redis, calls } = makeRedis([2]);
@@ -48,14 +60,33 @@ describe('redis presence store', () => {
     const result = await store.hold('user-1', 3);
 
     expect(result).toEqual({ ok: true, value: 2 });
+    // One round trip, so nothing loads the script ahead of time: a `SCRIPT
+    // LOAD` at construction would also break `asks nothing at all for an empty
+    // page` below.
     expect(calls).toHaveLength(1);
-    expect(calls[0].command).toBe('EVAL');
-    const [script, numkeys, key, instanceId, ttl, connections] = calls[0].args;
+    expect(calls[0].command).toBe('EVALSHA');
+    const [sha, numkeys, key, instanceId, ttl, connections] = calls[0].args;
+    // Named by digest rather than by body — that is the whole point of the
+    // command; the body itself is asserted on the fallback below.
+    expect(sha).toMatch(/^[0-9a-f]{40}$/);
     expect(numkeys).toBe('1');
     expect(key).toBe(`${PRESENCE_KEY_PREFIX}user-1`);
     expect(instanceId).toBe('alpha');
     expect(ttl).toBe('30000');
     expect(connections).toBe('3');
+  });
+
+  it('sends the body when the server has dropped the script, and returns its reply', async () => {
+    const { redis, calls } = makeRedis(missThenLoad(2));
+    const store = makeStore(redis);
+
+    expect(await store.hold('user-1', 3)).toEqual({ ok: true, value: 2 });
+
+    expect(calls.map((c) => c.command)).toEqual(['EVALSHA', 'EVAL']);
+    const [script, ...rest] = calls[1].args;
+    // Everything after the script is what the digest was sent with, so a miss
+    // is invisible to the caller.
+    expect(rest).toEqual(calls[0].args.slice(1));
     // The write and the count that decides the online edge have to be one
     // operation; see the comment on HOLD_SCRIPT.
     expect(script).toContain('HLEN');
@@ -69,15 +100,46 @@ describe('redis presence store', () => {
     expect(script).toContain('HDEL');
   });
 
+  it('sends each script under its own digest', async () => {
+    // A digest paired with the wrong body would still work — every call would
+    // just miss and fall back for ever — so nothing but this comparison would
+    // notice. The integration tier proves the digests match the server's.
+    const seen = async (run: (store: ReturnType<typeof makeStore>) => Promise<unknown>) => {
+      const { redis, calls } = makeRedis(missThenLoad(0));
+      await run(makeStore(redis));
+      return { sha: calls[0].args[0], body: calls[1].args[0] };
+    };
+
+    for (const { sha, body } of [
+      await seen((store) => store.hold('user-1', 1)),
+      await seen((store) => store.release('user-1')),
+      await seen((store) => store.areOnline(['user-1'])),
+    ]) {
+      expect(sha).toBe(createHash('sha1').update(body).digest('hex'));
+    }
+  });
+
+  it('does not resend the body for a failure that is not a cache miss', async () => {
+    const { redis, calls } = makeRedis(() => new Error('ERR unknown command HPEXPIRE'));
+    const result = await makeStore(redis).hold('user-1', 1);
+
+    // Redis refuses an unknown digest before running anything, which is what
+    // makes resending safe. Any other failure may have run the script already,
+    // and `HOLD_SCRIPT` counts its own field on a second run — see the comment
+    // on `evalScript`.
+    expect(calls).toHaveLength(1);
+    expect(result.ok).toBe(false);
+  });
+
   it('drops the lease and reports who is left', async () => {
-    const { redis, calls } = makeRedis([0]);
+    const { redis, calls } = makeRedis(missThenLoad(0));
     const store = makeStore(redis);
 
     expect(await store.release('user-1')).toEqual({ ok: true, value: 0 });
-    expect(calls[0].command).toBe('EVAL');
+    expect(calls[0].command).toBe('EVALSHA');
     expect(calls[0].args[2]).toBe(presenceKey('user-1'));
     expect(calls[0].args[3]).toBe('alpha');
-    expect(calls[0].args[0]).toContain('HDEL');
+    expect(calls[1].args[0]).toContain('HDEL');
   });
 
   it('reads one user with HLEN, not EXISTS', async () => {
@@ -163,7 +225,7 @@ describe('redis presence store', () => {
       { level: 'warn' },
       { write: (line: string) => lines.push(line) } as pino.DestinationStream,
     );
-    const { redis } = makeRedis(() => new Error('ERR unknown command HPEXPIRE'));
+    const { redis, calls } = makeRedis(() => new Error('ERR unknown command HPEXPIRE'));
     const store = makeStore(redis, logger);
 
     await store.hold('user-1', 1);
@@ -172,5 +234,8 @@ describe('redis presence store', () => {
 
     expect(lines).toHaveLength(1);
     expect(lines[0]).toContain('7.4');
+    // Three operations, three commands: an old server is not a cache miss, so
+    // none of them is retried with the body.
+    expect(calls).toHaveLength(3);
   });
 });
