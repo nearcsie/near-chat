@@ -1,6 +1,7 @@
 import type { UploadedFile } from '../utils/fileUpload';
 import type { IUserRepository } from '../models/IUserRepository';
 import type { IEmergencyContactRepository, EmergencyContact } from '../models/IEmergencyContactRepository';
+import { logger } from '../utils/logger';
 import type {
   RegisterRequest,
   LoginRequest,
@@ -56,11 +57,12 @@ const toUserProfile = (user: Pick<User, 'userId' | 'name' | 'bio' | 'avatarUrl'>
 });
 
 const toMyProfile = (
-  user: Pick<User, 'userId' | 'name' | 'email' | 'bio' | 'avatarUrl' | 'lastActivity'>,
+  user: Pick<User, 'userId' | 'name' | 'email' | 'bio' | 'avatarUrl' | 'lastActivity' | 'isAdmin'>,
 ): MyProfile => ({
   ...toUserProfile(user),
   email: user.email,
   lastActivity: user.lastActivity,
+  isAdmin: user.isAdmin,
 });
 
 const toUserSettings = (
@@ -121,9 +123,9 @@ export const makeUserService = (
         if (delivered) recipients.push(contact.contactId);
       } catch (error) {
         failed.push(contact.contactId);
-        console.error(
-          `Failed to deliver emergency alert to contact ${contact.contactId} for user ${userId}:`,
-          error,
+        logger.error(
+          { err: error, contactId: contact.contactId, userId },
+          'Failed to deliver emergency alert to contact',
         );
       }
     }

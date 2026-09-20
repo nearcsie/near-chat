@@ -1,105 +1,59 @@
+import { createHash } from 'crypto';
 import type pino from 'pino';
 import type { RedisManager, RedisOutcome } from '../utils/redis';
 import { DEFAULT_PRESENCE_TTL_MS } from '../config/env';
 import { logger as defaultLogger } from '../utils/logger';
 
-/**
- * Namespace for every presence key.
- *
- * One Redis serves presence, typing and pub/sub for this stack, so each feature
- * owns a prefix and `onlineUsers()` can scan for its own keys without seeing
- * anyone else's.
- */
+/** Redis key prefix for presence hashes: presence:user:{userId} */
 export const PRESENCE_KEY_PREFIX = 'presence:user:';
 
 export const presenceKey = (userId: string): string => `${PRESENCE_KEY_PREFIX}${userId}`;
 
 /**
- * Cross-instance presence, as leases rather than as a live connection list.
- *
- * The shape is one hash per user, one field per backend instance, and a TTL on
- * each *field*:
- *
- * ```
- * presence:user:{userId}  ->  { "{instanceId}": "{connections}" }   each field PEXPIREd
- * ```
- *
- * Per-field TTLs (Redis 7.4+) rather than a TTL on the whole key, because the
- * key belongs to the user and the lease belongs to the instance: with one
- * expiry for the whole hash, the busiest instance's refresh would keep a
- * crashed instance's row alive forever. Per field, a process that dies stops
- * refreshing only its own row, and Redis drops it — then drops the key once the
- * last row is gone, which is what makes "no key" and "nobody online" the same
- * state.
- *
- * Per *instance* rather than per socket, because no other instance has any use
- * for how many tabs someone has open here. The socket-level bookkeeping stays
- * local, where it is already needed for the reconnect grace period, and the
- * only thing that crosses the network is the one bit that is genuinely shared:
- * this instance has at least one live connection for this user.
- *
- * Redis owns the clock throughout. Expiry is evaluated by the server against
- * the TTL it was handed, never by comparing a stored timestamp against a
- * reader's `Date.now()`, so two instances whose clocks disagree still agree on
- * who is online.
+ * Distributed presence store using Redis hash-field TTLs (Redis 7.4+).
+ * Key schema: presence:user:{userId} -> { "{instanceId}": "{connectionCount}" }
  */
 export interface PresenceStore {
-  /**
-   * Take or refresh this instance's lease on a user.
-   *
-   * Resolves to how many instances held a lease *before* this call, so `0`
-   * means this connection is the first one anywhere — which is exactly the
-   * edge that broadcasts `online`. Idempotent, and the heartbeat calls it too.
-   */
+  /** Holds or refreshes a lease for a user; returns previous holder count. */
   hold(userId: string, connections: number): Promise<RedisOutcome<number>>;
-  /**
-   * Drop this instance's lease on a user.
-   *
-   * Resolves to how many instances still hold one, so `0` means the user has
-   * gone offline everywhere — the edge that broadcasts `offline`.
-   */
+  /** Releases a lease for a user; returns remaining holder count. */
   release(userId: string): Promise<RedisOutcome<number>>;
-  /** Whether any instance holds a lease on this user. */
+  /** Checks if any instance holds a lease on this user. */
   isOnline(userId: string): Promise<RedisOutcome<boolean>>;
-  /**
-   * The subset of these users any instance holds a lease on.
-   *
-   * A batch rather than a loop of `isOnline`, because the callers that ask this
-   * question ask it about a whole page at once — every private room in
-   * `GET /rooms`, every friend in `GET /friends` — and a per-user call there
-   * puts the size of someone's contact list into the shape of the endpoint.
-   */
+  /** Checks online status for multiple users in a single round trip. */
   areOnline(userIds: string[]): Promise<RedisOutcome<Set<string>>>;
-  /** Every user any instance holds a lease on. Diagnostic; see the note on the scan. */
+  /** Returns all currently online users (diagnostic/admin). */
   onlineUsers(): Promise<RedisOutcome<string[]>>;
 }
 
+/** A Lua script together with the digest Redis will know it by. */
+interface CachedScript {
+  body: string;
+  sha: string;
+}
+
 /**
- * Take the lease and report the previous holder count, in one round trip.
+ * Pairs a script with its digest so the two cannot drift apart.
  *
- * A script rather than three commands, for two reasons that are both
- * correctness rather than latency. `HSET` clears a field's TTL, so a process
- * that died between the `HSET` and the `HPEXPIRE` would leave a lease with no
- * expiry at all — a user online forever, which is the one failure the TTL
- * exists to prevent. And reading `HLEN` separately from the write makes the
- * "first connection anywhere" test a race: two instances taking a user's first
- * lease at the same moment would both read a count that already included the
- * other, and neither would announce the user online.
- *
- * `redis.pcall` and the compensating `HDEL` are what make the *script* safe to
- * run against a server that cannot do the second half. A script is atomic but
- * it is not transactional: an error partway through does not roll back what ran
- * before it, so on a Redis older than 7.4 the `HSET` would land, `HPEXPIRE`
- * would fail as an unknown command, and the degraded mode this module documents
- * would leave behind exactly the immortal lease it is trying to avoid —
- * verified against a real server, and pinned in
- * `tests/integration/realtime/presenceStore.int.test.ts`. Trapping the failure
- * and undoing the write inside the same script means the operation either takes
- * an expiring lease or leaves no trace, with no version probe to race and no
- * state to keep. Returning the error table propagates it as an error reply, so
- * the caller still sees `{ ok: false }` and degrades to this instance only.
+ * Redis names a cached script by the SHA1 of the exact bytes it was sent, so
+ * the digest is derived here rather than fetched: a `SCRIPT LOAD` at startup
+ * would buy nothing and would need a connection that may not be up yet. Kept
+ * in one value because a digest that disagreed with the body sent alongside it
+ * would turn every call into a silent `EVALSHA` miss followed by an `EVAL` —
+ * still correct, but strictly more traffic than sending the body alone, and
+ * nothing would ever report it. The integration tier pins this by asserting
+ * that a second call sends `EVALSHA` and nothing else.
  */
-const HOLD_SCRIPT = `
+const cachedScript = (source: string): CachedScript => {
+  const body = source.trim();
+  return { body, sha: createHash('sha1').update(body).digest('hex') };
+};
+
+/**
+ * Lua script: Sets instance field with TTL using HPEXPIRE.
+ * Returns the holder count before the write. Rolls back if HPEXPIRE fails.
+ */
+const HOLD_SCRIPT = cachedScript(`
 local before = redis.call('HLEN', KEYS[1])
 redis.call('HSET', KEYS[1], ARGV[1], ARGV[3])
 local expiry = redis.pcall('HPEXPIRE', KEYS[1], ARGV[2], 'FIELDS', 1, ARGV[1])
@@ -108,38 +62,65 @@ if type(expiry) == 'table' and expiry.err then
   return expiry
 end
 return before
-`.trim();
+`);
 
-/**
- * Drop the lease and report who is left, in one round trip.
- *
- * Same reasoning as `HOLD_SCRIPT` in the other direction: read the remaining
- * count separately and two instances releasing at once can both see the other's
- * row still present, so neither announces the user offline and the last
- * transition is lost. Redis deletes the hash when its final field goes, so an
- * empty result and a missing key are the same answer.
- */
-const RELEASE_SCRIPT = `
+/** Lua script: Deletes instance field and returns remaining holder count. */
+const RELEASE_SCRIPT = cachedScript(`
 redis.call('HDEL', KEYS[1], ARGV[1])
 return redis.call('HLEN', KEYS[1])
-`.trim();
+`);
 
-/**
- * How many instances hold a lease on each of these users, in one round trip.
- *
- * Multi-key, which a Redis Cluster would reject for keys in different slots.
- * That is a deliberate limit rather than an oversight: nothing else in this
- * stack is cluster-aware — `utils/redis.ts` drives one client against one
- * endpoint — and the moment a cluster is on the table this call becomes a
- * chunked fan-out, not a rewrite of the key schema.
- */
-const ONLINE_AMONG_SCRIPT = `
+/** Lua script: Queries holder counts for multiple user keys in one call. */
+const ONLINE_AMONG_SCRIPT = cachedScript(`
 local out = {}
 for i = 1, #KEYS do out[i] = redis.call('HLEN', KEYS[i]) end
 return out
-`.trim();
+`);
 
-/** Redis integer replies arrive as numbers, but a fake or a proxy may stringify them. */
+/**
+ * True for Redis's "that digest is not in my script cache" rejection.
+ *
+ * Matched on the message because the outcome carries no code that separates
+ * one server error from another — `utils/redis.ts` surfaces them all the same
+ * way, exactly as the Redis 7.4 requirement below is recognised. `startsWith`
+ * rather than `includes` so that an error merely quoting the word cannot be
+ * read as a miss: a Lua runtime error embeds the script's own digest and
+ * `@user_script` in its text. The only error these three scripts raise
+ * themselves is `HPEXPIRE`'s, which begins with `ERR`.
+ */
+const isNoScript = (error: Error): boolean => error.message.startsWith('NOSCRIPT');
+
+/**
+ * Runs a script by digest, sending the body only when the server has to be
+ * told what that digest means.
+ *
+ * `EVALSHA` first every time, with no "already loaded" flag: the cache is the
+ * server's, not the connection's, and it can empty without the client
+ * observing anything at all — `SCRIPT FLUSH`, a restart, a replica promoted
+ * after a resync, since an RDB carries no script cache. A flag would have no
+ * correct moment to clear. The `EVAL` that answers a miss loads the script as
+ * a side effect, so a miss costs one extra round trip per script per server
+ * rather than one per call.
+ *
+ * Retried on `NOSCRIPT` and on nothing else, which is what makes the retry
+ * safe: Redis refuses an unknown digest *before* running anything, so sending
+ * the body cannot apply the script twice. A transient failure gives no such
+ * promise, and `HOLD_SCRIPT` is not idempotent — it reads `HLEN` before its
+ * own `HSET`, so a second run counts the caller's own field as a prior holder
+ * and `presence.ts` swallows the `online` it owed. Do not widen this to
+ * connection errors.
+ */
+const evalScript = async <T>(
+  redis: RedisManager,
+  { body, sha }: CachedScript,
+  args: string[],
+): Promise<RedisOutcome<T>> => {
+  const cached = await redis.command<T>('EVALSHA', [sha, ...args]);
+  if (cached.ok || !isNoScript(cached.error)) return cached;
+  return redis.command<T>('EVAL', [body, ...args]);
+};
+
+/** Coerces Redis reply values into a non-negative count. */
 const asCount = (value: unknown): number => {
   const count = typeof value === 'number' ? value : Number(value);
   return Number.isFinite(count) && count > 0 ? Math.trunc(count) : 0;
@@ -183,8 +164,7 @@ export const createRedisPresenceStore = ({
 
   return {
     async hold(userId, connections) {
-      const result = await redis.command('EVAL', [
-        HOLD_SCRIPT,
+      const result = await evalScript(redis, HOLD_SCRIPT, [
         '1',
         presenceKey(userId),
         instanceId,
@@ -199,8 +179,7 @@ export const createRedisPresenceStore = ({
     },
 
     async release(userId) {
-      const result = await redis.command('EVAL', [
-        RELEASE_SCRIPT,
+      const result = await evalScript(redis, RELEASE_SCRIPT, [
         '1',
         presenceKey(userId),
         instanceId,
@@ -213,10 +192,7 @@ export const createRedisPresenceStore = ({
     },
 
     async isOnline(userId) {
-      // `HLEN` and not `EXISTS`: Redis reports a hash whose fields have all
-      // expired as length zero even in the window before the key itself is
-      // collected, so this answers "is anyone holding a lease" rather than "was
-      // there a key here recently".
+      // HLEN > 0 indicates at least one active instance holds an unexpired lease.
       const result = await redis.command('HLEN', [presenceKey(userId)]);
       if (!result.ok) return result;
       return { ok: true as const, value: asCount(result.value) > 0 };
@@ -224,13 +200,13 @@ export const createRedisPresenceStore = ({
 
     async areOnline(userIds) {
       const unique = [...new Set(userIds)];
-      // Not an empty-result shortcut for its own sake: `EVAL` with a numkeys of
-      // zero is a different command shape, and every caller here can legitimately
-      // hand over an empty page.
       if (unique.length === 0) return { ok: true as const, value: new Set<string>() };
 
-      const result = await redis.command<unknown>('EVAL', [
-        ONLINE_AMONG_SCRIPT,
+      // One key per user in a single script: a Redis Cluster would refuse this
+      // with CROSSSLOT, since the keys are spread across slots. Recorded rather
+      // than worked around — Bun's client does not support Cluster at all, so
+      // the key schema is not what stands in the way. See docs/DEVELOPMENT.md.
+      const result = await evalScript<unknown>(redis, ONLINE_AMONG_SCRIPT, [
         String(unique.length),
         ...unique.map(presenceKey),
       ]);
@@ -245,16 +221,9 @@ export const createRedisPresenceStore = ({
     },
 
     async onlineUsers() {
-      // Deliberately a scan, and deliberately not on a request path. There is no
-      // index of online users to read instead, and maintaining one would mean a
-      // second write per connect that a crashed instance would never undo —
-      // reintroducing exactly the stale state the leases exist to avoid. The
-      // cost is paid only by diagnostics and tests, which is where the callers
-      // are; `isOnline` is the one that answers per-user questions.
+      // Scans for active presence keys (used for admin/diagnostics).
       const users: string[] = [];
       let cursor = '0';
-      // A cursor that never returns to '0' would spin forever. Redis guarantees
-      // termination, but a fake or a proxy is not Redis.
       for (let page = 0; page < 10_000; page += 1) {
         const scan = await redis.command<unknown>('SCAN', [
           cursor,
@@ -272,9 +241,6 @@ export const createRedisPresenceStore = ({
           const name = String(key);
           if (!name.startsWith(PRESENCE_KEY_PREFIX)) continue;
           const userId = name.slice(PRESENCE_KEY_PREFIX.length);
-          // A key whose every field has expired is still returned by `SCAN`
-          // until Redis collects it, so each candidate is confirmed rather than
-          // trusted.
           const live = await redis.command('HLEN', [name]);
           if (live.ok && asCount(live.value) > 0) users.push(userId);
         }

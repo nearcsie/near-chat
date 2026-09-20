@@ -26,6 +26,9 @@ describe('attachSockets', () => {
     socket = {
       id: 'socket-1',
       data: { user: { userId: 'user-1', name: 'Alice' } },
+      // A real Socket.IO socket tracks its rooms, and the typing handler reads
+      // them to decide whether its cached membership check is still good.
+      rooms: new Set(['user_user-1', 'room_room-active']),
       join: mock(),
       leave: mock(),
       emit: mock(),
@@ -95,6 +98,112 @@ describe('attachSockets', () => {
     });
   });
 
+  it('refreshes typing without re-checking membership', async () => {
+    // Let the connection's own subscription restore settle first: it calls
+    // findMember once per active room, and that call is not what this pins.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const membershipChecks = () => roomMemberRepo.findMember.mock.calls.length;
+    const baseline = membershipChecks();
+
+    await handlers.typing({ roomId: 'room-active', isTyping: true });
+    await handlers.typing({ roomId: 'room-active', isTyping: true });
+    await handlers.typing({ roomId: 'room-active', isTyping: true });
+
+    expect(membershipChecks() - baseline).toBe(1);
+  });
+
+  /**
+   * The client arms its own removal timer only when it receives `true`
+   * (`frontend/src/context/ChatContext.tsx:1593-1607`), so every refresh has to
+   * reach the room. Collapsing these into a single edge event makes the
+   * indicator vanish after one client timeout while the user is still typing.
+   */
+  it('re-broadcasts every typing refresh, which is the client heartbeat', async () => {
+    await handlers.typing({ roomId: 'room-active', isTyping: true });
+    await handlers.typing({ roomId: 'room-active', isTyping: true });
+    await handlers.typing({ roomId: 'room-active', isTyping: true });
+
+    expect(roomEmit).toHaveBeenCalledTimes(3);
+    expect(roomEmit).toHaveBeenLastCalledWith('user_typing', {
+      roomId: 'room-active',
+      userId: 'user-1',
+      isTyping: true,
+    });
+  });
+
+  it('re-checks membership once per TTL even while a claim is refreshed', async () => {
+    const previous = process.env.TYPING_TTL_MS;
+    process.env.TYPING_TTL_MS = '10';
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      const membershipChecks = () => roomMemberRepo.findMember.mock.calls.length;
+      const baseline = membershipChecks();
+
+      await handlers.typing({ roomId: 'room-active', isTyping: true });
+      await handlers.typing({ roomId: 'room-active', isTyping: true });
+      expect(membershipChecks() - baseline).toBe(1);
+
+      // Access is revoked while the user keeps typing. The claim is refreshed
+      // continuously, so only the TTL bound forces the re-check that stops them.
+      roomMemberRepo.findMember.mockResolvedValue(null);
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      await handlers.typing({ roomId: 'room-active', isTyping: true });
+
+      expect(membershipChecks() - baseline).toBe(2);
+      expect(socket.emit).toHaveBeenCalledWith('error', {
+        statusCode: 403,
+        message: 'Not a member of this room',
+        code: 'FORBIDDEN',
+      });
+    } finally {
+      if (previous === undefined) delete process.env.TYPING_TTL_MS;
+      else process.env.TYPING_TTL_MS = previous;
+    }
+  });
+
+  /**
+   * `socketsLeave` removes the socket from the room but does not stop it
+   * addressing that room, so losing the subscription has to invalidate the
+   * cached membership check immediately rather than one TTL later.
+   */
+  it('stops trusting the membership cache once the socket leaves the room', async () => {
+    await handlers.typing({ roomId: 'room-active', isTyping: true });
+    const baseline = roomMemberRepo.findMember.mock.calls.length;
+    roomEmit.mockClear();
+
+    // What room revocation does, through publisher.removeUserFromRoom.
+    socket.rooms.delete('room_room-active');
+    roomMemberRepo.findMember.mockResolvedValue(null);
+    await handlers.typing({ roomId: 'room-active', isTyping: true });
+
+    expect(roomMemberRepo.findMember.mock.calls.length - baseline).toBe(1);
+    expect(roomEmit).not.toHaveBeenCalled();
+    expect(socket.emit).toHaveBeenCalledWith('error', {
+      statusCode: 403,
+      message: 'Not a member of this room',
+      code: 'FORBIDDEN',
+    });
+  });
+
+  it('rejects a typing stop from a non-member', async () => {
+    roomMemberRepo.findMember.mockResolvedValue(null);
+
+    await handlers.typing({ roomId: 'room-hidden', isTyping: false });
+
+    expect(roomEmit).not.toHaveBeenCalled();
+    expect(socket.emit).toHaveBeenCalledWith('error', {
+      statusCode: 403,
+      message: 'Not a member of this room',
+      code: 'FORBIDDEN',
+    });
+  });
+
+  it('does not broadcast a stop for a room this socket never claimed', async () => {
+    await handlers.typing({ roomId: 'room-active', isTyping: false });
+
+    expect(roomEmit).not.toHaveBeenCalled();
+  });
+
   it('expires typing automatically at the server TTL', async () => {
     const previous = process.env.TYPING_TTL_MS;
     process.env.TYPING_TTL_MS = '10';
@@ -125,6 +234,7 @@ describe('attachSockets', () => {
       const frSocket = {
         id: 'socket-fr-1',
         data: { user: { userId: 'user-1', name: 'Alice' } },
+        rooms: new Set(['user_user-1', 'room_room-active']),
         join: mock(),
         leave: mock(),
         emit: mock(),
@@ -297,6 +407,366 @@ describe('attachSockets', () => {
       const afterDisconnect: Array<Error | undefined> = [];
       middleware(makeSocket('s3'), (err?: Error) => afterDisconnect.push(err));
       expect(afterDisconnect[0]).toBeUndefined();
+    });
+  });
+
+  /**
+   * A revocation reaches the other instances as a `SOCKETS_LEAVE` frame, and
+   * Redis pub/sub keeps no backlog: published while an instance's subscriber is
+   * down, it is gone for good and that instance keeps the revoked member in the
+   * room. The Sync Cursor cannot repair it — the damage is a stale local
+   * subscription, not a missed durable event — so the subscription has to be
+   * re-derived from the database once the subscriber is back.
+   */
+  describe('reconciling room subscriptions after a subscriber reconnect', () => {
+    /** A socket as the namespace holds it, with the rooms it has joined. */
+    const makeLive = (id: string, userId: string, rooms: string[]) => ({
+      id,
+      connected: true,
+      data: { user: { userId } },
+      rooms: new Set([id, `user_${userId}`, ...rooms]),
+      join: mock(),
+      leave: mock(function (this: any, room: string) {
+        this.rooms.delete(room);
+      }),
+      emit: mock(),
+      to: mock(() => ({ emit: mock() })),
+      on: mock(),
+    });
+
+    /**
+     * Attaches with a registration-style reconnect signal and hands back the
+     * trigger, so a test fires the reconciliation without a Redis client.
+     */
+    const attachReconciler = (
+      sockets: ReturnType<typeof makeLive>[],
+      repo: { findByUser?: Mock<any>; findMember: Mock<any> },
+      withRoomSubscriptionLock?: any,
+      extra?: { reconcileRetryDelayMs?: number; reconcileTrailingDelayMs?: number },
+    ) => {
+      let restored: (() => void) | undefined;
+      const io = {
+        on: mock(),
+        to: mock(() => ({ emit: mock() })),
+        of: mock(() => ({ sockets: new Map(sockets.map((s) => [s.id, s])) })),
+      } as unknown as ChatServer;
+
+      attachSockets(io, {
+        roomMemberRepository: repo as any,
+        withRoomSubscriptionLock,
+        onSubscriberRestored: (handler: () => void) => {
+          restored = handler;
+          return () => {};
+        },
+        // Parked beyond any test's lifetime by default, so the trailing pass
+        // only runs where a test asks for it and never bleeds into another
+        // test's call counts. Its timer is unref'd, so it holds nothing open.
+        reconcileTrailingDelayMs: 60_000,
+        ...extra,
+      });
+
+      return {
+        // Awaiting a macrotask lets the scan's awaited reads and leaves settle.
+        trigger: async () => {
+          restored?.();
+          await new Promise((resolve) => setTimeout(resolve, 0));
+        },
+        /** Fire another restore without waiting, to land one mid-cycle. */
+        signal: () => restored?.(),
+        registered: () => restored !== undefined,
+      };
+    };
+
+    it('leaves the rooms membership no longer permits, and nothing else', async () => {
+      const socket = makeLive('s1', 'user-1', ['room_kept', 'room_revoked']);
+      const findByUser = mock().mockResolvedValue([{ roomId: 'kept', role: 'member' }]);
+      const { trigger } = await attachReconciler([socket], {
+        findByUser,
+        findMember: mock(),
+      });
+
+      await trigger();
+
+      expect(socket.leave).toHaveBeenCalledWith('room_revoked');
+      expect(socket.leave).not.toHaveBeenCalledWith('room_kept');
+      // The user's directed-event room and the socket's own room are not
+      // derived from membership, so a membership scan must not touch them.
+      expect(socket.leave).not.toHaveBeenCalledWith('user_user-1');
+      expect(socket.leave).not.toHaveBeenCalledWith('s1');
+    });
+
+    it('leaves a room whose membership row is only pending', async () => {
+      const socket = makeLive('s1', 'user-1', ['room_demoted']);
+      const findByUser = mock().mockResolvedValue([{ roomId: 'demoted', role: 'pending' }]);
+      const { trigger } = await attachReconciler([socket], {
+        findByUser,
+        findMember: mock(),
+      });
+
+      await trigger();
+
+      expect(socket.leave).toHaveBeenCalledWith('room_demoted');
+    });
+
+    /**
+     * `findByUser` is optional on `IRoomMemberRepository`. Reading its absence
+     * as "this user is in no rooms" would empty every socket out of every room
+     * it holds — the opposite of a repair.
+     */
+    it('leaves nothing at all when the repository cannot derive membership', async () => {
+      const socket = makeLive('s1', 'user-1', ['room_kept', 'room_revoked']);
+      const { trigger } = await attachReconciler([socket], { findMember: mock() });
+
+      await trigger();
+
+      expect(socket.leave).not.toHaveBeenCalled();
+      expect(socket.emit).not.toHaveBeenCalled();
+    });
+
+    /** Same reasoning: a failed read is not evidence that access is gone. */
+    it('leaves nothing when the membership read fails', async () => {
+      const socket = makeLive('s1', 'user-1', ['room_revoked']);
+      const findByUser = mock().mockRejectedValue(new Error('database is down'));
+      const { trigger } = await attachReconciler(
+        [socket],
+        { findByUser, findMember: mock() },
+        undefined,
+        { reconcileRetryDelayMs: 1 },
+      );
+
+      await trigger();
+
+      expect(socket.leave).not.toHaveBeenCalled();
+    });
+
+    /**
+     * The signal fires once. If the pass that answered it skipped a user
+     * because the database was briefly unavailable, nothing else will ever ask
+     * again — the subscriber is back up, so no further signal is coming — and
+     * that user's revoked socket would sit in its room until the client happens
+     * to reconnect on its own.
+     */
+    it('retries a user whose membership read failed, and leaves once it succeeds', async () => {
+      const socket = makeLive('s1', 'user-1', ['room_revoked']);
+      const findByUser = mock()
+        .mockRejectedValueOnce(new Error('database is down'))
+        .mockResolvedValue([]);
+      const { trigger } = await attachReconciler(
+        [socket],
+        { findByUser, findMember: mock() },
+        undefined,
+        { reconcileRetryDelayMs: 1 },
+      );
+
+      await trigger();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      expect(socket.leave).toHaveBeenCalledWith('room_revoked');
+      expect(socket.emit).toHaveBeenCalledWith('realtime_ready');
+    });
+
+    it('stops retrying a database that stays down, rather than spinning', async () => {
+      const socket = makeLive('s1', 'user-1', ['room_revoked']);
+      const findByUser = mock().mockRejectedValue(new Error('database is down'));
+      const { trigger } = await attachReconciler(
+        [socket],
+        { findByUser, findMember: mock() },
+        undefined,
+        { reconcileRetryDelayMs: 1 },
+      );
+
+      await trigger();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      const attempts = findByUser.mock.calls.length;
+      await new Promise((resolve) => setTimeout(resolve, 60));
+
+      // Bounded: the backoff runs out and the pass gives up loudly rather than
+      // retrying against a database that is not coming back on its own.
+      expect(attempts).toBeLessThanOrEqual(5);
+      expect(findByUser.mock.calls.length).toBe(attempts);
+      expect(socket.leave).not.toHaveBeenCalled();
+    });
+
+    it('signals recovery only to the sockets that actually lost a room', async () => {
+      const evicted = makeLive('s1', 'user-1', ['room_revoked']);
+      const untouched = makeLive('s2', 'user-2', ['room_kept']);
+      const findByUser = mock(async (userId: string) =>
+        (userId === 'user-2' ? [{ roomId: 'kept', role: 'member' }] : []));
+      const { trigger } = await attachReconciler([evicted, untouched], {
+        findByUser,
+        findMember: mock(),
+      });
+
+      await trigger();
+
+      // `realtime_ready` puts a client through a full `synchronize()`. A socket
+      // that kept every room has nothing to recover, so broadcasting would buy
+      // one wasted sync per connected client.
+      expect(evicted.emit).toHaveBeenCalledWith('realtime_ready');
+      expect(untouched.emit).not.toHaveBeenCalled();
+    });
+
+    it('reads membership once per user rather than once per session', async () => {
+      const first = makeLive('s1', 'user-1', ['room_revoked']);
+      const second = makeLive('s2', 'user-1', ['room_revoked']);
+      const findByUser = mock().mockResolvedValue([]);
+      const { trigger } = await attachReconciler([first, second], {
+        findByUser,
+        findMember: mock(),
+      });
+
+      await trigger();
+
+      expect(first.leave).toHaveBeenCalledWith('room_revoked');
+      expect(second.leave).toHaveBeenCalledWith('room_revoked');
+      // One read for the candidate set, one confirming re-read under the lock —
+      // not one of each per session.
+      expect(findByUser.mock.calls.length).toBe(2);
+    });
+
+    /**
+     * A grant commits and only then joins the room, so a membership granted
+     * after the candidate set was read is already in `socket.rooms` while still
+     * missing from that snapshot. Acting on the snapshot would evict a socket
+     * that had just been legitimately authorized.
+     */
+    it('re-reads under the lock and spares a room granted mid-scan', async () => {
+      const socket = makeLive('s1', 'user-1', ['room_granted']);
+      const findByUser = mock()
+        .mockResolvedValueOnce([])
+        .mockResolvedValue([{ roomId: 'granted', role: 'member' }]);
+      const withRoomSubscriptionLock = mock(
+        async (_userId: string, _roomId: string, operation: () => Promise<unknown>) => operation(),
+      );
+      const { trigger } = await attachReconciler(
+        [socket],
+        { findByUser, findMember: mock() },
+        withRoomSubscriptionLock,
+      );
+
+      await trigger();
+
+      expect(withRoomSubscriptionLock).toHaveBeenCalledWith(
+        'user-1', 'granted', expect.any(Function),
+      );
+      expect(socket.leave).not.toHaveBeenCalled();
+      expect(socket.emit).not.toHaveBeenCalled();
+    });
+
+    /**
+     * What makes it safe for `utils/redis.ts` to signal on the very first
+     * subscription rather than only on reconnects: with no session held there
+     * is nothing to check, so the pass costs one map read and no query at all.
+     */
+    it('queries nothing when this process holds no sockets', async () => {
+      const findByUser = mock();
+      const { trigger } = await attachReconciler([], {
+        findByUser,
+        findMember: mock(),
+      });
+
+      await trigger();
+
+      expect(findByUser).not.toHaveBeenCalled();
+    });
+
+    /**
+     * `services/roomService.ts` publishes a revocation *before* it commits the
+     * membership change. A subscriber that comes back inside that gap reads a
+     * row that is still there, correctly declines to leave, and reports a clean
+     * pass — and the signal is spent, so without a trailing pass nothing would
+     * ever look again once the write landed.
+     */
+    it('re-checks later, catching a revocation that was still mid-commit', async () => {
+      const socket = makeLive('s1', 'user-1', ['room_revoked']);
+      // First two reads are the candidate scan and its confirming re-read, both
+      // taken while the revoking transaction is still open. Afterwards the
+      // commit has landed and the row is gone.
+      const findByUser = mock()
+        .mockResolvedValueOnce([{ roomId: 'revoked', role: 'member' }])
+        .mockResolvedValue([]);
+      const { trigger } = await attachReconciler(
+        [socket],
+        { findByUser, findMember: mock() },
+        undefined,
+        { reconcileTrailingDelayMs: 1 },
+      );
+
+      await trigger();
+      expect(socket.leave).not.toHaveBeenCalled();
+
+      await new Promise((resolve) => setTimeout(resolve, 30));
+
+      expect(socket.leave).toHaveBeenCalledWith('room_revoked');
+      expect(socket.emit).toHaveBeenCalledWith('realtime_ready');
+    });
+
+    it('runs the trailing pass once, not on a loop', async () => {
+      const socket = makeLive('s1', 'user-1', ['room_kept']);
+      const findByUser = mock().mockResolvedValue([{ roomId: 'kept', role: 'member' }]);
+      const { trigger } = await attachReconciler(
+        [socket],
+        { findByUser, findMember: mock() },
+        undefined,
+        { reconcileTrailingDelayMs: 1 },
+      );
+
+      await trigger();
+      await new Promise((resolve) => setTimeout(resolve, 40));
+      const settled = findByUser.mock.calls.length;
+      await new Promise((resolve) => setTimeout(resolve, 40));
+
+      // One signal buys one pass plus one trailing pass — never a standing
+      // poll, which would cost a membership query per connected user forever.
+      expect(settled).toBe(2);
+      expect(findByUser.mock.calls.length).toBe(settled);
+    });
+
+    /**
+     * A signal landing inside the trailing wait is a *new* subscriber restore,
+     * so it needs its own delayed re-check, not just the pass it happens to
+     * arrive in time for. Inheriting the spent entitlement of the cycle already
+     * running would drop exactly the revocation the trailing pass exists for.
+     */
+    it('gives a signal that arrives during the wait its own trailing pass', async () => {
+      const socket = makeLive('s1', 'user-1', ['room_revoked']);
+      // The first cycle's pass and the second signal's own first pass both
+      // still see the membership row, as they would while the revoking
+      // transaction is open. The commit only becomes visible in time for the
+      // second signal's trailing pass — which is the pass that used to be lost.
+      const findByUser = mock()
+        .mockResolvedValueOnce([{ roomId: 'revoked', role: 'member' }])
+        .mockResolvedValueOnce([{ roomId: 'revoked', role: 'member' }])
+        .mockResolvedValue([]);
+      const { trigger, signal } = await attachReconciler(
+        [socket],
+        { findByUser, findMember: mock() },
+        undefined,
+        { reconcileTrailingDelayMs: 20 },
+      );
+
+      await trigger();
+      // Land the second restore inside the first cycle's trailing wait.
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      signal();
+
+      await new Promise((resolve) => setTimeout(resolve, 120));
+
+      expect(socket.leave).toHaveBeenCalledWith('room_revoked');
+    });
+
+    it('registers nothing to reconcile when no reconnect signal is wired', () => {
+      const socket = makeLive('s1', 'user-1', ['room_revoked']);
+      const io = {
+        on: mock(),
+        to: mock(() => ({ emit: mock() })),
+        of: mock(() => ({ sockets: new Map([[socket.id, socket]]) })),
+      } as unknown as ChatServer;
+
+      // Without `REDIS_URL` no revocation ever leaves the process, so there is
+      // no lost frame to repair and no signal to subscribe to.
+      expect(() => attachSockets(io, { roomMemberRepository: roomMemberRepo })).not.toThrow();
+      expect(socket.leave).not.toHaveBeenCalled();
     });
   });
 });

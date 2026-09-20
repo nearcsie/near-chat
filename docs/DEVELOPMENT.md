@@ -148,25 +148,91 @@ announced online only on the first connection anywhere and offline only when the
 last one goes. `PRESENCE_TTL_MS` bounds how long a crashed instance keeps its
 users showing as online: nothing runs on a dead process to hand the leases back,
 so only the expiry does it. Every lease is refreshed three times per TTL, and a
-graceful shutdown hands them all back rather than waiting the TTL out. That last
-part only holds if SIGTERM actually reaches the process: the container has to
+graceful shutdown hands them all back rather than waiting the TTL out —
+announcing `user_status` offline for each user the handback leaves with no lease
+on any instance, so friends connected elsewhere are told at once instead of
+holding a stale `online` until their next `GET /friends` (#654). A release Redis
+did not acknowledge announces nothing: the lease was not handed back, so there is
+no departure to announce yet. That last part only holds if SIGTERM actually
+reaches the process: the container has to
 leave the application at PID 1 (hence the `exec` in `backend/Dockerfile.prod`'s
 CMD) and allow enough time for the drain to finish (hence
 `stop_grace_period: 30s` on the backend service). Get either wrong and the
 container is SIGKILLed with its leases still held, which looks exactly like a
-crashed instance — see docs/RELEASE.md for the full stop contract.
+crashed instance — see docs/RELEASE.md for the full stop contract. A SIGKILLed
+instance also announces nothing at all: its leases expire on their own TTL and
+no component watches for that expiry, so friends keep the stale `online` for up
+to `PRESENCE_TTL_MS` and then until their next `GET /friends` (#654 tracks
+closing this).
 `INSTANCE_ID` names this process in that hash; left unset one is generated per
 start, which is fine unless your orchestrator already has a stable per-replica
 name to reuse. Per-field TTLs need **Redis 7.4 or newer** — against an older
 server the write fails, the backend logs the requirement once, and presence
 falls back to this instance only.
 
-What is *not* shared yet is the `user_status` push: `io.to()` reaches only the
-sockets held by the emitting process, so a friend connected to a different
-instance sees the change on their next `GET /friends` rather than over the
-socket. Closing that is the Redis event bus in #475/#476. The per-user session
-limit, global rate limits and cross-node change fan-out also remain
-per-instance, so a replica count above one is not yet a supported deployment.
+The lease operations are Lua scripts, sent as `EVALSHA` by digest and re-sent in
+full only when the server answers `NOSCRIPT` — after a `SCRIPT FLUSH` or a
+restart, which empty a cache that lives on the server and whose loss the client
+never sees. The `EVAL` that answers a miss reloads the script, so a restart
+costs one extra round trip per script rather than one per call.
+
+**Redis Cluster is not a supported deployment**, and the key schema is not what
+stands in the way: Bun's Redis client lists Cluster among its unsupported
+features, so it follows no `MOVED`/`ASK` redirect and holds no slot map. Behind
+that, `areOnline` passes one key per user to a single script, which a Cluster
+would refuse with `CROSSSLOT` because those keys span slots. A hash tag per user
+would not fix it — it gives each user its own slot, and only a *constant* tag
+collapses them, which pins all presence onto one node and forfeits the sharding
+Cluster is for. A port needs a cluster-aware driver first, then pipelined
+per-key `HLEN` in place of the one multi-key script.
+
+Event fan-out is shared as well, whenever `REDIS_URL` is set:
+`realtime/redisAdapter.ts` installs a Socket.IO cluster adapter over the
+`near-chat-ws` channel, so `io.to()`, room subscription changes and forced
+disconnects all carry to the other instances (#475). Delivery is at most once —
+Redis pub/sub keeps no backlog, so what an instance missed while unreachable is
+gone, and clients recover through their Sync Cursor.
+
+Point two deployments at one Redis and set `REALTIME_CLUSTER_ID` differently on
+each. Pub/sub is not scoped by the logical database — a `SUBSCRIBE` on `/1`
+receives what `/0` published — so distinct `REDIS_URL` databases do *not*
+separate them, and the channel name is the only thing that does. Left unset they
+share `near-chat-ws` and become one Socket.IO cluster; since `db:seed` gives
+every seeded environment the same user and room ids, one side's room events,
+membership changes and forced disconnects then land on the other side's
+sockets.
+
+The `user_status` push crosses instances too (#476): `realtime/presence.ts`
+addresses every friend's `user_<id>` room and lets the adapter deliver, rather
+than emitting only for friends holding a socket on the emitting instance. It
+deliberately does not consult the presence leases to decide who to address —
+room membership is the transport's own answer to whether a session exists, and
+it does not lag a live socket the way a lease does. The per-user session limit
+and global rate limits remain per-instance, so a replica count above one is not
+yet a supported deployment.
+
+A membership revocation (`socketsLeave`) published while an instance's
+subscriber is down used to be lost outright, leaving that member's socket in the
+room and still receiving what was published there afterwards — a Sync Cursor
+cannot repair that, because the problem is a stale subscription rather than a
+missed event. `realtime/socketServer.ts` now reconciles it (#649): when
+`utils/redis.ts` reports the subscriber back, every socket this process holds has
+its rooms re-derived from durable membership, and the ones no longer permitted
+are left. The pass only ever leaves, never joins — `services/roomService.ts`
+revokes before it writes a demotion, so a pass that re-joined would hand back the
+subscription a revocation in flight had just taken away.
+
+Three residual gaps are recorded in `realtime/redisAdapter.ts` rather than
+swept for: a revocation whose *publish* Redis refused (the adapter swallows that
+and resolves anyway, and the instance holding the stale socket never lost its
+subscriber, so nothing signals it); a drop Bun's `autoReconnect` recovers
+without re-announcing; and a revocation still mid-commit when the pass reads,
+since `roomService` publishes before it writes — a trailing pass covers the
+realistic case, but only a durable or ordered revocation path closes it, because
+no local read can see another instance's uncommitted transaction. One gap is still open for a replica count above one:
+typing claims are aggregated per process, so the same user typing from two
+instances has the indication retracted by whichever node's last claim ends first
+(#474).
 
 ### Production Ingress & Proxy Trust
 

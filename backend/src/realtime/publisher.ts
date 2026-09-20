@@ -1,5 +1,6 @@
 import type { ServerToClientEvents } from '@shared/types';
 import type { ChatServer } from './authSocket';
+import { logger } from '../utils/logger';
 
 export type RealtimeEventName = keyof ServerToClientEvents;
 
@@ -9,14 +10,23 @@ export type RealtimeEventName = keyof ServerToClientEvents;
  * The composition root binds the concrete Socket.IO server once it has been
  * assembled. Business code only knows about destinations and typed events.
  *
- * Single-process only. Every publish here goes through the local `io`, whose
- * room registry holds just the sockets connected to *this* process. Running two
- * or more backend instances therefore drops events for anyone connected to a
- * different one: those sockets do not disconnect, so nothing triggers recovery,
- * and their state stays stale. That matches the documented deployment — one
- * backend container behind Cloudflare Tunnel — and scaling horizontally means
- * first fitting a cross-process Socket.IO adapter (Redis or PostgreSQL) here,
- * not just raising a replica count.
+ * How far a publish reaches is the adapter's business, not this module's. With
+ * `REDIS_URL` set, `bootstrap/realtime.ts` installs the cluster adapter in
+ * `realtime/redisAdapter.ts` and every destination below — rooms, room
+ * membership changes and forced disconnects alike — carries to the other
+ * instances. Without it the in-memory adapter stops at the process boundary,
+ * and running two instances drops events for anyone connected to a different
+ * one: those sockets do not disconnect, so nothing triggers recovery and their
+ * state stays stale. That single-instance case is still the documented
+ * deployment — one backend container behind Cloudflare Tunnel.
+ *
+ * One caveat the adapter brings with it: `addUserToRoom` and `removeUserFromRoom`
+ * resolve once the change has been published, not once every instance has
+ * applied it, and `withRoomSubscriptionLock` below only serialises callers in
+ * this process. A room event published immediately after a join can therefore
+ * still miss a session held elsewhere, which is the same at-most-once bargain
+ * the rest of the fan-out makes and the reason clients reconcile through their
+ * Sync Cursor.
  */
 export interface RealtimePublisher {
   bind(io: ChatServer): void;
@@ -95,14 +105,22 @@ export const createRealtimePublisher = (): RealtimePublisher => {
       // Keep the reason out of the Socket.IO close API, which only accepts a
       // force flag. It is still useful in a bounded operational log, without
       // logging message contents, tokens, or credentials.
-      console.info('Realtime sessions disconnected', { userId, reason });
+      logger.info({ userId, reason }, 'Realtime sessions disconnected');
+      // Deliberately cluster-wide: revoking a user's access has to end the
+      // sessions they hold on every instance, not only this one.
       io.in(`user_${userId}`).disconnectSockets(true);
     },
 
     shutdown(reason) {
       if (!io) return;
-      console.info('Realtime server shutting down', { reason });
-      io.disconnectSockets(true);
+      logger.info({ reason }, 'Realtime server shutting down');
+      // `local` is what keeps this process's shutdown from being the whole
+      // cluster's. This runs on SIGTERM, and with a cross-instance adapter
+      // installed an unqualified `disconnectSockets` publishes the request to
+      // every other instance too — so a rolling restart, which stops one
+      // container at a time, would drop every client on every node instead of
+      // just the ones this process is about to stop serving.
+      io.local.disconnectSockets(true);
     },
   };
 };
