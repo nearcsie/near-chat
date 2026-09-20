@@ -157,6 +157,21 @@ container 就會在 lease 尚未交還時被 SIGKILL，外觀上與「instance �
 **Redis 7.4 以上** —— 對更舊的伺服器寫入會失敗，後端會記錄一次版本需求，
 presence 則退回只看本機。
 
+lease 操作是 Lua script，平時以 `EVALSHA` 只送 digest，唯有伺服器回 `NOSCRIPT`
+時才重送整段內容 —— 也就是 `SCRIPT FLUSH` 或重啟之後：script cache 存在伺服器
+端，清空時 client 完全不會收到任何通知。回應 miss 的那次 `EVAL` 本身就會把
+script 重新載入，因此一次重啟的代價是每段 script 多一次 round trip，而不是每次
+呼叫都多一次。
+
+**Redis Cluster 不是受支援的部署方式**，而且卡住的並不是 key schema：Bun 的
+Redis client 將 Cluster 列為不支援的功能，既不追 `MOVED`／`ASK` 轉向，也不維護
+slot map。在那之後，`areOnline` 會把每位使用者一個 key 一次帶進同一段 script，
+這些 key 分散在不同 slot，Cluster 會以 `CROSSSLOT` 拒絕。加上 per-user 的 hash
+tag 並不能解決——那只會讓每位使用者各自落在不同 slot；唯有**固定**的 tag 才能把
+它們收攏到同一個 slot，而那等於把所有 presence 釘在單一節點上，正好放棄了
+Cluster 的分片。要移植必須先換成支援 Cluster 的 driver，再把那段多 key script
+改為 pipeline 的逐 key `HLEN`。
+
 只要設定了 `REDIS_URL`，事件 fan-out 同樣是共享的：`realtime/redisAdapter.ts`
 會在 `near-chat-ws` channel 上掛載 Socket.IO cluster adapter，因此 `io.to()`、
 room subscription 變更與強制斷線都會送到其他 instance（#475）。投遞語意是 at

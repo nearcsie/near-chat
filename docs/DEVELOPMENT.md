@@ -176,6 +176,22 @@ name to reuse. Per-field TTLs need **Redis 7.4 or newer** — against an older
 server the write fails, the backend logs the requirement once, and presence
 falls back to this instance only.
 
+The lease operations are Lua scripts, sent as `EVALSHA` by digest and re-sent in
+full only when the server answers `NOSCRIPT` — after a `SCRIPT FLUSH` or a
+restart, which empty a cache that lives on the server and whose loss the client
+never sees. The `EVAL` that answers a miss reloads the script, so a restart
+costs one extra round trip per script rather than one per call.
+
+**Redis Cluster is not a supported deployment**, and the key schema is not what
+stands in the way: Bun's Redis client lists Cluster among its unsupported
+features, so it follows no `MOVED`/`ASK` redirect and holds no slot map. Behind
+that, `areOnline` passes one key per user to a single script, which a Cluster
+would refuse with `CROSSSLOT` because those keys span slots. A hash tag per user
+would not fix it — it gives each user its own slot, and only a *constant* tag
+collapses them, which pins all presence onto one node and forfeits the sharding
+Cluster is for. A port needs a cluster-aware driver first, then pipelined
+per-key `HLEN` in place of the one multi-key script.
+
 Event fan-out is shared as well, whenever `REDIS_URL` is set:
 `realtime/redisAdapter.ts` installs a Socket.IO cluster adapter over the
 `near-chat-ws` channel, so `io.to()`, room subscription changes and forced

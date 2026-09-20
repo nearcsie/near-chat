@@ -4,6 +4,8 @@ import {
   DEFAULT_RECENT_LOG_CAPACITY,
   createLogger,
   createRecentLogStore,
+  logger,
+  recentLogs,
   resolveLogLevel,
   shouldPrettyPrint,
   type RecentLogStore,
@@ -312,5 +314,33 @@ describe('createLogger', () => {
 
     expect(() => logger.info('still delivered to stdout')).not.toThrow();
     expect(lines).toHaveLength(1);
+  });
+});
+
+describe('the shared logger', () => {
+  /**
+   * Everything above builds its own logger and its own store. This pins the one
+   * fact `GET /api/v1/admin/logs` actually depends on: that the *exported*
+   * `logger` writes into the *exported* `recentLogs`, which `routes/adminRoutes`
+   * serves as its only source. A miswiring here would leave every assertion
+   * above passing and the admin console empty.
+   */
+  it('writes into the recentLogs buffer the admin log endpoint serves', () => {
+    // `resolveLogLevel` returns 'silent' under the test runner so `bun test`
+    // output stays readable, and pino drops every record at that level before
+    // it reaches the destination. Open a window just wide enough to observe one.
+    const original = logger.level;
+    logger.level = 'info';
+    try {
+      const marker = `admin-log-wiring-${Date.now()}`;
+      logger.info({ marker }, 'shared logger reaches the ring buffer');
+
+      const entry = recentLogs.recent(1)[0];
+      expect(entry).toBeDefined();
+      expect(entry?.msg).toBe('shared logger reaches the ring buffer');
+      expect(entry?.marker).toBe(marker);
+    } finally {
+      logger.level = original;
+    }
   });
 });

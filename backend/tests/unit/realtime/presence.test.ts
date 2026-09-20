@@ -1,8 +1,9 @@
-import { describe, it, expect, beforeEach, mock, spyOn } from 'bun:test';
+import { describe, it, expect, beforeEach, mock } from 'bun:test';
 import { createPresenceTracker, type PresenceTracker } from '../../../src/realtime/presence';
 import type { PresenceStore } from '../../../src/realtime/presenceStore';
 import type { RedisOutcome } from '../../../src/utils/redis';
 import type { ChatServer } from '../../../src/realtime/authSocket';
+import type { Logger } from 'pino';
 
 /**
  * One shared lease table, viewed through as many instances as a test needs.
@@ -78,6 +79,12 @@ describe('presence tracker', () => {
   let friendRepo: { getFriends: ReturnType<typeof mock> };
   let tracker: PresenceTracker;
 
+  /** Records what the tracker reports, standing in for the shared logger. */
+  const makeLogger = () => {
+    const error = mock();
+    return { logger: { error, warn: mock(), info: mock(), debug: mock() } as unknown as Logger, error };
+  };
+
   beforeEach(() => {
     ({ io, roomEmit } = makeIo());
     friendRepo = {
@@ -116,27 +123,27 @@ describe('presence tracker', () => {
 
     it('suppresses and logs errors from getFriends during trackUserConnection', async () => {
       const errorRepo = { getFriends: mock().mockRejectedValue(new Error('DB down')) };
-      const consoleSpy = spyOn(console, 'error').mockImplementation(() => {});
+      const { logger, error } = makeLogger();
+      const logged = createPresenceTracker({ graceMs: () => 0, logger });
 
       await expect(
-        tracker.trackUserConnection(io, 'user-x', 'socket-1', errorRepo),
+        logged.trackUserConnection(io, 'user-x', 'socket-1', errorRepo),
       ).resolves.toBeUndefined();
 
-      expect(consoleSpy).toHaveBeenCalled();
-      consoleSpy.mockRestore();
+      expect(error).toHaveBeenCalled();
     });
 
     it('suppresses and logs errors from getFriends during trackUserDisconnection', async () => {
-      await tracker.trackUserConnection(io, 'user-y', 'socket-1', friendRepo);
+      const { logger, error } = makeLogger();
+      const logged = createPresenceTracker({ graceMs: () => 0, logger });
+      await logged.trackUserConnection(io, 'user-y', 'socket-1', friendRepo);
       const errorRepo = { getFriends: mock().mockRejectedValue(new Error('DB down')) };
-      const consoleSpy = spyOn(console, 'error').mockImplementation(() => {});
 
       await expect(
-        tracker.trackUserDisconnection(io, 'user-y', 'socket-1', errorRepo),
+        logged.trackUserDisconnection(io, 'user-y', 'socket-1', errorRepo),
       ).resolves.toBeUndefined();
 
-      expect(consoleSpy).toHaveBeenCalled();
-      consoleSpy.mockRestore();
+      expect(error).toHaveBeenCalled();
     });
 
     it('handles multiple socket connections per user and tracks disconnection', async () => {
@@ -463,14 +470,12 @@ describe('presence tracker', () => {
       });
 
       it('still hands the leases back when the friend lookup fails', async () => {
-        const consoleSpy = spyOn(console, 'error').mockImplementation(() => {});
         const errorRepo = { getFriends: mock().mockRejectedValue(new Error('DB down')) };
         await alpha.trackUserConnection(io, 'user-1', 'socket-a', errorRepo);
 
         await expect(alpha.stop()).resolves.toBeUndefined();
 
         expect(leases.holders.has('user-1')).toBe(false);
-        consoleSpy.mockRestore();
       });
 
       /**
