@@ -453,6 +453,27 @@ describe('messageService', () => {
       expect(messageRepo.isCursorWithinChangeLog).toHaveBeenCalledWith(5);
     });
 
+    it('reads the page before it probes, so a reset between the two fails safe', async () => {
+      // The two statements take separate snapshots. Probing first, or
+      // alongside, leaves an interleaving where the probe clears the cursor
+      // against the pre-reset log while the page already carries post-reset
+      // changes -- and nothing later corrects that client.
+      let releasePage: ((rows: unknown[]) => void) | undefined;
+      messageRepo.findChangesForUser = mock(() => new Promise((resolve) => {
+        releasePage = resolve as (rows: unknown[]) => void;
+      }));
+
+      const pending = messageService.sync('user-1', 5, 100);
+
+      expect(messageRepo.findChangesForUser).toHaveBeenCalled();
+      expect(messageRepo.isCursorWithinChangeLog).not.toHaveBeenCalled();
+
+      releasePage!([]);
+      await pending;
+
+      expect(messageRepo.isCursorWithinChangeLog).toHaveBeenCalledWith(5);
+    });
+
     it('reports a resync even when the page has changes on it', async () => {
       // A reseeded log that has since taken one new change: the delta looks
       // like ordinary history, and without this the client would advance its
