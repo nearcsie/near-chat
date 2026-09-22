@@ -153,6 +153,12 @@ jobs:
         run: docker build -f backend/Dockerfile.prod -t near-chat-backend:ci .
 
       # Temporary environment configuration for release compose stack.
+      #
+      # REDIS_URL is deliberately absent: the bundle's own default resolves it to
+      # the redis service it ships, so this job exercises what a deployment gets
+      # out of the box. The Redis-ready assertion below is what makes that
+      # visible — a revert to an empty default would fail there rather than pass
+      # quietly over a single-node stack.
       - name: Write a throwaway release env file
         run: |
           set -euo pipefail
@@ -167,11 +173,13 @@ jobs:
           CORS_ORIGINS=http://localhost:3005
           EOF
 
-      - name: Start db, migrate and backend from the release compose
+      # redis is named rather than left to `depends_on`, so the service list here
+      # keeps saying what this job starts even if someone adds `--no-deps`.
+      - name: Start db, redis, migrate and backend from the release compose
         run: |
           set -euo pipefail
           docker compose --env-file "$RUNNER_TEMP/release.env" \
-            -f docker-compose.release.yml up -d db migrate backend
+            -f docker-compose.release.yml up -d db redis migrate backend
 
       - name: Assert the migrate service exited cleanly
         run: |
@@ -274,6 +282,38 @@ jobs:
           echo "::error::backend did not serve an HTTP response on :4005 within 30s"
           exit 1
 
+      # The bundle ships Redis and points the backend at it by default (issue
+      # #527). Both halves are asserted, because each can hold while the other
+      # fails: a healthy redis container proves nothing about the backend having
+      # resolved REDIS_URL, and src/utils/redis.ts degrades quietly rather than
+      # exiting when it cannot connect — so without this the job would pass
+      # identically over a bundle whose realtime is silently single-node.
+      - name: Assert the backend reached the bundled Redis
+        run: |
+          set -euo pipefail
+          container="$(docker compose --env-file "$RUNNER_TEMP/release.env" \
+            -f docker-compose.release.yml ps -q redis)"
+          if [[ -z "$container" ]]; then
+            echo "::error::the release bundle started no redis service"
+            exit 1
+          fi
+
+          for attempt in {1..30}; do
+            # Tolerated rather than fatal, so a container that disappears mid-loop
+            # ends at the explicit error below instead of a bare non-zero exit.
+            health="$(docker inspect -f '{{.State.Health.Status}}' "$container" 2>/dev/null || echo unknown)"
+            if [[ "$health" == "healthy" ]] && docker compose --env-file "$RUNNER_TEMP/release.env" \
+              -f docker-compose.release.yml logs --no-color backend \
+              | grep -q 'Redis command connection ready'; then
+              echo "redis healthy and backend connected on attempt ${attempt}"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::redis never became healthy, or the backend never logged a Redis command connection within 30s"
+          docker inspect -f '{{json .State.Health}}' "$container"
+          exit 1
+
       # Run realtime smoke test suite against running container.
       - name: Run the realtime smoke suite against the production image
         env:
@@ -311,7 +351,7 @@ jobs:
         run: |
           set -euo pipefail
           docker compose --env-file "$RUNNER_TEMP/release.env" \
-            -f docker-compose.release.yml up -d db migrate backend
+            -f docker-compose.release.yml up -d db redis migrate backend
 
       - name: Output release compose smoke summary
         run: |
@@ -323,7 +363,7 @@ jobs:
         if: failure()
         run: |
           docker compose --env-file "$RUNNER_TEMP/release.env" \
-            -f docker-compose.release.yml logs --no-color db migrate backend
+            -f docker-compose.release.yml logs --no-color db redis migrate backend
 
       - name: Tear the stack down
         if: always()
