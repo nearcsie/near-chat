@@ -4,7 +4,10 @@ import { z } from 'zod';
 import { validate } from '../middlewares/validator';
 
 interface SyncService {
-  sync(userId: string, cursor: number, limit: number): Promise<MessageChange[]>;
+  sync(userId: string, cursor: number, limit: number): Promise<{
+    changes: MessageChange[];
+    resyncRequired: boolean;
+  }>;
 }
 
 const syncQuerySchema = z.object({
@@ -23,7 +26,19 @@ export const makeSyncRoutes = (service: SyncService) => {
 
   app.get('/', validate('query', syncQuerySchema), async (c) => {
     const query = c.req.valid('query') as { cursor: number; limit: number };
-    const changes = await service.sync(c.get('user').userId, query.cursor, query.limit);
+    const { changes, resyncRequired } = await service.sync(c.get('user').userId, query.cursor, query.limit);
+    // Echoing the cursor back here would be indistinguishable from "caught
+    // up", which is how a client with an outrun cursor ends up waiting on a
+    // delta that can never arrive. Answer 0 instead: a client that ignores the
+    // flag then over-fetches rather than silently skipping everything.
+    if (resyncRequired) {
+      return c.json({
+        changes: [],
+        nextCursor: 0,
+        hasMore: false,
+        resyncRequired: true,
+      }, 200);
+    }
     const nextCursor = changes.at(-1)?.changeSequence ?? query.cursor;
     return c.json({
       changes,

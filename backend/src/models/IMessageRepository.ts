@@ -7,4 +7,5 @@ export interface IMessageRepository {
   markRecalled(messageId: string, expectedRevision?: number, commandId?: string, actorId?: string): Promise<MessageWithSender>;
   update(messageId: string, content: string, mentions?: string[], expectedRevision?: number, commandId?: string, actorId?: string): Promise<MessageWithSender>;
   findChangesForUser?(userId: string, cursor: number, limit: number): Promise<MessageChange[]>;
+  readChangeLogBounds?(): Promise<{ oldest: number; newest: number } | null>;
 }

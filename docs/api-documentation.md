@@ -126,7 +126,8 @@ All errors return the following JSON structure:
 | `VALIDATION_ERROR` | 400 | Invalid request parameters |
 | `NOT_FOUND` | 404 | Resource not found |
 | `FORBIDDEN` | 403 | Forbidden / insufficient permissions |
-| `CONFLICT` | 409 | Resource conflict (e.g., duplicate friend request) |
+| `CONFLICT` | 409 | Resource conflict (e.g., duplicate friend request, an email already in use, or a stale `If-Match` revision). Whether a retry can succeed depends on the conflict: a stale revision does once the client refetches the message, a resource that already exists does not |
+| `IDEMPOTENCY_CONFLICT` | 409 | The `Idempotency-Key` was already consumed by a different message or a different operation. The receipt is durable, so this never succeeds on retry and the command must be abandoned |
 | `INTERNAL_ERROR` | 500 | Internal server error |
 
 ---
@@ -1217,24 +1218,28 @@ All errors return the following JSON structure:
 - **Description**: Edit a message.
 - **Headers**: `Idempotency-Key` and `If-Match` are required. `If-Match` contains the expected integer `revision`.
 - **Response**: `200 OK` with the updated message and incremented `revision`.
-- **Conflict**: `409 CONFLICT` when the revision is stale.
+- **Conflict**: `409 CONFLICT` when the revision is stale; retry with the revision from the refetched message.
+- **Idempotency conflict**: `409 IDEMPOTENCY_CONFLICT` when the key was already consumed by another message or another operation. Permanent — retrying the same key never succeeds.
 
 #### `POST /rooms/:roomId/messages/:messageId/recall`
 - **Description**: Recall a message.
 - **Headers**: `Idempotency-Key` and `If-Match` are required.
 - **Response**: `200 OK` with the recalled message projection.
-- **Retry rule**: Recalling an already-recalled message succeeds without allocating another change or publishing another event. The key is still consumed: create, edit and recall share one idempotency namespace, and reusing it for a different operation returns `409 CONFLICT`.
+- **Retry rule**: Recalling an already-recalled message succeeds without allocating another change or publishing another event. The key is still consumed: create, edit and recall share one idempotency namespace, and reusing it for a different operation returns `409 IDEMPOTENCY_CONFLICT`.
 
 #### `PUT /rooms/:roomId/read-position`
 - **Description**: Advance the caller's durable read position to a message.
 - **Headers**: `Idempotency-Key` is required.
 - **Request body**: `{ "messageId": "..." }`.
 - **Response**: `200 OK` with the updated room membership projection. Read positions only move forward.
+- **Idempotency conflict**: `409 IDEMPOTENCY_CONFLICT` when the key was already consumed for another room or another message. Read-position commands keep their own receipts, so they never appear in `GET /sync`.
 
 #### `GET /sync`
 - **Description**: Recover durable Message Changes visible to the authenticated user.
 - **Query parameters**: `cursor` (non-negative integer, default `0`) and `limit` (1–500, default `100`).
-- **Response**: `{ "changes": [...], "nextCursor": 42, "hasMore": false }` where each change contains `changeSequence`, `messageSequence`, `revision`, `changeType`, and `message`.
+- **Response**: `{ "changes": [...], "nextCursor": 42, "hasMore": false }` where each change contains `changeSequence`, `messageSequence`, `revision`, `changeType`, `message`, and `commandId`.
+- **`commandId`**: The `Idempotency-Key` of the command that produced the change, present only on the caller's own changes; another member's changes never carry it. It lets a client recognise commands it already sent instead of re-posting them. **Its absence does not mean the command was not applied**: a no-op recall and a read-position command record their receipt outside the change log and so never appear here, and the `2xx` response to the command itself remains the acknowledgement.
+- **Unusable cursor**: When the cursor falls outside the range the change log currently spans — below its oldest sequence, as a reseeded log leaves it, or above its newest, as restoring an older dump leaves it — that cursor was issued against a log the server no longer has, and no future delta can carry it forward. The far end of the page is held to the same bound, so a restore landing mid-request cannot hand over sequences the log no longer reaches. The response is then `{ "changes": [], "nextCursor": 0, "hasMore": false, "resyncRequired": true }`, and the page is withheld so the client cannot advance past the break. The client resumes from `0`. History it already holds may contain messages the reset removed, so it should also discard that history and refetch it through the room endpoints — the web client currently resets its cursor only, and replacing rather than merging a room's history is tracked in #679, so until then a reset can leave messages on screen that the server no longer has. `resyncRequired` is absent on every other response; a cursor that is merely caught up still gets the cursor echoed back with no changes.
 - **Visibility**: Membership is checked on every request. For rooms with hidden history, changes at or before the member's Join Boundary are excluded.
 
 #### `POST /attachments`

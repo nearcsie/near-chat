@@ -89,6 +89,7 @@ export const __resetApiMock = (): void => {
   failNextListMessages = false;
   failMarkRoomRead = false;
   syncGate = null;
+  resyncOnNextSync = false;
 };
 
 export const getApiBaseUrl = (): string => "http://mock-api.test";
@@ -394,16 +395,31 @@ export const __gateNextSync = (): { fail: () => void; succeed: () => void } => {
   };
 };
 
+/**
+ * Makes the next syncChanges call answer the way the server does when the
+ * cursor no longer falls inside the change log: no changes, a nextCursor of 0
+ * and the resync flag.
+ */
+let resyncOnNextSync = false;
+
+export const __queueResyncRequired = (): void => {
+  resyncOnNextSync = true;
+};
+
 export const syncChanges = async (
   _token: string,
   cursor: number,
-): Promise<{ changes: []; nextCursor: number; hasMore: false }> => {
+): Promise<{ changes: []; nextCursor: number; hasMore: false; resyncRequired?: boolean }> => {
   apiCallLog.push({ fn: "syncChanges", args: [cursor] });
   const gate = syncGate;
   if (gate) {
     syncGate = null;
     const outcome = await gate;
     if (outcome.failed) throw new ApiError("Sync failed", 503);
+  }
+  if (resyncOnNextSync) {
+    resyncOnNextSync = false;
+    return { changes: [], nextCursor: 0, hasMore: false, resyncRequired: true };
   }
   return { changes: [], nextCursor: cursor, hasMore: false };
 };

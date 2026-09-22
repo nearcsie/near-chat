@@ -307,7 +307,38 @@ export const makeMessageService = (
       if (!messageRepo.findChangesForUser) {
         throw new ValidationError('Realtime sync is not available');
       }
-      return messageRepo.findChangesForUser(userId, cursor, limit);
+      // A page with changes on it does not mean the cursor is sound. Once a
+      // reseeded log has taken one new change above the old high-water mark,
+      // that change comes back as if it continued the history the client
+      // cached, and the client advances past it still holding rows the reset
+      // threw away. So the coverage of a positive cursor is checked on every
+      // page, not only an empty one.
+      const changes = await messageRepo.findChangesForUser(userId, cursor, limit);
+      if (cursor === 0 || messageRepo.readChangeLogBounds === undefined) {
+        return { changes, resyncRequired: false };
+      }
+      // **The bounds are read after the page, and the order is load-bearing.**
+      // The two statements take separate snapshots, so a reset landing between
+      // them decides what each one sees. Reading the page first makes every
+      // interleaving fail safe: a reset after the page read is still visible
+      // here, the cursor or the page then falls outside the log, and the page
+      // gets withheld. Reading the bounds first, or together, leaves the one
+      // ordering where they clear a cursor against the old log while the page
+      // already carries post-reset changes -- and that client advances onto a
+      // cursor the new log does consider valid, so no later sync ever corrects
+      // it. The cost is a second round trip on a call made per reconnect, not
+      // per message.
+      const bounds = await messageRepo.readChangeLogBounds();
+      // Both ends of the cursor, and the far end of the page: a restore that
+      // lands mid-request can leave the page carrying sequences the log no
+      // longer reaches, and handing those over would advance the client onto
+      // rows that no longer exist.
+      const pageEnd = changes.at(-1)?.changeSequence ?? cursor;
+      const resyncRequired = bounds === null
+        || cursor < bounds.oldest
+        || cursor > bounds.newest
+        || pageEnd > bounds.newest;
+      return { changes, resyncRequired };
     },
   };
 };

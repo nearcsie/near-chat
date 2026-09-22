@@ -1,7 +1,7 @@
 import { describe, it, expect, spyOn } from 'bun:test';
 
 import { mapErrorToApiShape } from '../../../src/utils/mapError';
-import { AppError, ValidationError, ForbiddenError, NotFoundError, ConflictError } from '../../../src/utils/AppError';
+import { AppError, ValidationError, ForbiddenError, NotFoundError, ConflictError, IdempotencyConflictError } from '../../../src/utils/AppError';
 import { logger } from '../../../src/utils/logger';
 
 describe('mapErrorToApiShape', () => {
@@ -48,6 +48,23 @@ describe('mapErrorToApiShape', () => {
       message: 'conflict',
       code: 'CONFLICT',
     });
+  });
+
+  it('maps IdempotencyConflictError (409) to its own code', () => {
+    const err = new IdempotencyConflictError('Idempotency-Key was already used for another operation');
+    expect(mapErrorToApiShape(err)).toEqual({
+      statusCode: 409,
+      message: 'Idempotency-Key was already used for another operation',
+      code: 'IDEMPOTENCY_CONFLICT',
+    });
+  });
+
+  it('gives the two 409 families different codes, so a client can tell retryable from permanent', () => {
+    const stale = mapErrorToApiShape(new ConflictError('Message revision is stale'));
+    const consumedKey = mapErrorToApiShape(new IdempotencyConflictError('Idempotency-Key was already used for another message'));
+
+    expect(stale.statusCode).toBe(consumedKey.statusCode);
+    expect(stale.code).not.toBe(consumedKey.code!);
   });
 
   it('maps unknown errors to 500', () => {

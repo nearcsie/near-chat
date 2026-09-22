@@ -429,4 +429,113 @@ describe('messageService', () => {
     await expect(messageService.recallMessage('user-1', 'room-1', 'missing')).rejects.toThrow(NotFoundError);
     expect(messageRepo.markRecalled).not.toHaveBeenCalled();
   });
+
+  describe('sync', () => {
+    const change = {
+      changeSequence: 12,
+      messageSequence: 4,
+      revision: 1,
+      changeType: 'created' as const,
+      message: messageWithSender,
+    };
+
+    beforeEach(() => {
+      messageRepo.findChangesForUser = mock().mockResolvedValue([]);
+      messageRepo.readChangeLogBounds = mock().mockResolvedValue({ oldest: 1, newest: 100 });
+    });
+
+    it('returns the repository changes when the cursor still covers the log', async () => {
+      messageRepo.findChangesForUser.mockResolvedValue([change]);
+
+      const result = await messageService.sync('user-1', 5, 100);
+
+      expect(result).toEqual({ changes: [change], resyncRequired: false });
+      expect(messageRepo.readChangeLogBounds).toHaveBeenCalled();
+    });
+
+    it('reads the page before it reads the bounds, so a reset between the two fails safe', async () => {
+      // The two statements take separate snapshots. Reading the bounds first,
+      // or alongside, leaves an interleaving where they clear the cursor
+      // against the pre-reset log while the page already carries post-reset
+      // changes -- and nothing later corrects that client.
+      let releasePage: ((rows: unknown[]) => void) | undefined;
+      messageRepo.findChangesForUser = mock(() => new Promise((resolve) => {
+        releasePage = resolve as (rows: unknown[]) => void;
+      }));
+
+      const pending = messageService.sync('user-1', 5, 100);
+
+      expect(messageRepo.findChangesForUser).toHaveBeenCalled();
+      expect(messageRepo.readChangeLogBounds).not.toHaveBeenCalled();
+
+      releasePage!([]);
+      await pending;
+
+      expect(messageRepo.readChangeLogBounds).toHaveBeenCalled();
+    });
+
+    it('reports a resync even when the page has changes on it', async () => {
+      // A reseeded log that has since taken one new change: the delta looks
+      // like ordinary history, and without this the client would advance its
+      // cursor past it while keeping the rows the reset discarded.
+      messageRepo.findChangesForUser.mockResolvedValue([change]);
+      messageRepo.readChangeLogBounds.mockResolvedValue({ oldest: 40, newest: 100 });
+
+      const result = await messageService.sync('user-1', 5, 100);
+
+      expect(result.resyncRequired).toBe(true);
+    });
+
+    it('reports a resync when the cursor has outrun the log', async () => {
+      messageRepo.readChangeLogBounds.mockResolvedValue({ oldest: 1, newest: 50 });
+
+      const result = await messageService.sync('user-1', 100, 100);
+
+      expect(result.resyncRequired).toBe(true);
+    });
+
+    it('reports a resync when the page reaches past the end of the log', async () => {
+      // A restore landing mid-request: the page was read from the old log and
+      // carries 56-60, which the restored log no longer reaches. Validating
+      // only the cursor would hand those rows over and advance the client onto
+      // sequences that no longer exist.
+      messageRepo.findChangesForUser.mockResolvedValue([{ ...change, changeSequence: 60 }]);
+      messageRepo.readChangeLogBounds.mockResolvedValue({ oldest: 1, newest: 55 });
+
+      const result = await messageService.sync('user-1', 50, 100);
+
+      expect(result.resyncRequired).toBe(true);
+    });
+
+    it('reports a resync when the log has been emptied outright', async () => {
+      messageRepo.readChangeLogBounds.mockResolvedValue(null);
+
+      const result = await messageService.sync('user-1', 5, 100);
+
+      expect(result.resyncRequired).toBe(true);
+    });
+
+    it('never reports a resync for the opening cursor of a session', async () => {
+      messageRepo.readChangeLogBounds.mockResolvedValue(null);
+
+      const result = await messageService.sync('user-1', 0, 100);
+
+      expect(result.resyncRequired).toBe(false);
+      expect(messageRepo.readChangeLogBounds).not.toHaveBeenCalled();
+    });
+
+    it('falls back to no resync when the repository cannot answer', async () => {
+      delete messageRepo.readChangeLogBounds;
+
+      const result = await messageService.sync('user-1', 5, 100);
+
+      expect(result.resyncRequired).toBe(false);
+    });
+
+    it('rejects when the repository cannot serve sync at all', async () => {
+      delete messageRepo.findChangesForUser;
+
+      await expect(messageService.sync('user-1', 0, 100)).rejects.toThrow(ValidationError);
+    });
+  });
 });
