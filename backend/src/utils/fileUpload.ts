@@ -9,9 +9,8 @@ export interface UploadedFile {
   mimetype: string;
   size: number;
   buffer: Buffer;
-  destination?: string;
+  /** The name the bytes should be stored under, already made safe and unique. */
   filename?: string;
-  path?: string;
   stream?: ReadableStream | null;
 }
 
@@ -24,6 +23,19 @@ export const sanitizeStoredFileName = (rawName: string): string => {
     .replace(/^\.+/, '');
   return safe.length > 0 ? safe.slice(-100) : 'upload';
 };
+
+/**
+ * Builds the name an upload is stored under.
+ *
+ * Kept here, beside `sanitizeStoredFileName`, rather than moved next to the write:
+ * the two properties this name carries — it never contains a path separator, and
+ * two uploads of one filename never collide — are properties of the name itself,
+ * and they stay directly unit-testable as long as the generator does too. The
+ * timestamp and random segment supply the uniqueness; `sanitizeStoredFileName`
+ * supplies the safety.
+ */
+export const makeStoredFileName = (originalName: string): string =>
+  `${Date.now()}_${crypto.randomUUID().slice(0, 8)}_${sanitizeStoredFileName(originalName)}`;
 
 // Allowance for multipart envelope headers and boundaries.
 const MULTIPART_OVERHEAD_ALLOWANCE = 64 * 1024;
@@ -88,7 +100,6 @@ export interface ParseFileOptions {
   allowedMimeTypes?: string[];
   allowedExtensions?: string[];
   restrictionEnabled?: boolean;
-  saveToDir?: string;
 }
 
 export async function parseSingleFile(
@@ -142,14 +153,13 @@ export async function parseSingleFile(
   const arrayBuffer = await fileObj.arrayBuffer();
   const buffer = Buffer.from(arrayBuffer);
 
-  let filePath = '';
-  let storedName = '';
-  if (options.saveToDir) {
-    storedName = `${Date.now()}_${crypto.randomUUID().slice(0, 8)}_${sanitizeStoredFileName(fileObj.name)}`;
-    filePath = path.join(options.saveToDir, storedName);
-    await Bun.write(filePath, buffer);
-  }
-
+  // Parsing only: this returns the bytes and a safe name, and writes nothing.
+  //
+  // It used to stage the upload on disk itself, which forced a second durable
+  // write whenever the service went on to store different bytes than it was
+  // handed — every compressible image cost a write, a write and a delete. Deciding
+  // the final bytes is the service's call, so the single write that follows from
+  // it belongs there too (see `services/attachmentService.ts`).
   return {
     fieldname: fieldName,
     originalname: fileObj.name,
@@ -157,9 +167,7 @@ export async function parseSingleFile(
     mimetype: cleanMime,
     buffer,
     size: fileObj.size,
-    destination: options.saveToDir || '',
-    filename: storedName || sanitizeStoredFileName(fileObj.name),
-    path: filePath,
+    filename: makeStoredFileName(fileObj.name),
     stream: null,
   };
 }

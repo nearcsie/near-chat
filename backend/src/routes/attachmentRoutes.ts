@@ -1,12 +1,13 @@
 import type { Attachment } from '@shared/types';
 import type { UploadedFile } from '../utils/fileUpload';
+import type { StorageDriver } from '../utils/storageService';
 import { Hono } from 'hono';
-import path from 'path';
 import { NotFoundError } from '../utils/AppError';
 import { authMiddleware } from '../middlewares/authMiddleware';
 import { attachmentUploadConfig } from '../utils/attachmentUploadConfig';
-import { ATTACHMENTS_UPLOAD_DIR, ensureUploadDirectories } from '../utils/uploads';
+import { ensureUploadDirectories } from '../utils/uploads';
 import { parseSingleFile } from '../utils/fileUpload';
+import { defaultAttachmentStorage } from '../utils/storageService';
 import { toPublicAttachment } from '../models/attachmentRepository';
 
 ensureUploadDirectories();
@@ -25,7 +26,10 @@ export interface AttachmentService {
   getAttachment(userId: string, attachmentId: string): Promise<(Attachment & { filePath?: string; file_path?: string; original_name?: string; mime_type?: string }) | null>;
 }
 
-export const makeAttachmentRoutes = (service: AttachmentService) => {
+export const makeAttachmentRoutes = (
+  service: AttachmentService,
+  storage: StorageDriver = defaultAttachmentStorage,
+) => {
   const app = new Hono();
   app.use('*', authMiddleware);
 
@@ -37,7 +41,6 @@ export const makeAttachmentRoutes = (service: AttachmentService) => {
       restrictionEnabled: attachmentUploadConfig.restrictionEnabled,
       allowedMimeTypes: attachmentUploadConfig.allowedMimeTypes,
       allowedExtensions: attachmentUploadConfig.allowedExtensions,
-      saveToDir: ATTACHMENTS_UPLOAD_DIR,
     });
     const result = await service.uploadAttachment(userId, file);
     return c.json(result, 201);
@@ -66,17 +69,15 @@ export const makeAttachmentRoutes = (service: AttachmentService) => {
       throw new NotFoundError('attachment', attachmentId);
     }
 
-    const filePath = path.isAbsolute(rawPath)
-      ? rawPath
-      : path.resolve(ATTACHMENTS_UPLOAD_DIR, path.basename(rawPath));
-
     const originalName = attachment.originalName || attachment.original_name || 'download';
     const mimeType = attachment.fileType || attachment.mime_type || 'application/octet-stream';
 
-    const file = Bun.file(filePath);
-    if (!(await file.exists())) {
-      // Stored file is gone (lost volume, manual deletion). Answering with
+    const file = await storage.open(rawPath);
+    if (!file) {
+      // Stored object is gone (lost volume, manual deletion). Answering with
       // metadata and a 200 would make download clients treat JSON as the file.
+      // Only a genuinely absent object lands here: the driver throws on a
+      // permission or connection failure rather than reporting it as missing.
       throw new NotFoundError('attachment', attachmentId);
     }
 
