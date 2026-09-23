@@ -70,6 +70,7 @@ export default defineConfig({
     include: ["tests/**/*.test.ts", "tests/**/*.test.tsx"],
     coverage: {
       provider: "v8",
+      exclude: ["tests/**"],
       reporter: ["json-summary"],
       reportsDirectory: "./coverage",
     },
