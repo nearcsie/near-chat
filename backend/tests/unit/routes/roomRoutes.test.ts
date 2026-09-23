@@ -228,3 +228,115 @@ describe('GET /rooms/invite/:code', () => {
     expect(res.status).toBe(404);
   });
 });
+
+describe('documented room route contracts', () => {
+  let service: any;
+  let token: string;
+
+  const makeApp = () => {
+    const app = new Hono();
+    app.onError(errorHandler);
+    app.use('/rooms/*', authMiddleware);
+    app.route('/rooms', makeRoomRoutes(service));
+    return app;
+  };
+
+  const request = (path: string, init?: RequestInit) => {
+    const headers = new Headers(init?.headers);
+    headers.set('authorization', `Bearer ${token}`);
+    return makeApp().request(path, { ...init, headers });
+  };
+
+  const jsonRequest = (path: string, method: string, body: unknown) =>
+    request(path, {
+      method,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+  beforeEach(async () => {
+    token = await signToken({ userId: CALLER_ID, email: 'caller@test.com' } as any);
+    service = {
+      list: mock().mockResolvedValue([{ roomId: ROOM_ID, name: 'Study Room' }]),
+      getById: mock().mockResolvedValue({ roomId: ROOM_ID, name: 'Study Room' }),
+      create: mock().mockResolvedValue({ roomId: ROOM_ID, name: 'Study Room' }),
+      createPrivate: mock().mockResolvedValue({
+        room: { roomId: ROOM_ID, type: 'private' },
+        created: true,
+      }),
+      joinByCode: mock().mockResolvedValue({ roomId: ROOM_ID, name: 'Study Room' }),
+      listMembers: mock().mockResolvedValue([{ userId: CALLER_ID, role: 'owner' }]),
+      leave: mock().mockResolvedValue(undefined),
+      kickMember: mock().mockResolvedValue(undefined),
+      approveMember: mock().mockResolvedValue(undefined),
+      deleteGroup: mock().mockResolvedValue(undefined),
+    };
+  });
+
+  it('lists rooms and gets one room for the authenticated caller', async () => {
+    const list = await request('/rooms');
+    expect(list.status).toBe(200);
+    expect(await list.json()).toEqual([{ roomId: ROOM_ID, name: 'Study Room' }]);
+    expect(service.list).toHaveBeenCalledWith(CALLER_ID);
+
+    const detail = await request(`/rooms/${ROOM_ID}`);
+    expect(detail.status).toBe(200);
+    expect(await detail.json()).toEqual({ roomId: ROOM_ID, name: 'Study Room' });
+    expect(service.getById).toHaveBeenCalledWith(ROOM_ID, CALLER_ID);
+  });
+
+  it('creates group and private rooms with the documented status', async () => {
+    const group = await jsonRequest('/rooms', 'POST', { type: 'group', name: 'Study Room' });
+    expect(group.status).toBe(201);
+    expect(service.create).toHaveBeenCalledWith(
+      CALLER_ID,
+      expect.objectContaining({ type: 'group', name: 'Study Room' }),
+    );
+
+    const privateRoom = await jsonRequest('/rooms', 'POST', {
+      type: 'private',
+      targetUserId: NEW_OWNER_ID,
+    });
+    expect(privateRoom.status).toBe(201);
+    expect(service.createPrivate).toHaveBeenCalledWith(CALLER_ID, NEW_OWNER_ID);
+  });
+
+  it('joins by invite code and lists the room members', async () => {
+    const join = await jsonRequest(`/rooms/${ROOM_ID}/members`, 'POST', {
+      inviteCode: 'JOIN123',
+    });
+    expect(join.status).toBe(200);
+    expect(service.joinByCode).toHaveBeenCalledWith(CALLER_ID, 'JOIN123');
+
+    const members = await request(`/rooms/${ROOM_ID}/members`);
+    expect(members.status).toBe(200);
+    expect(await members.json()).toEqual([{ userId: CALLER_ID, role: 'owner' }]);
+    expect(service.listMembers).toHaveBeenCalledWith(ROOM_ID, CALLER_ID);
+  });
+
+  it('lets the caller leave and lets an administrator kick another member', async () => {
+    const leave = await request(`/rooms/${ROOM_ID}/members/me`, { method: 'DELETE' });
+    expect(leave.status).toBe(204);
+    expect(service.leave).toHaveBeenCalledWith(CALLER_ID, ROOM_ID);
+
+    const kick = await request(`/rooms/${ROOM_ID}/members/${NEW_OWNER_ID}`, {
+      method: 'DELETE',
+    });
+    expect(kick.status).toBe(204);
+    expect(service.kickMember).toHaveBeenCalledWith(ROOM_ID, CALLER_ID, NEW_OWNER_ID);
+  });
+
+  it('approves a pending member and archives the room', async () => {
+    const approve = await request(
+      `/rooms/${ROOM_ID}/members/${NEW_OWNER_ID}/approve`,
+      { method: 'POST' },
+    );
+    expect(approve.status).toBe(200);
+    expect(await approve.json()).toEqual({ message: 'Member approved' });
+    expect(service.approveMember).toHaveBeenCalledWith(ROOM_ID, CALLER_ID, NEW_OWNER_ID);
+
+    const archive = await request(`/rooms/${ROOM_ID}`, { method: 'DELETE' });
+    expect(archive.status).toBe(204);
+    expect(service.deleteGroup).toHaveBeenCalledWith(ROOM_ID, CALLER_ID);
+  });
+});

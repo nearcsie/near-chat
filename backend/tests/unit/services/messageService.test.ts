@@ -59,6 +59,7 @@ describe('messageService', () => {
       findByRoom: mock(),
       create: mock(),
       markRecalled: mock(),
+      update: mock(),
     };
     roomRepo = {
       findById: mock(),
@@ -428,6 +429,122 @@ describe('messageService', () => {
 
     await expect(messageService.recallMessage('user-1', 'room-1', 'missing')).rejects.toThrow(NotFoundError);
     expect(messageRepo.markRecalled).not.toHaveBeenCalled();
+  });
+
+  it('updateMessage resolves mentions and publishes the updated message', async () => {
+    const publish = mock();
+    const updated = {
+      ...messageWithSender,
+      content: 'hello @everyone @Bob',
+      mentions: ['user-2', 'user-3'],
+      revision: 2,
+    };
+    messageService = makeMessageService(messageRepo, roomRepo, roomMemberRepo, publish);
+    roomRepo.findById.mockResolvedValue(room);
+    roomMemberRepo.findMember.mockResolvedValue(member);
+    roomMemberRepo.resolveMentions.mockResolvedValue(['user-2']);
+    roomMemberRepo.findByRoom.mockResolvedValue([
+      member,
+      { ...member, userId: 'user-2' },
+      { ...member, userId: 'user-3' },
+      { ...member, userId: 'user-4', role: 'pending' },
+    ]);
+    messageRepo.findById.mockResolvedValue(message);
+    messageRepo.update.mockResolvedValue(updated);
+
+    const result = await messageService.updateMessage(
+      'user-1',
+      'room-1',
+      'message-1',
+      'hello @everyone @Bob',
+      { expectedRevision: 1, commandId: 'command-1' },
+    );
+
+    expect(messageRepo.update).toHaveBeenCalledWith(
+      'message-1',
+      'hello @everyone @Bob',
+      ['user-2', 'user-3'],
+      1,
+      'command-1',
+      'user-1',
+    );
+    expect(publish).toHaveBeenCalledWith('room-1', 'message_updated', updated);
+    expect(result).toBe(updated);
+  });
+
+  it('updateMessage rejects recalled messages without an idempotent command', async () => {
+    roomRepo.findById.mockResolvedValue(room);
+    roomMemberRepo.findMember.mockResolvedValue(member);
+    messageRepo.findById.mockResolvedValue({ ...message, isRecalled: true });
+
+    await expect(
+      messageService.updateMessage('user-1', 'room-1', 'message-1', 'updated'),
+    ).rejects.toThrow(ValidationError);
+    expect(messageRepo.update).not.toHaveBeenCalled();
+  });
+
+  it('markRead publishes the durable read position', async () => {
+    const publish = mock();
+    const readMember = { ...member, lastReadId: 'message-1', readPosition: 7 };
+    roomMemberRepo.markRead = mock().mockResolvedValue(readMember);
+    messageService = makeMessageService(messageRepo, roomRepo, roomMemberRepo, publish);
+    roomRepo.findById.mockResolvedValue(room);
+    roomMemberRepo.findMember.mockResolvedValue(member);
+    messageRepo.findById.mockResolvedValue({ ...message, messageSequence: 7 });
+
+    const result = await messageService.markRead(
+      'user-1',
+      'room-1',
+      'message-1',
+      'command-1',
+    );
+
+    expect(roomMemberRepo.markRead).toHaveBeenCalledWith(
+      'room-1',
+      'user-1',
+      'message-1',
+      'command-1',
+    );
+    expect(publish).toHaveBeenCalledWith('room-1', 'read_update', {
+      roomId: 'room-1',
+      userId: 'user-1',
+      messageId: 'message-1',
+      readPosition: 7,
+    });
+    expect(result).toBe(readMember);
+  });
+
+  it('markRead falls back to updating lastReadId for legacy repositories', async () => {
+    const publish = mock();
+    const readMember = { ...member, lastReadId: 'message-1' };
+    messageService = makeMessageService(messageRepo, roomRepo, roomMemberRepo, publish);
+    roomRepo.findById.mockResolvedValue(room);
+    roomMemberRepo.findMember.mockResolvedValue(member);
+    roomMemberRepo.update.mockResolvedValue(readMember);
+    messageRepo.findById.mockResolvedValue(message);
+
+    const result = await messageService.markRead('user-1', 'room-1', 'message-1');
+
+    expect(roomMemberRepo.update).toHaveBeenCalledWith('room-1', 'user-1', {
+      lastReadId: 'message-1',
+    });
+    expect(publish).toHaveBeenCalledWith('room-1', 'read_update', {
+      roomId: 'room-1',
+      userId: 'user-1',
+      messageId: 'message-1',
+    });
+    expect(result).toBe(readMember);
+  });
+
+  it('markRead rejects messages before a hidden-history join boundary', async () => {
+    roomRepo.findById.mockResolvedValue({ ...room, viewHistory: false });
+    roomMemberRepo.findMember.mockResolvedValue({ ...member, joinBoundary: 10 });
+    messageRepo.findById.mockResolvedValue({ ...message, messageSequence: 9 });
+
+    await expect(
+      messageService.markRead('user-1', 'room-1', 'message-1'),
+    ).rejects.toThrow(ForbiddenError);
+    expect(roomMemberRepo.update).not.toHaveBeenCalled();
   });
 
   describe('sync', () => {
