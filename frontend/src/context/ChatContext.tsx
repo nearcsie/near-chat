@@ -179,11 +179,9 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const activeRoomIdRef = useRef<string | null>(null);
   const notifyDesktopRef = useRef(true);
   const syncCursorRef = useRef(0);
-  // Whose cursor `syncCursorRef` holds. The stored cursor is shared by every
-  // tab, so it is read once per signed-in user, not on every token refresh:
-  // re-reading would let this tab jump to another tab's progress and skip
-  // whatever it missed itself.
-  const cursorOwnerRef = useRef<string | null>(null);
+  // The one read of the stored cursor for the signed-in user; see
+  // `loadStoredCursor`.
+  const storedCursorRef = useRef<{ userId: string; loaded: Promise<void> } | null>(null);
   const syncingRef = useRef(false);
   const bufferedRealtimeRef = useRef<Array<{
     task: () => void;
@@ -207,6 +205,35 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | undefined>(undefined);
   const [user, setUser] = useState<User>({ username: "", email: "", avatar: "" });
+
+  /**
+   * Loads the stored sync cursor into `syncCursorRef`, once per signed-in user.
+   *
+   * The stored cursor is shared by every tab, so a value is only safe to resume
+   * from if it was read before this tab took any message snapshot: anything
+   * read later may already cover changes another tab applied after that
+   * snapshot, and syncing from it would skip them for good. Bootstrap awaits
+   * this before its first fetch and every sync awaits it too. Later calls for
+   * the same user — a token refresh re-running the socket effect — reuse the
+   * first read rather than adopting another tab's progress.
+   *
+   * Never rejects: an unreadable cache reads as 0.
+   */
+  const loadStoredCursor = (userId: string): Promise<void> => {
+    const existing = storedCursorRef.current;
+    if (existing?.userId === userId) return existing.loaded;
+    const entry = { userId, loaded: Promise.resolve() };
+    entry.loaded = (async () => {
+      const cache = await openChatCache(userId);
+      const cursor = await readSyncCursor(cache);
+      closeChatCache(cache);
+      // Superseded by another user's read (the unverified localStorage id
+      // losing to the verified profile): that read owns the cursor now.
+      if (storedCursorRef.current === entry) syncCursorRef.current = cursor;
+    })();
+    storedCursorRef.current = entry;
+    return entry.loaded;
+  };
   const [adminAccess, setAdminAccess] = useState<AdminAccessState>("checking");
   const [adminMonitoring, setAdminMonitoring] = useState<AdminMonitoringState>(emptyAdminMonitoringState);
   const [adminError, setAdminError] = useState<AdminError>(null);
@@ -327,7 +354,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
    * account signing in purges it through `purgeAllExcept`.
    */
   const clearSession = () => {
-    cursorOwnerRef.current = null;
+    storedCursorRef.current = null;
     localStorage.removeItem("user");
     localStorage.removeItem("theme");
     localStorage.removeItem("language");
@@ -545,6 +572,12 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         // Keyed on the verified profile, never on the `user` localStorage
         // entry: that one may still name whoever used this browser before.
         void purgeAllExcept(profile.userId);
+        // Before any message snapshot, which the room refresh below takes; see
+        // `loadStoredCursor`. Awaited ahead of `setToken`, which is what starts
+        // the socket effect when no token refresh already has, so the room
+        // refresh keeps its place ahead of the first sync.
+        await loadStoredCursor(profile.userId);
+        if (cancelled) return;
 
         let finalTheme = settings?.theme;
         const isJustRegistered = localStorage.getItem("just_registered") === "true";
@@ -751,16 +784,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
     const cache = openChatCache(currentUserId);
     // Every sync waits for this, so none can go out with a cursor that has not
-    // been loaded yet. It never rejects: an unreadable cache reads as 0.
-    const cursorReady: Promise<void> = cursorOwnerRef.current === currentUserId
-      ? Promise.resolve()
-      : cache.then(readSyncCursor).then((storedCursor) => {
-        // A superseded run (StrictMode, a token refresh mid-read) leaves the
-        // owner unset, so the run that replaced it reads again.
-        if (disposed) return;
-        syncCursorRef.current = storedCursor;
-        cursorOwnerRef.current = currentUserId;
-      });
+    // been loaded yet.
+    const cursorReady = loadStoredCursor(currentUserId);
     const persistCursor = () => {
       const cursor = syncCursorRef.current;
       void cache.then((handle) => writeSyncCursor(handle, cursor));

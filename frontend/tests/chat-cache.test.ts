@@ -18,7 +18,7 @@ import {
 } from "@/lib/chatCache";
 import { ME_ID } from "./fixtures";
 import { mountChatApp } from "./harness";
-import { __getApiCallLog, __queueSyncAdvance } from "./mocks/api";
+import { __getApiCallLog, __queueSyncAdvance, setActiveAccessToken } from "./mocks/api";
 
 const OTHER_USER = "u-someone-else";
 
@@ -174,6 +174,42 @@ describe("sync cursor through ChatProvider", () => {
 
     await mountChatApp("/chat/room-1");
     expect(syncCursorsSent()[0]).toBe(700);
+  });
+
+  test("reads the stored cursor before this tab takes any message snapshot", async () => {
+    // The stored cursor is shared by every tab. A value read after this tab's
+    // first /messages snapshot may already cover changes another tab applied
+    // after that snapshot, and resuming from it would skip them for good.
+    await seedCursor(ME_ID, 500);
+    const snapshotsBeforeRead: number[] = [];
+    const get = IDBObjectStore.prototype.get;
+    vi.spyOn(IDBObjectStore.prototype, "get").mockImplementation(function (
+      this: IDBObjectStore,
+      ...args: Parameters<IDBObjectStore["get"]>
+    ) {
+      snapshotsBeforeRead.push(__getApiCallLog("listMessages").length);
+      return get.apply(this, args);
+    });
+
+    await mountChatApp("/chat/room-1");
+
+    expect(__getApiCallLog("listMessages").length).toBeGreaterThan(0);
+    expect(snapshotsBeforeRead).toEqual([0]);
+    expect(syncCursorsSent()[0]).toBe(500);
+  });
+
+  test("does not adopt a cursor another tab stores after this tab has loaded", async () => {
+    await seedCursor(ME_ID, 500);
+    await mountChatApp("/chat/room-1");
+    expect(syncCursorsSent()[0]).toBe(500);
+
+    // Another tab of the same account moves the shared cursor on. This tab
+    // never saw those changes, so a token refresh must not jump to it.
+    await seedCursor(ME_ID, 900);
+    act(() => setActiveAccessToken("rotated-token"));
+    await waitFor(() => expect(syncCursorsSent().length).toBeGreaterThan(1));
+
+    expect(syncCursorsSent()).not.toContain(900);
   });
 
   test("starts from 0 when only an older schema version has a cursor", async () => {

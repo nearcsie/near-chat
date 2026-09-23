@@ -306,6 +306,7 @@ export const listMessages = async (
   roomId: string,
   options?: { limit?: number },
 ): Promise<MessageWithSender[]> => {
+  apiCallLog.push({ fn: "listMessages", args: [roomId] });
   if (failNextListMessages) {
     failNextListMessages = false;
     throw new ApiError("Service unavailable", 503);
