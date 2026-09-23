@@ -11,6 +11,14 @@
 import React, { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { resolveAssetUrl } from "@/lib/assets";
+import {
+  closeChatCache,
+  openChatCache,
+  purgeAllExcept,
+  purgeChatCache,
+  readSyncCursor,
+  writeSyncCursor,
+} from "@/lib/chatCache";
 import { translate } from "@/lib/i18n";
 import { NotificationBridge } from "@/lib/notificationBridge";
 import type {
@@ -171,6 +179,11 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const activeRoomIdRef = useRef<string | null>(null);
   const notifyDesktopRef = useRef(true);
   const syncCursorRef = useRef(0);
+  // Whose cursor `syncCursorRef` holds. The stored cursor is shared by every
+  // tab, so it is read once per signed-in user, not on every token refresh:
+  // re-reading would let this tab jump to another tab's progress and skip
+  // whatever it missed itself.
+  const cursorOwnerRef = useRef<string | null>(null);
   const syncingRef = useRef(false);
   const bufferedRealtimeRef = useRef<Array<{
     task: () => void;
@@ -194,18 +207,6 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | undefined>(undefined);
   const [user, setUser] = useState<User>({ username: "", email: "", avatar: "" });
-
-  /**
-   * Drops a sync cursor the server has told us it can no longer honour, so the
-   * next request re-reads the change log from the start. The stored value goes
-   * with it: keeping it would send the same dead cursor again on the next
-   * mount. Only the cursor is reset here — rebuilding cached history belongs to
-   * the local storage layer (#678) and the cache read path (#679).
-   */
-  const resetSyncCursor = useCallback(() => {
-    syncCursorRef.current = 0;
-    if (currentUserId) sessionStorage.removeItem(`near:syncCursor:${currentUserId}`);
-  }, [currentUserId]);
   const [adminAccess, setAdminAccess] = useState<AdminAccessState>("checking");
   const [adminMonitoring, setAdminMonitoring] = useState<AdminMonitoringState>(emptyAdminMonitoringState);
   const [adminError, setAdminError] = useState<AdminError>(null);
@@ -318,7 +319,15 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     return request;
   };
 
+  /**
+   * Ends the in-memory session. The local chat cache is deliberately left
+   * alone: this also runs when the token expires or bootstrap fails (offline
+   * included), and neither is a reason to throw away what the user had.
+   * Explicit logout purges it separately in `handleLogout`; a different
+   * account signing in purges it through `purgeAllExcept`.
+   */
   const clearSession = () => {
+    cursorOwnerRef.current = null;
     localStorage.removeItem("user");
     localStorage.removeItem("theme");
     localStorage.removeItem("language");
@@ -533,6 +542,9 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           getMySettings(currentToken),
         ]);
         if (cancelled) return;
+        // Keyed on the verified profile, never on the `user` localStorage
+        // entry: that one may still name whoever used this browser before.
+        void purgeAllExcept(profile.userId);
 
         let finalTheme = settings?.theme;
         const isJustRegistered = localStorage.getItem("just_registered") === "true";
@@ -731,13 +743,40 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!token || !currentUserId) return;
 
-    const storedCursor = Number(sessionStorage.getItem(`near:syncCursor:${currentUserId}`) ?? 0);
-    syncCursorRef.current = Number.isSafeInteger(storedCursor) && storedCursor >= 0 ? storedCursor : 0;
     bufferedRealtimeRef.current = [];
     replayedWithoutUnreadRef.current.clear();
     syncingRef.current = true;
     let disposed = false;
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const cache = openChatCache(currentUserId);
+    // Every sync waits for this, so none can go out with a cursor that has not
+    // been loaded yet. It never rejects: an unreadable cache reads as 0.
+    const cursorReady: Promise<void> = cursorOwnerRef.current === currentUserId
+      ? Promise.resolve()
+      : cache.then(readSyncCursor).then((storedCursor) => {
+        // A superseded run (StrictMode, a token refresh mid-read) leaves the
+        // owner unset, so the run that replaced it reads again.
+        if (disposed) return;
+        syncCursorRef.current = storedCursor;
+        cursorOwnerRef.current = currentUserId;
+      });
+    const persistCursor = () => {
+      const cursor = syncCursorRef.current;
+      void cache.then((handle) => writeSyncCursor(handle, cursor));
+    };
+    /**
+     * Drops a sync cursor the server has told us it can no longer honour, so the
+     * next request re-reads the change log from the start. The stored value goes
+     * with it: keeping it would send the same dead cursor again on the next
+     * mount. Only the cursor is reset here — rebuilding cached history belongs to
+     * the cache read path (#679).
+     */
+    const resetSyncCursor = () => {
+      syncCursorRef.current = 0;
+      persistCursor();
+    };
+
     const socket = createChatSocket(token);
     socketRef.current = socket;
 
@@ -752,11 +791,12 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     const advanceCursor = (changeSequence?: number) => {
       if (changeSequence === undefined) return;
       syncCursorRef.current = Math.max(syncCursorRef.current, changeSequence);
-      sessionStorage.setItem(`near:syncCursor:${currentUserId}`, String(syncCursorRef.current));
     };
 
     const applySyncChanges = (changes: import('@shared/types').MessageChange[]) => {
       for (const change of changes) advanceCursor(change.changeSequence);
+      // Once per page rather than per change: each write is a transaction.
+      if (changes.length > 0) persistCursor();
       setMessages((current) => mergeMessages(
         current,
         changes.map((change) => {
@@ -786,7 +826,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           applySyncChanges(response.changes);
           if (response.nextCursor > syncCursorRef.current) {
             syncCursorRef.current = response.nextCursor;
-            sessionStorage.setItem(`near:syncCursor:${currentUserId}`, String(syncCursorRef.current));
+            persistCursor();
           }
           hasMore = response.hasMore && response.changes.length > 0;
         }
@@ -928,6 +968,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         // Never rejects: a checkpoint swallows its own errors, and a failed
         // predecessor must not stop this sync from running.
         if (previous) await previous.catch(() => undefined);
+        await cursorReady;
         if (disposed) return;
         await runSynchronization();
       })();
@@ -962,7 +1003,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           applySyncChanges(response.changes);
           if (response.nextCursor > syncCursorRef.current) {
             syncCursorRef.current = response.nextCursor;
-            sessionStorage.setItem(`near:syncCursor:${currentUserId}`, String(syncCursorRef.current));
+            persistCursor();
           }
           hasMore = response.hasMore && response.changes.length > 0;
         }
@@ -1380,6 +1421,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       if (socketRef.current === socket) {
         socketRef.current = null;
       }
+      // A connection left open would block any later deletion of its database.
+      void cache.then(closeChatCache);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUserId, token]);
@@ -1394,7 +1437,9 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
   const handleLogout = () => {
     const authToken = token;
+    const userId = currentUserId;
     clearSession();
+    void purgeChatCache(userId);
     if (authToken) {
       void logout(authToken).catch(console.error);
     }
