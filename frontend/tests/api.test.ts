@@ -369,14 +369,18 @@ describe("API client HTTP contract", () => {
 
   test("resolves attachment URLs and blob downloads through their public helpers", async () => {
     const blob = new Blob(["attachment"], { type: "text/plain" });
-    const fetchMock = vi.fn<typeof fetch>().mockImplementation(async () => new Response(blob));
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue({
+      ok: true,
+      status: 200,
+      blob: async () => blob,
+    } as Response);
     const createObjectURL = vi.fn(() => "blob:attachment");
     vi.stubGlobal("fetch", fetchMock);
     vi.stubGlobal("URL", { ...URL, createObjectURL });
 
     expect(api.attachmentDownloadUrl("/api/v1/attachments/file-1/content"))
       .toBe(`${api.getApiBaseUrl()}/api/v1/attachments/file-1/content`);
-    await expect(api.fetchAttachmentBlob("https://cdn.example.test/file-1")).resolves.toBeInstanceOf(Blob);
+    await expect(api.fetchAttachmentBlob("https://cdn.example.test/file-1")).resolves.toBe(blob);
     await expect(api.fetchAttachmentBlobUrl("https://cdn.example.test/file-1")).resolves.toBe("blob:attachment");
     expect(createObjectURL).toHaveBeenCalledTimes(1);
   });
