@@ -87,7 +87,8 @@ describe('dev object storage (seaweedfs)', () => {
 
     expect(probe).toInclude('--aws-sigv4');
     expect(probe).toInclude('$${S3_BUCKET}');
-    // Without a bucket name the probe would be a ListBuckets, which answers 200.
+    // Without a bucket name the probe would hit the service root instead of a
+    // bucket; the guard fails it outright rather than relying on that answer.
     expect(probe).toStartWith('test -n "$${S3_BUCKET}" &&');
   });
 });

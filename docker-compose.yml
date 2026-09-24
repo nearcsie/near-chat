@@ -121,8 +121,9 @@ services:
       # the key pair is accepted and the bucket exists — everything an upload
       # needs, where `/healthz` would pass before the bucket is there. The image
       # ships curl but not bun, so the backend's `bun -e fetch` probe is not an
-      # option. `test -n` guards the URL: without a bucket name it would be a
-      # ListBuckets request, which also answers 200.
+      # option. `test -n` fails the check outright if no bucket name reached the
+      # container, rather than leaving it to how the server answers a HEAD on
+      # its root.
       test:
         - CMD-SHELL
         - 'test -n "$${S3_BUCKET}" && curl -fsS -o /dev/null -I --aws-sigv4 aws:amz:us-east-1:s3 --user "$${AWS_ACCESS_KEY_ID}:$${AWS_SECRET_ACCESS_KEY}" "http://127.0.0.1:8333/$${S3_BUCKET}"'
