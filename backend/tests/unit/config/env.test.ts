@@ -16,6 +16,7 @@ import {
   DEFAULT_RATE_LIMIT_WINDOW_MS,
   DEFAULT_REFRESH_TTL_DAYS,
   DEFAULT_SESSION_RESERVATION_TTL_MS,
+  DEFAULT_STORAGE_DRIVER,
   DEFAULT_TYPING_TTL_MS,
   env,
   EnvConfigError,
@@ -63,6 +64,15 @@ describe('env', () => {
       allowedExtensions: [...DEFAULT_ATTACHMENT_ALLOWED_EXTENSIONS],
       maxBytes: DEFAULT_ATTACHMENT_MAX_BYTES,
     });
+    expect(config.storage).toEqual({
+      driver: DEFAULT_STORAGE_DRIVER,
+      s3: {
+        endpoint: undefined,
+        bucket: undefined,
+        accessKeyId: undefined,
+        secretAccessKey: undefined,
+      },
+    });
   });
 
   it('coerces the values it is given', () => {
@@ -99,6 +109,8 @@ describe('env', () => {
         RATE_LIMIT_MAX: 'lots',
         TRUST_PROXY_HOPS: 'two',
         ATTACHMENT_TYPE_RESTRICTION_ENABLED: 'maybe',
+        STORAGE_DRIVER: 'floppy',
+        STORAGE_S3_ENDPOINT: 'not a url',
       }),
     ).not.toThrow();
   });
@@ -315,6 +327,111 @@ describe('env', () => {
       }
     });
   });
+
+  describe('storage', () => {
+    const completeS3 = {
+      STORAGE_DRIVER: 's3',
+      STORAGE_S3_ENDPOINT: 'http://seaweedfs:8333',
+      STORAGE_S3_BUCKET: 'near-chat',
+      STORAGE_S3_ACCESS_KEY_ID: 'near-chat-dev',
+      STORAGE_S3_SECRET_ACCESS_KEY: 'near-chat-dev-secret',
+    };
+
+    const fatalNames = (source: NodeJS.ProcessEnv): string[] =>
+      envProblems(source)
+        .filter((problem) => problem.fatal)
+        .map((problem) => problem.name)
+        .sort();
+
+    it('defaults to the filesystem, treating blank as unset', () => {
+      expect(env({}).storage.driver).toBe('fs');
+      expect(env({ STORAGE_DRIVER: '  ' }).storage.driver).toBe('fs');
+      expect(problemNames({ NODE_ENV: 'test', STORAGE_DRIVER: '' })).toEqual([]);
+    });
+
+    it('reads the driver case- and space-insensitively', () => {
+      expect(env({ STORAGE_DRIVER: ' S3 ' }).storage.driver).toBe('s3');
+      expect(env({ STORAGE_DRIVER: 'FS' }).storage.driver).toBe('fs');
+    });
+
+    it('reads the object-store settings trimmed, with blank as unset', () => {
+      expect(
+        env({
+          ...completeS3,
+          STORAGE_S3_ENDPOINT: ' http://seaweedfs:8333 ',
+          STORAGE_S3_BUCKET: '',
+        }).storage.s3,
+      ).toEqual({
+        endpoint: 'http://seaweedfs:8333',
+        bucket: undefined,
+        accessKeyId: 'near-chat-dev',
+        secretAccessKey: 'near-chat-dev-secret',
+      });
+    });
+
+    it('refuses an unknown driver at boot instead of falling back to the filesystem', () => {
+      // env() never throws, so it still answers fs; the refusal is envProblems'.
+      expect(env({ STORAGE_DRIVER: 'minio' }).storage.driver).toBe('fs');
+      expect(envProblems({ NODE_ENV: 'test', STORAGE_DRIVER: 'minio' })).toEqual([
+        expect.objectContaining({ name: 'STORAGE_DRIVER', value: 'minio', fatal: true }),
+      ]);
+    });
+
+    it('requires every object-store setting once s3 is selected, naming them all at once', () => {
+      expect(fatalNames({ NODE_ENV: 'test', STORAGE_DRIVER: 's3' })).toEqual([
+        'STORAGE_S3_ACCESS_KEY_ID',
+        'STORAGE_S3_BUCKET',
+        'STORAGE_S3_ENDPOINT',
+        'STORAGE_S3_SECRET_ACCESS_KEY',
+      ]);
+      expect(
+        fatalNames({ NODE_ENV: 'test', ...completeS3, STORAGE_S3_SECRET_ACCESS_KEY: ' ' }),
+      ).toEqual(['STORAGE_S3_SECRET_ACCESS_KEY']);
+    });
+
+    it('refuses an endpoint that is not an http(s) URL', () => {
+      // `seaweedfs:8333` parses, as a URL whose scheme is `seaweedfs:`.
+      for (const endpoint of ['seaweedfs:8333', 'not a url', 'ftp://store.example']) {
+        expect(
+          fatalNames({ NODE_ENV: 'test', ...completeS3, STORAGE_S3_ENDPOINT: endpoint }),
+        ).toEqual(['STORAGE_S3_ENDPOINT']);
+      }
+      expect(
+        fatalNames({ NODE_ENV: 'test', ...completeS3, STORAGE_S3_ENDPOINT: 'https://s3.example' }),
+      ).toEqual([]);
+    });
+
+    it('boots a complete s3 configuration, warning that nothing reads it yet', () => {
+      expect(envProblems({ NODE_ENV: 'test', ...completeS3 })).toEqual([
+        expect.objectContaining({ name: 'STORAGE_DRIVER', value: 's3', fatal: false }),
+      ]);
+    });
+
+    it('ignores the object-store settings while the driver is fs', () => {
+      expect(
+        problemNames({
+          NODE_ENV: 'test',
+          ...completeS3,
+          STORAGE_DRIVER: 'fs',
+          STORAGE_S3_ENDPOINT: 'not a url',
+        }),
+      ).toEqual([]);
+    });
+
+    it('never echoes an object-store value, since any of them can hold a credential', () => {
+      const problems = envProblems({
+        NODE_ENV: 'test',
+        STORAGE_DRIVER: 's3',
+        STORAGE_S3_ENDPOINT: 'ftp://near-chat-dev:sup3r-s3cret@store.example',
+        STORAGE_S3_SECRET_ACCESS_KEY: 'sup3r-s3cret',
+      });
+
+      for (const problem of problems.filter((p) => p.name.startsWith('STORAGE_S3_'))) {
+        expect(problem.value).toBeUndefined();
+        expect(problem.message).not.toInclude('sup3r-s3cret');
+      }
+    });
+  });
 });
 
 describe('envProblems', () => {
@@ -423,5 +540,16 @@ describe('assertStartupEnv', () => {
       'DATABASE_URL',
       'JWT_SECRET',
     ]);
+  });
+
+  it('refuses to start with s3 selected but not configured', () => {
+    const warn = spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      expect(() => assertStartupEnv({ NODE_ENV: 'test', STORAGE_DRIVER: 's3' })).toThrow(
+        EnvConfigError,
+      );
+    } finally {
+      warn.mockRestore();
+    }
   });
 });
