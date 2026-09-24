@@ -78,6 +78,59 @@ services:
       timeout: 5s
       retries: 10
 
+  # S3-compatible object storage for the S3 upload driver (#281). Nothing
+  # consumes it yet: the backend still writes uploads to the `app_uploads`
+  # volume and deliberately does not depend on this service. Like `db-test`,
+  # `profiles` keeps it out of a plain `docker compose up -d`, and naming it
+  # (`docker compose up -d --wait seaweedfs`) auto-enables the profile. #687
+  # drops the profile when it points the dev backend here.
+  seaweedfs:
+    profiles: ["storage"]
+    # An exact version: SeaweedFS publishes no major-only tag, and `latest`
+    # would let the S3 behaviour the driver is tested against change under it.
+    image: chrislusf/seaweedfs:4.47
+    # `mini` runs master, volume, filer and the S3 gateway in one process — the
+    # image's own default, spelled out here to switch telemetry off, which is
+    # otherwise on and reports to seaweedfs.com.
+    command: ["mini", "-dir=/data", "-master.telemetry=false"]
+    # Offset like every other published port (8333 -> 8335). Bound to loopback
+    # because the credentials below are well-known dev values, so the compose
+    # network is the only access control that means anything.
+    ports:
+      - "127.0.0.1:8335:8333"
+    environment:
+      # mini turns the key pair into an admin identity and creates S3_BUCKET at
+      # startup; an S3 server does not create a bucket on first write. With a
+      # key pair configured, unsigned and wrongly-signed requests are refused,
+      # so a client with bad credentials fails here as it would against a real
+      # store instead of being waved through.
+      #
+      # `:-`, unlike the `-` REDIS_URL uses: an empty value must never reach the
+      # container. An empty key pair drops mini into anonymous mode, where every
+      # signature is accepted, and an empty bucket name skips the pre-creation.
+      #
+      # The same names the backend reads (backend/src/config/env.ts), so one set
+      # of `.env` values configures both ends once #687 wires the backend up.
+      AWS_ACCESS_KEY_ID: ${STORAGE_S3_ACCESS_KEY_ID:-near-chat-dev}
+      AWS_SECRET_ACCESS_KEY: ${STORAGE_S3_SECRET_ACCESS_KEY:-near-chat-dev-secret}
+      S3_BUCKET: ${STORAGE_S3_BUCKET:-near-chat}
+    volumes:
+      - seaweedfs_data:/data
+    healthcheck:
+      # A signed HEAD on the bucket answers 200 only once the S3 gateway is up,
+      # the key pair is accepted and the bucket exists — everything an upload
+      # needs, where `/healthz` would pass before the bucket is there. The image
+      # ships curl but not bun, so the backend's `bun -e fetch` probe is not an
+      # option. `test -n` guards the URL: without a bucket name it would be a
+      # ListBuckets request, which also answers 200.
+      test:
+        - CMD-SHELL
+        - 'test -n "$${S3_BUCKET}" && curl -fsS -o /dev/null -I --aws-sigv4 aws:amz:us-east-1:s3 --user "$${AWS_ACCESS_KEY_ID}:$${AWS_SECRET_ACCESS_KEY}" "http://127.0.0.1:8333/$${S3_BUCKET}"'
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
   backend:
     build:
       # Root context: this is a single-lockfile pnpm workspace, so the lockfile
@@ -236,6 +289,7 @@ services:
 volumes:
   pgdata:
   app_uploads:
+  seaweedfs_data:
 
 networks:
   default:

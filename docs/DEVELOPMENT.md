@@ -59,6 +59,50 @@ If you want uploads to go to a custom folder on the host instead of the default 
 UPLOADS_MOUNT_SOURCE=C:/chat-uploads
 ```
 
+#### Object storage (SeaweedFS, not used yet)
+
+`docker-compose.yml` also defines `seaweedfs`, an S3-compatible store for the
+upcoming S3 upload driver (#281). Nothing uses it yet: the backend keeps writing
+uploads to the mount above and does not depend on it. It therefore sits behind
+the `storage` Compose profile, so a plain `docker compose up -d` does not start
+it. Start it by name:
+
+```bash
+docker compose up -d --wait seaweedfs
+```
+
+Its healthcheck is a signed request for the bucket, so once `--wait` returns the
+S3 API is answering, the key pair is accepted and the bucket exists (SeaweedFS
+creates it at startup). Data lives in the `seaweedfs_data` named volume.
+
+A plain `docker compose down` leaves this container running, because its profile
+is not enabled. Stop it with `docker compose down seaweedfs`, or the whole stack
+with `docker compose --profile storage down`. Likewise `docker compose down -v`
+keeps `seaweedfs_data`; only `docker compose --profile storage down -v` deletes it.
+
+The bucket name and key pair come from `STORAGE_S3_BUCKET`,
+`STORAGE_S3_ACCESS_KEY_ID` and `STORAGE_S3_SECRET_ACCESS_KEY` (defaults
+`near-chat`, `near-chat-dev`, `near-chat-dev-secret`; see `.env.example`). They
+are the same variables `backend/src/config/env.ts` reads next to
+`STORAGE_DRIVER`, which defaults to `fs`. `s3` refuses to boot unless all four
+`STORAGE_S3_*` values are set, and until #687 selecting it changes nothing but a
+boot warning. Unsigned and wrongly signed requests are refused. A new key pair
+takes effect when the container is recreated, and the old one stops working. A
+new bucket name creates a new, empty bucket and leaves the old one in the volume.
+These are well-known development credentials, which is why the port is published
+on `127.0.0.1` only.
+
+The address that reaches the S3 endpoint depends on where the request comes from:
+
+| From | Endpoint |
+|------|----------|
+| Inside the compose network (the backend container) | `http://seaweedfs:8333` |
+| The host (`aws --endpoint-url`, `curl --aws-sigv4`) | `http://127.0.0.1:8335` |
+| A browser using production | None. `docker-compose.prod.yml` has no object store, and its only ingress from the internet is the Cloudflare Tunnel |
+
+The last row is why the S3 driver will keep serving files through backend routes
+rather than storing object URLs in the database.
+
 ### Step 3: Check Container Status
 
 ```bash
@@ -83,6 +127,7 @@ Docker Compose exposes different host ports from the container-internal ports:
 | **Backend API** | [http://localhost:4005](http://localhost:4005) | 4000 | Bun + Hono API & Socket.IO server |
 | **Database** | `localhost:5435` | 5432 | PostgreSQL 18 instance |
 | **Redis** | `localhost:6385` | 6379 | Redis 8 instance for realtime state. Bound to `127.0.0.1` only — it runs without a password. The backend connects at boot but never depends on it: an unreachable Redis degrades realtime, it does not stop the API |
+| **SeaweedFS (S3)** | `127.0.0.1:8335` | 8333 | S3-compatible object store for the upcoming S3 upload driver; nothing uses it yet. Behind the `storage` profile, so start it by name (`docker compose up -d --wait seaweedfs`). Bound to `127.0.0.1` only — its credentials are well-known dev values. See [Object storage](#object-storage-seaweedfs-not-used-yet) |
 
 For browser-facing frontend requests, set the API environment variable to:
 ```env
