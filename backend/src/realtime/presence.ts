@@ -117,6 +117,24 @@ export const createPresenceTracker = ({
   // straight away and let `redis.close()` cut them off.
   const inflightReleases = new Set<Promise<void>>();
 
+  // Reconciliation state (#665): what this instance last saw of the users its
+  // own sockets are friends with, so it can tell those sockets when one of them
+  // is gone without anyone having said so. See `reconcileFriends`.
+  //
+  // Friend lists by local watcher, read at most once per `friendListRounds`
+  // rounds and dropped once the watcher has no entry in `userSockets`.
+  const friendLists = new Map<string, { friendIds: string[]; readRound: number }>();
+  const friendListRounds = 2 * Math.max(1, refreshDivisor);
+  // The friends the last round saw online, or `undefined` when there is no
+  // round to compare against yet: before the first one, and after any round
+  // Redis could not answer.
+  let lastSeenOnline: Set<string> | undefined;
+  let reconcileRound = 0;
+  let reconciling: Promise<void> | undefined;
+  // Bumped by `clearPresence` and `stop`, so a round still in flight cannot
+  // write its stale view back into the state they just emptied.
+  let reconcileEpoch = 0;
+
   const trackRelease = (work: Promise<void>): Promise<void> => {
     inflightReleases.add(work);
     // `catch` before `finally`: a rejected `work` reaches its own handler at
@@ -186,11 +204,11 @@ export const createPresenceTracker = ({
    * can stay down past `PRESENCE_TTL_MS` while this instance's sockets — and the
    * publisher that would carry a frame — are perfectly healthy. Every lease then
    * expires under its own `HPEXPIRE` with the users still connected, and the
-   * first beat after recovery takes them all back. Handing them back silently
-   * was invisible only because nothing watches for the expiry yet; #665 adds a
-   * reconciler that announces offline on exactly that signal, and without the
-   * announcement here one Redis blip would strand every user of this instance as
-   * offline until each friend's next `GET /api/v1/friends` (#664).
+   * first beat after recovery takes them all back. Every other instance's
+   * `reconcileFriends` sees the lapse and announces those users offline to its
+   * own sockets (#665), so without the announcement here one Redis blip would
+   * strand every user of this instance as offline until each friend's next
+   * `GET /api/v1/friends` (#664).
    *
    * `before === 0` is a single-winner latch rather than merely "the lease was
    * gone": `HOLD_SCRIPT` reads `HLEN` and writes the field inside one `EVAL`
@@ -250,6 +268,146 @@ export const createPresenceTracker = ({
     }
   };
 
+  /**
+   * Tells this instance's sockets about friends whose leases lapsed on another
+   * instance that never said so — one killed without `stop()` (SIGKILL, OOM, a
+   * reclaimed container), whose leases can only expire on their own TTL (#665).
+   *
+   * Every surviving instance runs this for itself, and it addresses **only its
+   * own sockets** (`io.local`): the watchers are the users connected here, and
+   * the frame never reaches the cluster adapter. That is what makes it safe
+   * without any coordination between instances — each one covers a disjoint set
+   * of sockets, so between them every connected friend hears it once, and no
+   * lock or roster is needed to keep two survivors from both announcing. Derive
+   * the watchers from anything wider than this instance's own sockets and that
+   * stops holding.
+   *
+   * A friend is announced when the previous round saw them online and this one
+   * does not. Friends connected to *this* instance are counted as online and
+   * never announced: their departure is `releaseUser`'s to tell. They still go
+   * into the answer, though — a user who leaves here while another instance
+   * still holds them is told nothing by `releaseUser`, and when that other
+   * instance's lease later lapses this is the only place left to notice.
+   *
+   * It fails closed. A round Redis cannot answer announces nothing and discards
+   * the answer it would have compared against, so the first round after an
+   * outage only refills: a Redis that restarted has lost every lease, and the
+   * instances that own them take them back on their own next beat — comparing
+   * before then would report all of their still-connected users as gone.
+   *
+   * Friend lists are cached, because this runs every beat and `getFriends` is
+   * two statements. A list whose refresh fails keeps being served; a watcher
+   * with no list at all is left out of the round, and the friends only it
+   * watches keep what the last round saw rather than being forgotten.
+   */
+  const reconcileFriends = async (): Promise<void> => {
+    if (!store || stopped) return;
+    const io = boundIo;
+    const friendRepo = boundFriendRepo;
+    if (!io || !friendRepo) return;
+    const epoch = reconcileEpoch;
+    const round = ++reconcileRound;
+    const current = (): boolean => !stopped && epoch === reconcileEpoch;
+
+    for (const userId of friendLists.keys()) {
+      if (!userSockets.has(userId)) friendLists.delete(userId);
+    }
+
+    // A user in the grace period keeps an empty entry in `userSockets`, so the
+    // watchers are counted by socket rather than by key: nobody to tell there.
+    const watchers = new Map<string, Set<string>>();
+    let complete = true;
+    for (const watcherId of userSockets.keys()) {
+      if (localSocketCount(watcherId) === 0) continue;
+      let list = friendLists.get(watcherId);
+      if (!list || round - list.readRound >= friendListRounds) {
+        // One at a time, for the reason `refreshLeases` gives: an empty cache
+        // is every connected user at once, and this shares the `Bun.SQL` pool.
+        try {
+          const friends = await friendRepo.getFriends(watcherId);
+          if (!current()) return;
+          list = { friendIds: friends.map((f) => f.friend.userId), readRound: round };
+          friendLists.set(watcherId, list);
+        } catch (err) {
+          if (!current()) return;
+          logger.debug({ err, userId: watcherId }, 'Presence reconciliation could not read friends');
+        }
+      }
+      if (!list) {
+        complete = false;
+        continue;
+      }
+      for (const friendId of list.friendIds) {
+        let seenBy = watchers.get(friendId);
+        if (!seenBy) {
+          seenBy = new Set<string>();
+          watchers.set(friendId, seenBy);
+        }
+        seenBy.add(watcherId);
+      }
+    }
+
+    const remote = new Set([...watchers.keys()].filter((userId) => !isLocallyOnline(userId)));
+    let online = new Set<string>();
+    if (remote.size > 0) {
+      const result = await store.areOnline([...remote]);
+      if (!current()) return;
+      if (!result.ok) {
+        lastSeenOnline = undefined;
+        return;
+      }
+      online = result.value;
+    }
+
+    // What this round saw: every friend Redis reported, plus every friend
+    // connected here, whether they were at the query or arrived during it.
+    const seenOnline = new Set(online);
+    for (const userId of watchers.keys()) {
+      if (isLocallyOnline(userId) || !remote.has(userId)) seenOnline.add(userId);
+    }
+
+    const previous = lastSeenOnline;
+    if (complete) {
+      lastSeenOnline = seenOnline;
+    } else {
+      const merged = new Set([...(previous ?? [])].filter((userId) => !watchers.has(userId)));
+      for (const userId of seenOnline) merged.add(userId);
+      lastSeenOnline = merged;
+    }
+    if (!previous) return;
+
+    for (const userId of remote) {
+      if (!previous.has(userId) || seenOnline.has(userId)) continue;
+      const rooms = [...(watchers.get(userId) ?? [])]
+        .filter((watcherId) => localSocketCount(watcherId) > 0)
+        .map((watcherId) => `user_${watcherId}`);
+      // Never empty on the way in, but a watcher can leave during the round,
+      // and an empty room set would address the whole namespace.
+      if (rooms.length === 0) continue;
+      io.local.to(rooms).emit('user_status', { userId, status: 'offline' });
+    }
+  };
+
+  /** Starts a reconciliation round unless one is still running. */
+  const reconcile = (): Promise<void> => {
+    if (!reconciling) {
+      reconciling = reconcileFriends()
+        .catch((err) => {
+          logger.debug({ err }, 'Presence reconciliation failed');
+        })
+        .finally(() => {
+          reconciling = undefined;
+        });
+    }
+    return reconciling;
+  };
+
+  const clearReconciliation = (): void => {
+    reconcileEpoch += 1;
+    friendLists.clear();
+    lastSeenOnline = undefined;
+  };
+
   const startHeartbeat = (): void => {
     if (!store || heartbeat !== undefined) return;
     const period = Math.max(1, Math.floor(ttlMs / Math.max(1, refreshDivisor)));
@@ -258,11 +416,20 @@ export const createPresenceTracker = ({
     // now announces as well as renews and so no longer settles within a single
     // turn of the microtask queue. `catch` keeps the returned promise settled, so
     // nothing here can float a rejection.
+    //
+    // Renewal and reconciliation side by side rather than one after the other.
+    // Renewing is what the heartbeat is for, so it runs every beat whether or not
+    // the previous reconciliation has finished — `reconcile` is the one that
+    // skips — and the two never touch the same users, because reconciliation
+    // leaves out everyone connected here.
     heartbeat = setIntervalFn(
       () =>
-        refreshLeases().catch((err) => {
-          logger.debug({ err }, 'Presence heartbeat failed');
-        }),
+        Promise.all([
+          refreshLeases().catch((err) => {
+            logger.debug({ err }, 'Presence heartbeat failed');
+          }),
+          reconcile(),
+        ]).then(() => undefined),
       period,
     );
     (heartbeat as { unref?: () => void }).unref?.();
@@ -437,6 +604,7 @@ export const createPresenceTracker = ({
     },
 
     async clearPresence() {
+      clearReconciliation();
       for (const timer of pendingDisconnects.values()) clearTimeout(timer);
       const users = heldUsers();
       pendingDisconnects.clear();
@@ -450,6 +618,7 @@ export const createPresenceTracker = ({
         clearIntervalFn(heartbeat);
         heartbeat = undefined;
       }
+      clearReconciliation();
       for (const timer of pendingDisconnects.values()) clearTimeout(timer);
       const users = heldUsers();
       pendingDisconnects.clear();

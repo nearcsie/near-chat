@@ -64,13 +64,43 @@ const makeSharedLeases = () => {
     healRedis: () => {
       failing = false;
     },
+    /**
+     * Lets every lease `instanceId` holds lapse, the way a SIGKILLed instance's
+     * do: the fields are gone and nothing on that instance says so. Unlike
+     * `release` no tracker takes part, so no announcement can come from it.
+     */
+    expireInstance: (instanceId: string) => {
+      for (const [userId, set] of holders) {
+        set.delete(instanceId);
+        if (set.size === 0) holders.delete(userId);
+      }
+    },
   };
 };
 
+/**
+ * `local` is its own mock rather than the cluster-wide `to`: which of the two
+ * carried a frame is exactly what the reconciler's tests have to tell apart.
+ */
 const makeIo = () => {
   const roomEmit = mock();
-  const io = { to: mock(() => ({ emit: roomEmit })) } as unknown as ChatServer;
-  return { io, roomEmit };
+  const localEmit = mock();
+  const localTo = mock(() => ({ emit: localEmit }));
+  const io = {
+    to: mock(() => ({ emit: roomEmit })),
+    local: { to: localTo },
+  } as unknown as ChatServer;
+  return { io, roomEmit, localTo, localEmit };
+};
+
+/**
+ * A friend graph answering `getFriends` from a fixed adjacency list. `lookup`
+ * is the plain answer, kept so a test that makes `getFriends` fail can restore it.
+ */
+const makeFriendGraph = (friendships: Record<string, string[]>) => {
+  const lookup = async (userId: string) =>
+    (friendships[userId] ?? []).map((friendId) => ({ friend: { userId: friendId } }));
+  return { getFriends: mock(lookup), lookup };
 };
 
 describe('presence tracker', () => {
@@ -644,10 +674,10 @@ describe('presence tracker', () => {
     /**
      * The #664 defect. A command-connection outage longer than the lease TTL
      * expires every lease this instance holds while its sockets stay up, and the
-     * beat after recovery takes them back. Handing them back without a word is
-     * harmless only until something watches for the expiry: #665 adds a
-     * reconciler that announces offline on exactly that signal, and nothing else
-     * in the module would ever take it back.
+     * beat after recovery takes them back. Handing them back without a word
+     * would strand them: every other instance's reconciler announces offline on
+     * exactly that expiry (#665), and nothing else in the module would ever take
+     * it back.
      */
     it('announces online when it re-takes a lease that had lapsed', async () => {
       const leases = makeSharedLeases();
@@ -772,6 +802,348 @@ describe('presence tracker', () => {
       const local = createPresenceTracker({ graceMs: () => 0, setIntervalFn });
       await local.trackUserConnection(io, 'user-1', 'socket-1', friendRepo);
       expect(setIntervalFn).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * An instance that dies without `stop()` hands nothing back: its leases lapse
+   * on their own TTL, and only the instances still running can notice (#665).
+   * Each of them tells its own sockets and nobody else's, so these tests read
+   * `io.local` and check the cluster-wide `to` stayed out of it.
+   */
+  describe('when another instance dies without handing its leases back', () => {
+    const TTL_MS = 300;
+    const offline = (userId: string) => ['user_status', { userId, status: 'offline' }] as const;
+
+    let leases: ReturnType<typeof makeSharedLeases>;
+
+    /** A tracker whose heartbeat the test drives by hand, one round per call. */
+    const makeInstance = (
+      instanceId: string,
+      graph: ReturnType<typeof makeFriendGraph>,
+      store: PresenceStore = leases.viewFor(instanceId),
+    ) => {
+      const ports = makeIo();
+      let beat: (() => unknown) | undefined;
+      const tracker = createPresenceTracker({
+        store,
+        graceMs: () => 0,
+        ttlMs: TTL_MS,
+        refreshDivisor: 3,
+        setIntervalFn: (handler) => {
+          beat = handler;
+          return 0;
+        },
+        clearIntervalFn: () => {},
+      });
+      return {
+        ...ports,
+        tracker,
+        connect: (userId: string) =>
+          tracker.trackUserConnection(ports.io, userId, `socket-${instanceId}-${userId}`, graph),
+        disconnect: (userId: string) =>
+          tracker.trackUserDisconnection(ports.io, userId, `socket-${instanceId}-${userId}`, graph),
+        beat: async () => {
+          expect(beat).toBeDefined();
+          await beat!();
+        },
+      };
+    };
+
+    beforeEach(() => {
+      leases = makeSharedLeases();
+    });
+
+    it('tells a local friend once the dead instance\'s lease has lapsed', async () => {
+      const graph = makeFriendGraph({ 'user-1': ['friend-1'], 'friend-1': ['user-1'] });
+      const alpha = makeInstance('alpha', graph);
+      const beta = makeInstance('beta', graph);
+      await beta.connect('friend-1');
+      await alpha.connect('user-1');
+      await beta.beat();
+      expect(beta.localEmit).not.toHaveBeenCalled();
+      beta.roomEmit.mockClear();
+
+      leases.expireInstance('alpha');
+      await beta.beat();
+
+      expect(beta.localTo).toHaveBeenCalledWith(['user_friend-1']);
+      expect(beta.localEmit).toHaveBeenCalledTimes(1);
+      expect(beta.localEmit).toHaveBeenCalledWith(...offline('user-1'));
+      expect(beta.roomEmit).not.toHaveBeenCalled();
+    });
+
+    it('addresses only the friends with a session on this instance', async () => {
+      const graph = makeFriendGraph({
+        'user-1': ['friend-1', 'friend-2', 'friend-3'],
+        'friend-1': ['user-1'],
+        'friend-2': ['user-1'],
+        'friend-3': ['user-1'],
+      });
+      const alpha = makeInstance('alpha', graph);
+      const beta = makeInstance('beta', graph);
+      const gamma = makeInstance('gamma', graph);
+      await beta.connect('friend-1');
+      await gamma.connect('friend-2');
+      await alpha.connect('user-1');
+      await beta.beat();
+      await gamma.beat();
+
+      leases.expireInstance('alpha');
+      await beta.beat();
+      await gamma.beat();
+
+      // Every survivor covers its own sockets and only those, so between them
+      // each connected friend hears it exactly once; friend-3 has no session.
+      expect(beta.localTo).toHaveBeenCalledTimes(1);
+      expect(beta.localTo).toHaveBeenCalledWith(['user_friend-1']);
+      expect(gamma.localTo).toHaveBeenCalledTimes(1);
+      expect(gamma.localTo).toHaveBeenCalledWith(['user_friend-2']);
+    });
+
+    it('says nothing on the next beat, because the departure is already told', async () => {
+      const graph = makeFriendGraph({ 'user-1': ['friend-1'], 'friend-1': ['user-1'] });
+      const alpha = makeInstance('alpha', graph);
+      const beta = makeInstance('beta', graph);
+      await beta.connect('friend-1');
+      await alpha.connect('user-1');
+      await beta.beat();
+      leases.expireInstance('alpha');
+      await beta.beat();
+      beta.localEmit.mockClear();
+
+      await beta.beat();
+
+      expect(beta.localEmit).not.toHaveBeenCalled();
+    });
+
+    /**
+     * The first round after an outage refills and nothing more. A Redis that
+     * restarted has lost every lease, and the instances that own them take them
+     * back on their own next beat; a survivor that compared against its
+     * pre-outage answer before then would tell its sockets that every one of
+     * those still-connected users had left.
+     */
+    it('announces nothing while Redis is down, nor on the first round after it heals', async () => {
+      const graph = makeFriendGraph({ 'user-1': ['friend-1'], 'friend-1': ['user-1'] });
+      const alpha = makeInstance('alpha', graph);
+      const beta = makeInstance('beta', graph);
+      await beta.connect('friend-1');
+      await alpha.connect('user-1');
+      await beta.beat();
+
+      leases.breakRedis();
+      leases.holders.clear();
+      await beta.beat();
+      expect(beta.localEmit).not.toHaveBeenCalled();
+
+      leases.healRedis();
+      await beta.beat();
+      expect(beta.localEmit).not.toHaveBeenCalled();
+
+      // alpha's own beat takes user-1's lease back; the refilled answer holds.
+      await alpha.beat();
+      await beta.beat();
+      expect(beta.localEmit).not.toHaveBeenCalled();
+
+      // And the round after the refill is a working baseline again.
+      leases.expireInstance('alpha');
+      await beta.beat();
+      expect(beta.localEmit).toHaveBeenCalledTimes(1);
+      expect(beta.localEmit).toHaveBeenCalledWith(...offline('user-1'));
+    });
+
+    /**
+     * The post-await re-check. user-1 lands on this instance while the round is
+     * parked on `areOnline`, whose answer predates the connection — so without
+     * the re-check the round would tell friend-1 that a user now connected right
+     * here had left.
+     */
+    it('does not announce offline for a user who connects here mid-round', async () => {
+      const graph = makeFriendGraph({ 'user-1': ['friend-1'], 'friend-1': ['user-1'] });
+      const view = leases.viewFor('beta');
+      let gate: Promise<void> | undefined;
+      let parked: (() => void) | undefined;
+      const reachedGate = new Promise<void>((resolve) => {
+        parked = resolve;
+      });
+      const gatedStore: PresenceStore = {
+        ...view,
+        async areOnline(userIds) {
+          const outcome = await view.areOnline(userIds);
+          if (gate) {
+            const pending = gate;
+            gate = undefined;
+            parked!();
+            await pending;
+          }
+          return outcome;
+        },
+      };
+      const alpha = makeInstance('alpha', graph);
+      const beta = makeInstance('beta', graph, gatedStore);
+      await beta.connect('friend-1');
+      await alpha.connect('user-1');
+      await beta.beat();
+
+      leases.expireInstance('alpha');
+      let openGate: (() => void) | undefined;
+      gate = new Promise<void>((resolve) => {
+        openGate = resolve;
+      });
+      const round = beta.beat();
+      await reachedGate;
+
+      await beta.connect('user-1');
+      openGate!();
+      await round;
+
+      expect(beta.localEmit).not.toHaveBeenCalled();
+    });
+
+    /**
+     * user-1 was connected here and on alpha. Leaving here tells nobody —
+     * `release` still finds alpha's field — and alpha's lease then lapses before
+     * the next round. Unless the answer remembered user-1 as online while they
+     * were connected here, this round would have nothing to compare against.
+     */
+    it('tells a local friend about a user who left here and then lapsed elsewhere', async () => {
+      const graph = makeFriendGraph({ 'user-1': ['friend-1'], 'friend-1': ['user-1'] });
+      const alpha = makeInstance('alpha', graph);
+      const beta = makeInstance('beta', graph);
+      await beta.connect('friend-1');
+      await alpha.connect('user-1');
+      await beta.connect('user-1');
+      await beta.beat();
+
+      beta.roomEmit.mockClear();
+      await beta.disconnect('user-1');
+      expect(beta.roomEmit).not.toHaveBeenCalled();
+      leases.expireInstance('alpha');
+      await beta.beat();
+
+      expect(beta.localTo).toHaveBeenCalledWith(['user_friend-1']);
+      expect(beta.localEmit).toHaveBeenCalledTimes(1);
+      expect(beta.localEmit).toHaveBeenCalledWith(...offline('user-1'));
+    });
+
+    /**
+     * A friend lookup that fails must not cost the other watchers their
+     * announcements, and must not cost the failing watcher its place either:
+     * friend-3 arrived after the last round and its first lookup failed, so
+     * user-1 went unobserved for a round. Replacing the answer wholesale would
+     * forget that user-1 had been online, and friend-3 would never be told.
+     */
+    it('keeps announcing through a failed friend lookup, and keeps what it could not observe', async () => {
+      const graph = makeFriendGraph({
+        'user-1': ['friend-1', 'friend-3'],
+        'user-2': ['friend-2'],
+        'friend-1': ['user-1'],
+        'friend-2': ['user-2'],
+        'friend-3': ['user-1'],
+      });
+      const alpha = makeInstance('alpha', graph);
+      const beta = makeInstance('beta', graph);
+      await beta.connect('friend-1');
+      await beta.connect('friend-2');
+      await alpha.connect('user-1');
+      await alpha.connect('user-2');
+      await beta.beat();
+
+      await beta.disconnect('friend-1');
+      await beta.connect('friend-3');
+      graph.getFriends.mockImplementation(async (userId: string) => {
+        if (userId === 'friend-3') throw new Error('DB down');
+        return graph.lookup(userId);
+      });
+      leases.expireInstance('alpha');
+      beta.localEmit.mockClear();
+      await beta.beat();
+
+      expect(beta.localTo).toHaveBeenCalledWith(['user_friend-2']);
+      expect(beta.localEmit).toHaveBeenCalledTimes(1);
+      expect(beta.localEmit).toHaveBeenCalledWith(...offline('user-2'));
+
+      graph.getFriends.mockImplementation(graph.lookup);
+      beta.localEmit.mockClear();
+      await beta.beat();
+
+      expect(beta.localTo).toHaveBeenCalledWith(['user_friend-3']);
+      expect(beta.localEmit).toHaveBeenCalledTimes(1);
+      expect(beta.localEmit).toHaveBeenCalledWith(...offline('user-1'));
+    });
+
+    /**
+     * The window is counted in rounds, two TTLs' worth: `refreshDivisor` beats
+     * per TTL, so six here. Counting rounds rather than reading a clock keeps
+     * this free of real time, and lets a deployment whose rounds run long
+     * re-read proportionally less often.
+     */
+    it('reuses a friend list within its window, and keeps serving it when a refresh fails', async () => {
+      const graph = makeFriendGraph({ 'user-1': ['friend-1'], 'friend-1': ['user-1'] });
+      const alpha = makeInstance('alpha', graph);
+      const beta = makeInstance('beta', graph);
+      await beta.connect('friend-1');
+      await alpha.connect('user-1');
+      graph.getFriends.mockClear();
+      const reads = () => graph.getFriends.mock.calls.filter(([id]) => id === 'friend-1').length;
+
+      for (let round = 1; round <= 6; round += 1) await beta.beat();
+      expect(reads()).toBe(1);
+
+      graph.getFriends.mockImplementation(async () => {
+        throw new Error('DB down');
+      });
+      leases.expireInstance('alpha');
+      await beta.beat();
+
+      expect(reads()).toBe(2);
+      expect(beta.localEmit).toHaveBeenCalledTimes(1);
+      expect(beta.localEmit).toHaveBeenCalledWith(...offline('user-1'));
+    });
+
+    it('runs one reconciliation at a time, while every beat still renews', async () => {
+      const graph = makeFriendGraph({ 'user-1': ['friend-1'], 'friend-1': ['user-1'] });
+      const view = leases.viewFor('beta');
+      let openGate: (() => void) | undefined;
+      const gate = new Promise<void>((resolve) => {
+        openGate = resolve;
+      });
+      const areOnline = mock(async (userIds: string[]) => {
+        const outcome = await view.areOnline(userIds);
+        await gate;
+        return outcome;
+      });
+      const beta = makeInstance('beta', graph, { ...view, areOnline });
+      await beta.connect('friend-1');
+
+      const first = beta.beat();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(areOnline).toHaveBeenCalledTimes(1);
+
+      leases.holders.delete('friend-1');
+      const second = beta.beat();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(areOnline).toHaveBeenCalledTimes(1);
+      expect(leases.holders.get('friend-1')?.has('beta')).toBe(true);
+
+      openGate!();
+      await Promise.all([first, second]);
+    });
+
+    it('announces nothing once stopped', async () => {
+      const graph = makeFriendGraph({ 'user-1': ['friend-1'], 'friend-1': ['user-1'] });
+      const alpha = makeInstance('alpha', graph);
+      const beta = makeInstance('beta', graph);
+      await beta.connect('friend-1');
+      await alpha.connect('user-1');
+      await beta.beat();
+
+      await beta.tracker.stop();
+      leases.expireInstance('alpha');
+      await beta.beat();
+
+      expect(beta.localEmit).not.toHaveBeenCalled();
     });
   });
 });

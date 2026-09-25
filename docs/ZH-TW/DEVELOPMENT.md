@@ -143,10 +143,16 @@ typing indication TTL 與握手名額保留時間；與其他後端變數一樣�
 `backend/Dockerfile.prod` 的 CMD 使用 `exec`），也必須留足夠時間讓 drain 完成
 （因此 backend service 設定 `stop_grace_period: 30s`）。兩者只要有一項不對，
 container 就會在 lease 尚未交還時被 SIGKILL，外觀上與「instance 當掉」完全相同
-——完整的關機約定見 docs/ZH-TW/RELEASE.md。被 SIGKILL 的 instance 同樣完全不會
-宣告：它的 lease 只能靠自身 TTL 過期，而沒有任何元件在監看該過期事件，因此好友
-最多會停留在過期的「在線」達 `PRESENCE_TTL_MS`，之後還要等下一次 `GET /friends`
-（#654 追蹤此缺口）。`INSTANCE_ID`
+——完整的關機約定見 docs/ZH-TW/RELEASE.md。被 SIGKILL 的 instance 自己無法做
+任何宣告，因此改由仍在運作的 instance 代為宣告（#665）：每次 heartbeat 時，各
+instance 會拿自己本機連線使用者的好友去比對 lease，上一輪看到在線、如今 lease 已
+消失的好友，會只對本機 socket（`io.local`）宣告 `offline`。每個 instance 只負責
+自己的 socket，因此 instance 之間不需要協調，每位連線中的好友也只會收到一次。宣告
+會在 SIGKILL 後 `PRESENCE_TTL_MS` 加一個 heartbeat 週期內送達——預設約 40 秒——
+另加 Redis 回收過期欄位的片刻與該次檢查本身的執行時間；檢查所用的好友清單會快取
+兩個 TTL。此檢查採 fail-closed：Redis 無法回應的那一輪不做任何宣告，中斷後的第一
+輪也只重新讀取，因此在中斷期間當掉的 instance 不會被宣告，其使用者會停留在「在
+線」，直到好友下一次 `GET /friends`。`INSTANCE_ID`
 是本行程在該 hash 中的名稱；留空時每次啟動自行產生一個，除非編排器本來就有穩
 定的 per-replica 名稱可以沿用，否則不需要設定。欄位層級的 TTL 需要
 **Redis 7.4 以上** —— 對更舊的伺服器寫入會失敗，後端會記錄一次版本需求，
