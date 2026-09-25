@@ -160,10 +160,19 @@ CMD) and allow enough time for the drain to finish (hence
 `stop_grace_period: 30s` on the backend service). Get either wrong and the
 container is SIGKILLed with its leases still held, which looks exactly like a
 crashed instance — see docs/RELEASE.md for the full stop contract. A SIGKILLed
-instance also announces nothing at all: its leases expire on their own TTL and
-no component watches for that expiry, so friends keep the stale `online` for up
-to `PRESENCE_TTL_MS` and then until their next `GET /friends` (#654 tracks
-closing this).
+instance cannot announce anything itself, so the instances still running do it
+instead (#665): on every heartbeat each one checks the friends of its own
+connected users against the leases, and a friend it last saw online whose lease
+has since gone is announced `offline` to its own sockets only (`io.local`).
+Every instance covers only its own sockets, so each connected friend hears it
+once without the instances coordinating. The announcement lands within
+`PRESENCE_TTL_MS` plus one heartbeat of the kill — about 40 seconds at the
+defaults — plus the moment Redis takes to reclaim the expired field and however
+long the check itself runs; the friend lists it uses are cached for two TTLs.
+It fails closed: a round Redis cannot answer announces nothing, and the first
+round after an outage only re-reads, so an instance that died during the outage
+is never announced and its users stay `online` until their friends' next
+`GET /friends`.
 `INSTANCE_ID` names this process in that hash; left unset one is generated per
 start, which is fine unless your orchestrator already has a stable per-replica
 name to reuse. Per-field TTLs need **Redis 7.4 or newer** — against an older
