@@ -45,8 +45,8 @@ services:
     image: redis:8-alpine
     # Offset like every other published port here (db 5435, backend 4005,
     # frontend 3005) so a Redis already listening on the host's 6379 does not
-    # collide. That matters more than usual now that `backend` gates on this
-    # service being healthy: a failed port bind would also block `migrate:up`.
+    # collide. That matters more than usual now that `backend` waits for this
+    # service to start: a failed port bind would also block `migrate:up`.
     # Bound to loopback because this Redis has no password — the compose network
     # is the only access control it has.
     ports:

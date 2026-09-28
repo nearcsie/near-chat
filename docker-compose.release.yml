@@ -16,6 +16,40 @@ services:
       timeout: 5s
       retries: 12
 
+  redis:
+    # Pinned by digest like `db`, and held to the same value as REDIS_IMAGE in
+    # .github/workflows/release-stack.yml — the release re-verifies the bundle
+    # against that variable, and backend/tests/unit/deploy holds the two sides
+    # equal on every pull request so the pin cannot drift between releases.
+    image: redis:8-alpine@sha256:becdda6c7f4b3fb42e42fd7f120bbf5c54c4caaaf16f26da24e4563d2c1f0576
+    restart: unless-stopped
+    # Publishes no host port, like the production stack: this Redis has no
+    # password, so being reachable only from the compose network *is* its access
+    # control. Exec into the container to inspect it.
+    #
+    # Everything kept here is derived, recoverable state (presence leases,
+    # typing TTLs, routing metadata, pub/sub) with PostgreSQL staying canonical,
+    # so there is nothing to persist and `docker compose restart redis` is safe.
+    # Save points are switched *off* rather than left unused: with them on, one
+    # failed background save flips `stop-writes-on-bgsave-error` and Redis
+    # rejects every write while still answering PING, which the healthcheck
+    # below could not tell apart from a healthy server. Eviction stays at the
+    # `noeviction` default so presence leases fail loudly rather than vanish.
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    tmpfs:
+      # The image declares VOLUME /data, and the documented upgrade path here is
+      # a repeated `up -d`, so without this every upgrade would strand another
+      # anonymous volume on the deployment host. With save points off, nothing
+      # is ever written there.
+      - /data
+    healthcheck:
+      # `redis-cli ping` can exit 0 while printing an error reply, so assert the
+      # payload rather than just the exit status.
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   migrate:
     image: ${BACKEND_IMAGE:?BACKEND_IMAGE is required}
     restart: "no"
@@ -36,13 +70,17 @@ services:
       NODE_ENV: production
       PORT: 4000
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
-      # Optional, and empty by default because this bundle ships no Redis of its
-      # own — bundling one with a pinned digest is #527. Point it at a managed
-      # endpoint (`rediss://`, or the Valkey schemes) to get cross-node realtime;
-      # left unset the backend serves every REST route and runs realtime
-      # single-node, which is a supported deployment rather than a
-      # misconfiguration. Passed through rather than required for that reason.
-      REDIS_URL: ${REDIS_URL:-}
+      # Resolved inside this container, so the host is the compose service name
+      # `redis` — the one this bundle ships. Point it at a managed endpoint
+      # (`rediss://`, or the Valkey schemes) to use that instead; the bundled
+      # service then just idles.
+      #
+      # `-` rather than `:-`, matching docker-compose.yml and
+      # docker-compose.prod.yml: running without Redis is a supported deployment
+      # (every REST route still works and realtime runs single-node), and an
+      # empty REDIS_URL is how you ask for it. `:-` would substitute the default
+      # for an empty value too, leaving that opt-out unreachable.
+      REDIS_URL: ${REDIS_URL-redis://redis:6379}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-15m}
       RATE_LIMIT_DISABLED: ${RATE_LIMIT_DISABLED:-false}
@@ -61,8 +99,9 @@ services:
       MAX_SESSIONS_PER_USER: ${MAX_SESSIONS_PER_USER:-5}
       PRESENCE_GRACE_MS: ${PRESENCE_GRACE_MS:-3000}
       # How long a presence lease survives in Redis unrefreshed; it bounds how
-      # long a crashed instance keeps its users showing as online. Inert while
-      # REDIS_URL is blank, which is this bundle's default.
+      # long an instance that died without draining keeps its users showing as
+      # online. A graceful stop hands the leases back instead, well inside the
+      # stop_grace_period below. Inert only when REDIS_URL is blanked.
       PRESENCE_TTL_MS: ${PRESENCE_TTL_MS:-30000}
       TYPING_TTL_MS: ${TYPING_TTL_MS:-3000}
       # Blank means the backend generates one per process. Set it where the
@@ -78,6 +117,15 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
+      # Started, not healthy, matching docker-compose.yml and
+      # docker-compose.prod.yml. src/utils/redis.ts treats Redis as a degraded
+      # mode rather than a boot dependency, so gating here would let a Redis that
+      # cannot start take down every REST route that never touches Redis — after
+      # `migrate` has already applied the schema. Ordering is still worth having:
+      # starting redis first means the usual case connects on the first attempt
+      # instead of waiting out a watchdog tick.
+      redis:
+        condition: service_started
     volumes:
       - ${UPLOADS_MOUNT_SOURCE:-app_uploads}:/app/uploads
     command: ["bun", "src/index.ts"]

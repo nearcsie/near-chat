@@ -116,7 +116,7 @@ docker compose exec backend pnpm run db:seed
 
 本專案提供專為生產環境設計的配置檔 `docker-compose.prod.yml`。此配置會建置最佳化後的生產映像檔 (`Dockerfile.prod`)，並啟動 Cloudflare Tunnel 以實現安全的外網連線。
 
-若要使用已發布的版本 artifact，請從 GitHub Release 下載 `near-chat-stack-vX.Y.Z.tar.gz`，再使用其中的 `docker-compose.release.yml`。該 bundle 會把前端、後端 image digest、PostgreSQL 18 runtime digest 與 migration 步驟固定在同一份部署描述中。詳見[完整 Stack 版本發布指南](docs/ZH-TW/RELEASE.md)。
+若要使用已發布的版本 artifact，請從 GitHub Release 下載 `near-chat-stack-vX.Y.Z.tar.gz`，再使用其中的 `docker-compose.release.yml`。該 bundle 會把前端、後端 image digest、PostgreSQL 18 與 Redis 8 runtime digest，以及 migration 步驟固定在同一份部署描述中。詳見[完整 Stack 版本發布指南](docs/ZH-TW/RELEASE.md)。
 
 ### 1. 配置生產環境變數
 請確保 `.env` 檔案中已填寫所有生產環境所需的變數（例如 `POSTGRES_USER`、`POSTGRES_PASSWORD`、`POSTGRES_DB`、`DATABASE_URL`、`JWT_SECRET`、`NEXT_PUBLIC_API_URL` 以及 Cloudflare Tunnel 的 `TUNNEL_TOKEN`）。

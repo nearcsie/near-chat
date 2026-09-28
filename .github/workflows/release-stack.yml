@@ -16,6 +16,12 @@ env:
   BACKEND_IMAGE_NAME: nearcsie/near-chat-backend
   FRONTEND_IMAGE_NAME: nearcsie/near-chat-frontend
   POSTGRES_IMAGE: postgres:18-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15
+  # Must stay equal to the redis image in docker-compose.release.yml. The
+  # re-verification step below greps the bundled compose file for this value, and
+  # backend/tests/unit/deploy/releaseComposeRuntime.test.ts holds the two sides
+  # equal on every pull request, so a pin edited on one side alone fails there
+  # rather than at the next tag.
+  REDIS_IMAGE: redis:8-alpine@sha256:becdda6c7f4b3fb42e42fd7f120bbf5c54c4caaaf16f26da24e4563d2c1f0576
 
 permissions: {}
 
@@ -343,8 +349,8 @@ jobs:
             exit 1
           fi
           body="$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json body --jq .body)"
-          if [[ "$body" != *"$GITHUB_SHA"* || "$body" != *"$BACKEND_DIGEST"* || "$body" != *"$FRONTEND_DIGEST"* || "$body" != *"$POSTGRES_IMAGE"* ]]; then
-            echo "既有 Release 與預期 source commit、兩個 image digest 或 PostgreSQL digest 不一致。" >&2
+          if [[ "$body" != *"$GITHUB_SHA"* || "$body" != *"$BACKEND_DIGEST"* || "$body" != *"$FRONTEND_DIGEST"* || "$body" != *"$POSTGRES_IMAGE"* || "$body" != *"$REDIS_IMAGE"* ]]; then
+            echo "既有 Release 與預期 source commit、兩個 image digest、PostgreSQL 或 Redis digest 不一致。" >&2
             exit 1
           fi
           asset_found="$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json assets --jq "[.assets[].name] | index(\"$BUNDLE_ASSET_NAME\") // -1")"
@@ -422,8 +428,10 @@ jobs:
           POSTGRES_PASSWORD=change-me
           POSTGRES_DB=near_chat
           DATABASE_URL=postgresql://change-me:change-me@db:5432/near_chat
-          # Optional Redis URL for cross-instance fan-out (requires Redis 7.4+ for presence TTL).
-          REDIS_URL=
+          # The Redis this bundle ships, used for presence leases and cross-instance
+          # fan-out. Point it at a managed endpoint (rediss:// also works) to use that
+          # instead, or blank it to run realtime single-node on one backend replica.
+          REDIS_URL=redis://redis:6379
           PRESENCE_TTL_MS=30000
           INSTANCE_ID=
           # Set per deployment when several share one Redis: pub/sub ignores the
@@ -448,7 +456,8 @@ jobs:
             --arg frontend_sha "${REGISTRY}/${FRONTEND_IMAGE_NAME}:${IMAGE_SHA_TAG}" \
             --arg frontend_digest "${REGISTRY}/${FRONTEND_IMAGE_NAME}@${FRONTEND_DIGEST}" \
             --arg postgres "$POSTGRES_IMAGE" \
-            '{version:$version, sourceCommit:$commit, images:{backend:{versionTag:$backend_version,shaTag:$backend_sha,digest:$backend_digest},frontend:{versionTag:$frontend_version,shaTag:$frontend_sha,digest:$frontend_digest}}, database:{runtimeImage:$postgres, migrations:{runner:"backend image", command:"bun run migrate:up"}}, composeFile:"docker-compose.release.yml"}' \
+            --arg redis "$REDIS_IMAGE" \
+            '{version:$version, sourceCommit:$commit, images:{backend:{versionTag:$backend_version,shaTag:$backend_sha,digest:$backend_digest},frontend:{versionTag:$frontend_version,shaTag:$frontend_sha,digest:$frontend_digest}}, database:{runtimeImage:$postgres, migrations:{runner:"backend image", command:"bun run migrate:up"}}, realtime:{runtimeImage:$redis}, composeFile:"docker-compose.release.yml"}' \
             > "$bundle_dir/release-manifest.json"
 
           tar --sort=name --mtime='UTC 1970-01-01' --owner=0 --group=0 --numeric-owner \
@@ -508,14 +517,17 @@ jobs:
             --arg backend_digest "${REGISTRY}/${BACKEND_IMAGE_NAME}@${BACKEND_DIGEST}" \
             --arg frontend_digest "${REGISTRY}/${FRONTEND_IMAGE_NAME}@${FRONTEND_DIGEST}" \
             --arg postgres "$POSTGRES_IMAGE" \
+            --arg redis "$REDIS_IMAGE" \
             '.version == $version
              and .sourceCommit == $commit
              and .images.backend.digest == $backend_digest
              and .images.frontend.digest == $frontend_digest
              and .database.runtimeImage == $postgres
-             and .database.migrations.command == "bun run migrate:up"' \
+             and .database.migrations.command == "bun run migrate:up"
+             and .realtime.runtimeImage == $redis' \
             "$bundle_root/release-manifest.json" >/dev/null
           grep -F "image: $POSTGRES_IMAGE" "$bundle_root/docker-compose.release.yml" >/dev/null
+          grep -F "image: $REDIS_IMAGE" "$bundle_root/docker-compose.release.yml" >/dev/null
 
       - name: 產生 Stack 發布說明區段
         if: steps.release.outputs.stack_published == 'false'
@@ -548,6 +560,7 @@ jobs:
             printf -- '- Frontend commit image: `%s:%s`\n' "$frontend_image" "$IMAGE_SHA_TAG"
             printf -- '- Frontend digest: `%s@%s`\n' "$frontend_image" "$FRONTEND_DIGEST"
             printf -- '- PostgreSQL runtime: `%s`\n' "$POSTGRES_IMAGE"
+            printf -- '- Redis runtime: `%s`\n' "$REDIS_IMAGE"
             printf -- '- Deployment bundle: `%s`\n' "$BUNDLE_ASSET_NAME"
             printf -- '- Bundle SHA-256: `%s`\n' "$BUNDLE_SHA256"
             if [[ -n "$previous_tag" ]]; then

@@ -2,7 +2,7 @@
 
 [English](../RELEASE.md) | 繁體中文
 
-Near Chat 的版本 tag 代表一份可部署的完整 Stack，不只是單一應用套件。從 `v1.0.1` 起，每個版本都包含前端映像、後端映像、PostgreSQL 18 runtime digest、資料庫 migration runner，以及 Docker Compose 部署 bundle。既有的 `v1.0.0` 後端專用版本已不可變，仍永久保留供回滾。
+Near Chat 的版本 tag 代表一份可部署的完整 Stack，不只是單一應用套件。從 `v1.0.1` 起，每個版本都包含前端映像、後端映像、PostgreSQL 18 runtime digest、資料庫 migration runner，以及 Docker Compose 部署 bundle。含跨 instance realtime 功能的版本另外固定一份 Redis 8 runtime digest。既有的 `v1.0.0` 後端專用版本已不可變，仍永久保留供回滾。
 
 ## 發布版本
 
@@ -65,7 +65,9 @@ Workflow 會發布兩個不可變的應用程式映像，各自包含版本 tag 
 - `ghcr.io/nearcsie/near-chat-frontend:1.0.1`
 - `ghcr.io/nearcsie/near-chat-frontend:sha-<12-character-commit>`
 
-GitHub Release 也會記錄固定 digest 的 PostgreSQL runtime、兩個映像的 digest、provenance attestation，以及 `near-chat-stack-vX.Y.Z.tar.gz` 部署 bundle。不發布可變的 `latest` tag。
+GitHub Release 也會記錄固定 digest 的 PostgreSQL runtime、固定 digest 的 Redis runtime、兩個映像的 digest、provenance attestation，以及 `near-chat-stack-vX.Y.Z.tar.gz` 部署 bundle。不發布可變的 `latest` tag。
+
+兩個第三方 runtime 的 pin 刻意存在兩份——`docker-compose.release.yml` 與 `release-stack.yml` 的 `POSTGRES_IMAGE` / `REDIS_IMAGE`——因為 workflow 會把它們寫進 `release-manifest.json`，並對 bundle 內的 compose 檔 grep 同一個值。`backend/tests/unit/deploy/releaseComposeRuntime.test.ts` 在每個 PR 都會比對兩側是否相同，因此只改一側的 pin 會在審查階段失敗，而不是在下一次發布時才爆。
 
 ## 使用 Release bundle 部署
 
@@ -78,7 +80,9 @@ cp near-chat.env.example .env
 docker compose --env-file .env -f docker-compose.release.yml up -d
 ```
 
-Compose bundle 會啟動 PostgreSQL，使用固定版本的 backend image 執行一次 `bun run migrate:up`，接著以 `bun src/index.ts` 啟動 backend，最後啟動 frontend。backend 的兩個命令都只使用 bun：backend production image 以 bun runtime 直接執行 TypeScript 原始碼，其中沒有 `node`、沒有 `pnpm`，也沒有建置產物。PostgreSQL 資料與使用者上傳檔案仍由部署環境的 volume 持有，不會放入 image 或 Release archive。
+Compose bundle 會啟動 PostgreSQL 與 Redis，使用固定版本的 backend image 執行一次 `bun run migrate:up`，接著以 `bun src/index.ts` 啟動 backend，最後啟動 frontend。backend 的兩個命令都只使用 bun：backend production image 以 bun runtime 直接執行 TypeScript 原始碼，其中沒有 `node`、沒有 `pnpm`，也沒有建置產物。PostgreSQL 資料與使用者上傳檔案仍由部署環境的 volume 持有，不會放入 image 或 Release archive。
+
+Redis 的啟動順序排在 backend 之前，但刻意不成為啟動門檻：backend 對它的依賴條件是 `service_started` 而非 `service_healthy`，因為 Redis 只存衍生的 realtime 狀態。因此 Redis 起不來只會失去跨 instance realtime，不會連帶讓 REST API 無法服務。`migrate` service 完全不依賴 Redis。
 
 升級 bundle 時請使用 `up -d`，不要用 `restart`：`docker compose restart backend` 不會重新評估 `depends_on`，因此不會執行 `migrate` service，會讓 backend 跑在尚未套用 migration 的 schema 上。
 
@@ -99,6 +103,14 @@ Backend service 刻意不設定 `init: true`。應用程式本身即為 PID 1 �
 ## 資料庫相容規則
 
 資料庫 runtime 固定為 digest 指定的 PostgreSQL 18 Alpine。Schema 由 `backend/migrations` 版本化，並隨 backend image 發布；`migrate` service 會在應用程式啟動前套用尚未執行的 migration。不得把資料庫 volume 或含真實資料的 dump 當成 Release artifact。破壞性 schema 變更必須採 expand-and-contract，並在 migration 期間維持對 legacy Express 部署的相容性。
+
+## Realtime runtime
+
+Realtime runtime 固定為 digest 指定的 Redis 8 Alpine，滿足 presence lease 的 hash-field TTL 所需的 Redis 7.4 或更新版本。它只存衍生狀態——presence lease、typing TTL 與跨 instance 事件廣播——PostgreSQL 仍是唯一權威來源，因此持久化關閉、`/data` 使用 tmpfs，而 `docker compose restart redis` 是安全的：lease 會在一個續約週期（約 `PRESENCE_TTL_MS` 的三分之一）內重新建立。Eviction 維持 `noeviction` 預設，讓 presence lease 失敗時明確報錯而不是無聲消失，也刻意不設 `maxmemory` 上限。
+
+`REDIS_URL` 未設定時會解析成 bundle 內建的 redis service，因此部署不需任何設定就具備跨 instance realtime。要改用託管 Redis 請把它指向該端點（`rediss://` 亦可）；要以單一 backend replica 跑單節點 realtime，請把值設為空字串，此時內建的 service 只是閒置。
+
+**自 `v2.1.x` 升級：** 在本變更之前寫下的環境檔沒有 `REDIS_URL` 這一行，因此第一次 `up -d` 後 backend 會從行程內 presence 改為以 Redis 儲存 presence。唯一需要預期的行為差異出現在**非正常**停止之後（`docker kill`、OOM、主機失聯）：presence lease 最多存活 `PRESENCE_TTL_MS`，那些使用者在該期間內仍可能顯示為在線。所有正常路徑——`docker compose stop`、`down`，以及 `up -d` 對已變更 service 的停止動作——都會先交還 lease。若要保留原本的單節點行為，請設定 `REDIS_URL=` 為空值。
 
 ## 不可變與失敗處理
 
