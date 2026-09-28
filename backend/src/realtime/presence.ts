@@ -177,27 +177,94 @@ export const createPresenceTracker = ({
     }
   };
 
-  /** Refreshes presence leases in Redis for all currently held users. */
+  /**
+   * Refreshes presence leases in Redis for all currently held users, and
+   * announces anyone whose lease had lapsed before this beat took it back.
+   *
+   * A lapsed lease is not hypothetical. `utils/redis.ts` supervises the command,
+   * publisher and subscriber connections separately, so the command connection
+   * can stay down past `PRESENCE_TTL_MS` while this instance's sockets — and the
+   * publisher that would carry a frame — are perfectly healthy. Every lease then
+   * expires under its own `HPEXPIRE` with the users still connected, and the
+   * first beat after recovery takes them all back. Handing them back silently
+   * was invisible only because nothing watches for the expiry yet; #665 adds a
+   * reconciler that announces offline on exactly that signal, and without the
+   * announcement here one Redis blip would strand every user of this instance as
+   * offline until each friend's next `GET /api/v1/friends` (#664).
+   *
+   * `before === 0` is a single-winner latch rather than merely "the lease was
+   * gone": `HOLD_SCRIPT` reads `HLEN` and writes the field inside one `EVAL`
+   * (`realtime/presenceStore.ts`), so Redis serialises it and exactly one caller
+   * observes zero per zero-to-nonzero transition, across every instance and
+   * every overlapping beat. Suppressing duplicates therefore costs nothing. It
+   * is the same latch `trackUserConnection` reads for `firstAnywhere`, which
+   * stops being the only announcer of `online`: a beat landing between
+   * `startHeartbeat()` and the `store.hold` below it wins the latch instead, and
+   * the connection path then correctly stays quiet.
+   *
+   * Two phases, like `releaseHeldUsers`: every `store.hold` is issued before the
+   * first `friendRepo.getFriends`, because the renewal is a Redis round trip and
+   * the announcement is a Postgres one. Renewing is the reason the heartbeat
+   * exists, so it must never queue behind an announcement.
+   *
+   * Only an acknowledged reply counts as a lapse. `!result.ok` means this
+   * instance knows nothing about the cluster, and #653 owns that fail-open /
+   * fail-closed policy for every path at once.
+   */
   const refreshLeases = async (): Promise<void> => {
     if (!store || stopped) return;
     const users = heldUsers();
     if (users.length === 0) return;
-    await Promise.all(
-      users.map((userId) => {
-        if (!isLocallyOnline(userId)) return Promise.resolve();
-        return store.hold(userId, localSocketCount(userId));
-      }),
+
+    const refreshed = await Promise.all(
+      users.map(async (userId) => ({
+        userId,
+        result: isLocallyOnline(userId)
+          ? await store.hold(userId, localSocketCount(userId))
+          : undefined,
+      })),
     );
+
+    if (stopped) return;
+    const io = boundIo;
+    const friendRepo = boundFriendRepo;
+    if (!io || !friendRepo) return;
+
+    // One at a time, not `Promise.all`: an outage that outlived the TTL expired
+    // *every* lease, so on the first beat after recovery this list is the whole
+    // instance. `getFriends` is two statements per user, and issuing them
+    // together would queue the shared `Bun.SQL` pool behind presence just as the
+    // deployment is recovering — with every statement that crosses
+    // `DEFAULT_SLOW_QUERY_THRESHOLD_MS` logging a warning, enough of them to
+    // evict the 200-record recent-log buffer holding the outage's own
+    // diagnostics. A cap would be worse than a queue: it would silently drop the
+    // corrections this exists to deliver.
+    for (const { userId, result } of refreshed) {
+      if (!result?.ok || result.value !== 0) continue;
+      // Re-checked after the await: the user can disconnect while their own hold
+      // is in flight, and `releaseUser` will already have announced them
+      // offline. An `online` landing after that would outlive it on every
+      // friend's screen.
+      if (!isLocallyOnline(userId)) continue;
+      await broadcastStatus(io, userId, 'online', friendRepo);
+    }
   };
 
   const startHeartbeat = (): void => {
     if (!store || heartbeat !== undefined) return;
     const period = Math.max(1, Math.floor(ttlMs / Math.max(1, refreshDivisor)));
-    heartbeat = setIntervalFn(() => {
-      void refreshLeases().catch((err) => {
-        logger.debug({ err }, 'Presence heartbeat failed');
-      });
-    }, period);
+    // The round is returned, not dropped on the floor: `setInterval` discards it
+    // either way, but an injected `setIntervalFn` can hand it to a test, which
+    // now announces as well as renews and so no longer settles within a single
+    // turn of the microtask queue. `catch` keeps the returned promise settled, so
+    // nothing here can float a rejection.
+    heartbeat = setIntervalFn(
+      () =>
+        refreshLeases().catch((err) => {
+          logger.debug({ err }, 'Presence heartbeat failed');
+        }),
+      period,
+    );
     (heartbeat as { unref?: () => void }).unref?.();
   };
 
