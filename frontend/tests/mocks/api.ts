@@ -90,6 +90,7 @@ export const __resetApiMock = (): void => {
   failMarkRoomRead = false;
   syncGate = null;
   resyncOnNextSync = false;
+  nextSyncCursor = null;
 };
 
 export const getApiBaseUrl = (): string => "http://mock-api.test";
@@ -305,6 +306,7 @@ export const listMessages = async (
   roomId: string,
   options?: { limit?: number },
 ): Promise<MessageWithSender[]> => {
+  apiCallLog.push({ fn: "listMessages", args: [roomId] });
   if (failNextListMessages) {
     failNextListMessages = false;
     throw new ApiError("Service unavailable", 503);
@@ -406,6 +408,17 @@ export const __queueResyncRequired = (): void => {
   resyncOnNextSync = true;
 };
 
+/**
+ * Makes the next syncChanges call move the cursor forward to `nextCursor`
+ * without returning any changes, the way `/sync` answers when every change
+ * past the cursor is outside the caller's rooms.
+ */
+let nextSyncCursor: number | null = null;
+
+export const __queueSyncAdvance = (nextCursor: number): void => {
+  nextSyncCursor = nextCursor;
+};
+
 export const syncChanges = async (
   _token: string,
   cursor: number,
@@ -420,6 +433,11 @@ export const syncChanges = async (
   if (resyncOnNextSync) {
     resyncOnNextSync = false;
     return { changes: [], nextCursor: 0, hasMore: false, resyncRequired: true };
+  }
+  if (nextSyncCursor !== null) {
+    const nextCursor = nextSyncCursor;
+    nextSyncCursor = null;
+    return { changes: [], nextCursor, hasMore: false };
   }
   return { changes: [], nextCursor: cursor, hasMore: false };
 };

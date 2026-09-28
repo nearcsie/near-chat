@@ -1,3 +1,5 @@
+import "fake-indexeddb/auto";
+import { IDBFactory } from "fake-indexeddb";
 import { afterEach } from "vitest";
 import { cleanup } from "@testing-library/react";
 
@@ -36,4 +38,9 @@ if (typeof window !== "undefined" && !window.requestAnimationFrame) {
 afterEach(() => {
   cleanup();
   window.localStorage.clear();
+  window.sessionStorage.clear();
+  // jsdom has no IndexedDB; the local chat cache runs on fake-indexeddb.
+  // Swap in a fresh factory instead of deleting databases: a deletion waits
+  // for every open connection, so one a test left open would hang it.
+  globalThis.indexedDB = new IDBFactory();
 });

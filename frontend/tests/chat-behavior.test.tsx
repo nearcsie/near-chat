@@ -6,7 +6,7 @@
  */
 import { describe, expect, test, vi } from "vitest";
 import { useEffect } from "react";
-import { act, fireEvent, screen } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { mountChatApp } from "./harness";
 import { ME_ID, makeMessage, messageId } from "./fixtures";
 import {
@@ -18,6 +18,7 @@ import {
   __queueResyncRequired,
 } from "./mocks/api";
 import { useChat } from "@/context/ChatContext";
+import { closeChatCache, openChatCache, readSyncCursor, writeSyncCursor } from "@/lib/chatCache";
 
 describe("opening and switching rooms", () => {
   test("shows the active room's messages and members panel", async () => {
@@ -480,11 +481,26 @@ describe("right panel", () => {
 });
 
 describe("sync cursor recovery", () => {
+  const seedStoredCursor = async (cursor: number): Promise<void> => {
+    const cache = await openChatCache(ME_ID);
+    await writeSyncCursor(cache, cursor);
+    closeChatCache(cache);
+  };
+
+  const storedCursor = async (): Promise<number> => {
+    const cache = await openChatCache(ME_ID);
+    try {
+      return await readSyncCursor(cache);
+    } finally {
+      closeChatCache(cache);
+    }
+  };
+
   test("restarts from zero when the server reports the cursor is unusable", async () => {
     // A cursor left over from before a reseed or a restore: the server can no
     // longer honour it, and every delta after it is outside the client's
     // window, so holding on to it strands this session for good.
-    sessionStorage.setItem(`near:syncCursor:${ME_ID}`, "500");
+    await seedStoredCursor(500);
     const app = await mountChatApp("/chat/room-1");
     expect(__getApiCallLog("syncChanges")[0]?.args[0]).toBe(500);
 
@@ -500,11 +516,11 @@ describe("sync cursor recovery", () => {
     const cursors = __getApiCallLog("syncChanges").map((call) => call.args[0]);
     expect(cursors.at(-1)).toBe(0);
     // The stored cursor goes too, or the next mount sends the dead one again.
-    expect(sessionStorage.getItem(`near:syncCursor:${ME_ID}`)).toBeNull();
+    await waitFor(async () => expect(await storedCursor()).toBe(0));
   });
 
   test("keeps the cursor when the server answers normally", async () => {
-    sessionStorage.setItem(`near:syncCursor:${ME_ID}`, "500");
+    await seedStoredCursor(500);
     const app = await mountChatApp("/chat/room-1");
 
     act(() => {
@@ -514,6 +530,6 @@ describe("sync cursor recovery", () => {
     await app.settle();
 
     expect(__getApiCallLog("syncChanges").map((call) => call.args[0])).not.toContain(0);
-    expect(sessionStorage.getItem(`near:syncCursor:${ME_ID}`)).toBe("500");
+    expect(await storedCursor()).toBe(500);
   });
 });
