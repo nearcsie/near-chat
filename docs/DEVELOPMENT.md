@@ -69,6 +69,12 @@ docker compose ps
 docker compose logs -f backend
 ```
 
+The backend logs to stdout only. `pino` writes there and tees each record into a fixed-size
+in-memory ring buffer, which `GET /api/v1/admin/logs` serves (the response reports its own
+`retained` and `capacity`). There is no log file, by design: the container runtime already owns
+log collection, so persisting logs and capping their size belong to the deployment layer — for
+example the Docker daemon's `log-driver` and `log-opts` — rather than to the application.
+
 ---
 
 ## 2. Environment Variables & Port Access

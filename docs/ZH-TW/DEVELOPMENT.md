@@ -63,6 +63,11 @@ docker compose ps
 docker compose logs -f backend
 ```
 
+後端只將日誌輸出至 stdout。`pino` 寫入 stdout，同時將每筆記錄複製到一個固定大小的記憶體 ring
+buffer，供 `GET /api/v1/admin/logs` 讀取（回應中的 `retained` 與 `capacity` 會回報該緩衝區的現況）。
+這是刻意的設計，因此沒有日誌檔案：日誌收集本來就由 container runtime 負責，所以日誌的保存與大小
+上限屬於部署層的職責 —— 例如 Docker daemon 的 `log-driver` 與 `log-opts` —— 而不是應用程式。
+
 ---
 
 ## 2. 環境變數與連接埠存取
