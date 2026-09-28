@@ -15,11 +15,14 @@ import type { ChatServer } from '../../../src/realtime/authSocket';
  */
 const createStubServer = () => {
   const calls: { scope: string; force: boolean }[] = [];
+  const events: { scope: string; event: string; payload: unknown }[] = [];
+  const joins: { scope: string; room: string }[] = [];
+  const leaves: { scope: string; room: string }[] = [];
   const operator = (scope: string) => ({
     disconnectSockets: (force: boolean) => calls.push({ scope, force }),
-    socketsJoin: mock(),
-    socketsLeave: mock(),
-    emit: mock(),
+    socketsJoin: (room: string) => joins.push({ scope, room }),
+    socketsLeave: (room: string) => leaves.push({ scope, room }),
+    emit: (event: string, payload: unknown) => events.push({ scope, event, payload }),
   });
 
   const io = {
@@ -31,7 +34,7 @@ const createStubServer = () => {
     disconnectSockets: (force: boolean) => calls.push({ scope: 'cluster', force }),
   } as unknown as ChatServer;
 
-  return { io, calls };
+  return { io, calls, events, joins, leaves };
 };
 
 describe('realtime publisher', () => {
@@ -64,5 +67,55 @@ describe('realtime publisher', () => {
 
     expect(() => publisher.shutdown('SIGTERM')).not.toThrow();
     expect(() => publisher.disconnectUser('user-1', 'account deleted')).not.toThrow();
+  });
+
+  it('publishes room and user events through their scoped operators', () => {
+    const { io, events } = createStubServer();
+    const publisher = createRealtimePublisher();
+    publisher.bind(io);
+
+    publisher.publishRoomEvent('room-1', 'message_updated', { revision: 2 });
+    publisher.publishUserEvent('user-1', 'friend_request', { requestId: 'request-1' });
+
+    expect(events).toEqual([
+      { scope: 'to:room_room-1', event: 'message_updated', payload: { revision: 2 } },
+      { scope: 'to:user_user-1', event: 'friend_request', payload: { requestId: 'request-1' } },
+    ]);
+  });
+
+  it('joins and leaves all sessions for a user', async () => {
+    const { io, joins, leaves } = createStubServer();
+    const publisher = createRealtimePublisher();
+    publisher.bind(io);
+
+    await publisher.addUserToRoom('user-1', 'room-1');
+    await publisher.removeUserFromRoom('user-1', 'room-1');
+
+    expect(joins).toEqual([{ scope: 'in:user_user-1', room: 'room_room-1' }]);
+    expect(leaves).toEqual([{ scope: 'in:user_user-1', room: 'room_room-1' }]);
+  });
+
+  it('serializes subscription changes for the same user and room', async () => {
+    const publisher = createRealtimePublisher();
+    const order: string[] = [];
+    let releaseFirst!: () => void;
+    const firstGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+
+    const first = publisher.withRoomSubscriptionLock('user-1', 'room-1', async () => {
+      order.push('first-start');
+      await firstGate;
+      order.push('first-end');
+    });
+    const second = publisher.withRoomSubscriptionLock('user-1', 'room-1', () => {
+      order.push('second');
+    });
+    await Promise.resolve();
+
+    expect(order).toEqual(['first-start']);
+    releaseFirst();
+    await Promise.all([first, second]);
+    expect(order).toEqual(['first-start', 'first-end', 'second']);
   });
 });

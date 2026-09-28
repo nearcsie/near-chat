@@ -15,3 +15,11 @@ if (process.env.DATABASE_URL_TEST) {
 // has — with a bare "expected http://allowed.example, received undefined"
 // that points at the app rather than at the environment.
 process.env.CORS_ORIGINS = 'http://allowed.example,http://localhost:3005';
+
+// Bun's native coverage reporter currently has no statement or branch data.
+// Coverage runs opt into an Istanbul loader here so ordinary test runs keep
+// Bun's zero-transform startup path while the coverage job can report every
+// metric from the same test suite.
+if (process.env.COLLECT_BRANCH_COVERAGE === 'true') {
+  require('./coveragePreload');
+}
