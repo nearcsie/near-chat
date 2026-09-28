@@ -1,6 +1,12 @@
 import type { UploadedFile } from '../utils/fileUpload';
+import type { StorageDriver } from '../utils/storageService';
+import path from 'path';
 import { ValidationError } from '../utils/AppError';
 import { AttachmentRepository } from '../models/attachmentRepository';
+import { makeStoredFileName } from '../utils/fileUpload';
+import { logger } from '../utils/logger';
+import { defaultAttachmentStorage } from '../utils/storageService';
+import { ATTACHMENTS_UPLOAD_DIR } from '../utils/uploads';
 import {
   COMPRESSIBLE_ATTACHMENT_FORMATS,
   COMPRESSIBLE_ATTACHMENT_MIME_TYPES,
@@ -41,22 +47,41 @@ const withWebpExtension = (filename: string): string => {
   return `${safeBase}${WEBP_EXTENSION}`;
 };
 
+/** What the upload should store, once compression has had its say. */
+interface StoredBytes {
+  bytes: Buffer;
+  fileType: string;
+  originalName: string;
+  /** Appended to the generated key, so a converted image still lands on `.webp`. */
+  extension: string;
+}
+
 // Compresses eligible image attachments to WebP. Compression failures never
-// fail the upload — the original file, path, mimetype and filename are kept.
+// fail the upload — the original bytes, mimetype and filename are kept.
 //
-// The WebP is written to a *new* path and only becomes the stored path once it
-// is fully written, so a partial write (e.g. ENOSPC) can never leave a
-// truncated file under the path we go on to record. `parseSingleFile` already
-// holds the upload in memory, so this re-encodes from the buffer rather than
-// re-reading what it just wrote to disk.
-const compressAttachmentIfEligible = async (
+// This decides *what* to store and writes nothing; the caller performs the one
+// and only write. Previously the original was already on disk by the time this
+// ran, so converting meant a second durable write plus a delete, and the "write
+// the WebP to a new path first" dance existed so that a partial write (e.g.
+// ENOSPC) could never leave a truncated file under the path we go on to record.
+//
+// Ordering now supplies that guarantee for free, and for every attachment rather
+// than only the converted ones: the single write happens before the row that
+// points at it, so a failed write throws before any record can reference the
+// incomplete object. What remains is an unreferenced object, which is the same
+// invisible residue a failed conversion already left behind.
+const chooseStoredBytes = async (
   file: UploadedFile,
   originalName: string,
-): Promise<{ filePath: string; fileType: string; originalName: string }> => {
-  const originalPath = file.path || '';
-  const unchanged = { filePath: originalPath, fileType: file.mimetype, originalName };
+): Promise<StoredBytes> => {
+  const unchanged = {
+    bytes: file.buffer,
+    fileType: file.mimetype,
+    originalName,
+    extension: '',
+  };
 
-  if (!originalPath || !COMPRESSIBLE_ATTACHMENT_MIME_TYPES.has(file.mimetype)) {
+  if (!file.buffer || !COMPRESSIBLE_ATTACHMENT_MIME_TYPES.has(file.mimetype)) {
     return unchanged;
   }
 
@@ -82,35 +107,43 @@ const compressAttachmentIfEligible = async (
     return unchanged;
   }
 
-  const webpPath = `${originalPath}${WEBP_EXTENSION}`;
-
   try {
     const compressed = await compressAttachmentBuffer(file.buffer);
 
     // Keep an already well-optimized source image when WebP would be larger.
-    // This also avoids creating an unnecessary second copy on disk.
     if (compressed.length >= file.buffer.length) {
       return unchanged;
     }
 
-    await Bun.write(webpPath, compressed);
-    // Only now is the WebP complete and safe to point the record at.
-    await Bun.file(originalPath).delete().catch(() => {});
-
     // The bytes are WebP now, so the stored download filename must say so —
     // it is handed straight to the browser as the saved file's name.
     return {
-      filePath: webpPath,
+      bytes: compressed,
       fileType: 'image/webp',
       originalName: withWebpExtension(originalName),
+      extension: WEBP_EXTENSION,
     };
   } catch {
-    await Bun.file(webpPath).delete().catch(() => {});
     return unchanged;
   }
 };
 
-export function makeAttachmentService(attachmentRepo: AttachmentRepository) {
+/**
+ * Builds the storage key for one upload.
+ *
+ * `parseSingleFile` has already produced the safe, unique stem; all this adds is
+ * whatever extension the conversion settled on, so a converted image still lands on
+ * `<stem>.webp` exactly as it did when the WebP was written beside the original.
+ * Keeping that shape keeps the recorded path inside the length budget of
+ * `attachments.file_path VARCHAR(255)` and leaves the column's semantics alone.
+ */
+const buildStorageKey = (file: UploadedFile, extension: string): string =>
+  `${file.filename || makeStoredFileName(file.originalname || 'upload')}${extension}`;
+
+export function makeAttachmentService(
+  attachmentRepo: AttachmentRepository,
+  storage: StorageDriver = defaultAttachmentStorage,
+) {
   return {
     async uploadAttachment(uploadedBy: string, file: UploadedFile) {
       if (!uploadedBy) {
@@ -119,16 +152,40 @@ export function makeAttachmentService(attachmentRepo: AttachmentRepository) {
       if (!file) {
         throw new ValidationError('file is required');
       }
-      const { filePath, fileType, originalName } = await compressAttachmentIfEligible(
+
+      const { bytes, fileType, originalName, extension } = await chooseStoredBytes(
         file,
         normalizeOriginalFilename(file.originalname),
       );
-      return attachmentRepo.create({
-        uploadedBy,
-        filePath,
-        fileType,
-        originalName,
-      });
+      const key = buildStorageKey(file, extension);
+
+      // The object is written before the row that points at it, which is what
+      // makes a single write safe: if this throws (ENOSPC, a storage outage), no
+      // record ever referenced the incomplete object, and the residue is the same
+      // unreferenced garbage a failed conversion already left behind.
+      await storage.put(key, bytes);
+
+      // `attachments.file_path` holds an absolute filesystem path today. That is
+      // this column's existing semantics, which #687 owns changing; the read side
+      // resolves such a value through the same driver.
+      const filePath = path.join(ATTACHMENTS_UPLOAD_DIR, key);
+
+      try {
+        return await attachmentRepo.create({
+          uploadedBy,
+          filePath,
+          fileType,
+          originalName,
+        });
+      } catch (error) {
+        // Compensate, mirroring `userService.uploadAvatar`. The cleanup must never
+        // replace the error that caused it: a failure to delete is logged and
+        // swallowed so the original `create` failure is what reaches the caller.
+        await storage
+          .delete(key)
+          .catch((err) => logger.error({ err, key }, 'Failed to remove orphaned attachment object'));
+        throw error;
+      }
     },
     async getAttachment(userId: string, attachmentId: string) {
       const attachment = await attachmentRepo.findByIdForUser(attachmentId, userId);

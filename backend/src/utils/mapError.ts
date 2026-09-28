@@ -14,15 +14,6 @@ export const mapErrorToApiShape = (err: unknown): ApiError => {
     return apiError;
   }
 
-  const errObj = err as { name?: string; code?: string; message?: string } | null | undefined;
-  if (errObj && (errObj.name === 'MulterError' || errObj.code === 'LIMIT_FILE_SIZE')) {
-    return {
-      statusCode: errObj.code === 'LIMIT_FILE_SIZE' ? 413 : 400,
-      message: errObj.code === 'LIMIT_FILE_SIZE' ? 'Attachment file exceeds the configured size limit' : (errObj.message || 'File upload error'),
-      code: errObj.code || 'UPLOAD_ERROR',
-    };
-  }
-
   // Unknown / unexpected errors
   logger.error({ err }, 'APP ERROR');
   return {

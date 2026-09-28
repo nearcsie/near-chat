@@ -16,8 +16,9 @@ import { makeFolderRoutes } from '../routes/folderRoutes';
 import { makeAttachmentRoutes } from '../routes/attachmentRoutes';
 import { makeFriendRoutes, makeBlockRoutes, makeFriendRequestRoutes } from '../routes/friendRoutes';
 import { makeAdminRoutes } from '../routes/adminRoutes';
-import { AVATARS_UPLOAD_DIR, ensureUploadDirectories } from '../utils/uploads';
+import { ensureUploadDirectories } from '../utils/uploads';
 import { avatarContentType } from '../utils/avatarUpload';
+import { defaultAvatarStorage } from '../utils/storageService';
 
 export interface CreateHttpAppDeps {
   services: Services;
@@ -65,9 +66,8 @@ export const createHttpApp = ({ services, config }: CreateHttpAppDeps): Hono => 
   honoApp.get('/uploads/avatars/*', async (c) => {
     const reqPath = c.req.path.replace('/uploads/avatars/', '');
     const fileName = path.basename(reqPath);
-    const filePath = path.join(AVATARS_UPLOAD_DIR, fileName);
-    const file = Bun.file(filePath);
-    if (await file.exists()) {
+    const file = await defaultAvatarStorage.open(fileName);
+    if (file) {
       return new Response(file, {
         status: 200,
         headers: {

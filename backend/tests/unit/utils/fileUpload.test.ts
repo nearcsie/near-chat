@@ -1,9 +1,9 @@
-import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
+import { describe, it, expect } from 'bun:test';
 import { Hono } from 'hono';
 import path from 'path';
 import os from 'os';
 import fs from 'fs/promises';
-import { parseSingleFile, sanitizeStoredFileName } from '../../../src/utils/fileUpload';
+import { makeStoredFileName, parseSingleFile, sanitizeStoredFileName } from '../../../src/utils/fileUpload';
 import { errorHandler } from '../../../src/middlewares/errorHandler';
 
 describe('sanitizeStoredFileName', () => {
@@ -51,75 +51,76 @@ describe('sanitizeStoredFileName', () => {
   });
 });
 
-describe('parseSingleFile storage containment', () => {
-  let uploadDir: string;
-  let outsideDir: string;
+// `parseSingleFile` no longer writes anything, so the containment these cases
+// used to assert against a real directory is now asserted in two places: the name
+// generated here can never be anything but a single safe segment, and the storage
+// driver refuses a key that is not one (`storageService.test.ts`). Both halves are
+// needed — the driver guard is the one that still holds if a caller ever composes
+// a key from something other than this function.
+describe('makeStoredFileName', () => {
+  it('never produces a value containing a path separator', () => {
+    for (const name of ['../../../../src/index.ts', '..\\..\\evil.png', 'a/b/c.txt', '/etc/passwd']) {
+      const stored = makeStoredFileName(name);
 
-  const makeApp = (saveToDir: string) => {
+      expect(stored).not.toInclude('/');
+      expect(stored).not.toInclude('\\');
+      expect(path.basename(stored)).toBe(stored);
+      expect(path.isAbsolute(stored)).toBe(false);
+    }
+  });
+
+  it('keeps a traversing name only as a sanitized trailing segment', () => {
+    const stored = makeStoredFileName('../../../../src/index.ts');
+
+    expect(stored).toEndWith('_index.ts');
+  });
+
+  it('stays unique across identical uploads', () => {
+    const names = new Set(Array.from({ length: 50 }, () => makeStoredFileName('same.txt')));
+
+    expect(names.size).toBe(50);
+  });
+});
+
+describe('parseSingleFile', () => {
+  const makeApp = () => {
     const app = new Hono();
     app.post('/upload', async (c) => {
-      const file = await parseSingleFile(c, { saveToDir });
-      return c.json({ path: file.path, filename: file.filename, originalname: file.originalname });
+      const file = await parseSingleFile(c);
+      return c.json({
+        filename: file.filename,
+        originalname: file.originalname,
+        contents: file.buffer.toString(),
+      });
     });
     return app;
   };
 
-  const upload = async (app: Hono, filename: string, content = 'payload') => {
+  const upload = async (filename: string, content = 'payload') => {
     const form = new FormData();
     form.append('file', new File([content], filename, { type: 'text/plain' }));
-    const res = await app.request('/upload', { method: 'POST', body: form });
-    return { res, body: await res.json() as { path: string; filename: string; originalname: string } };
+    const res = await makeApp().request('/upload', { method: 'POST', body: form });
+    return { res, body: await res.json() as { filename: string; originalname: string; contents: string } };
   };
 
-  beforeEach(async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'near-chat-upload-'));
-    uploadDir = path.join(root, 'uploads', 'attachments');
-    outsideDir = path.join(root, 'src');
-    await fs.mkdir(uploadDir, { recursive: true });
-    await fs.mkdir(outsideDir, { recursive: true });
-  });
-
-  afterEach(async () => {
-    await fs.rm(path.dirname(path.dirname(uploadDir)), { recursive: true, force: true });
-  });
-
-  it('writes a normal upload inside the target directory', async () => {
-    const app = makeApp(uploadDir);
-    const { res, body } = await upload(app, 'notes.txt');
+  it('returns the bytes and a safe stored name without touching the filesystem', async () => {
+    const before = await fs.readdir(os.tmpdir());
+    const { res, body } = await upload('notes.txt');
 
     expect(res.status).toBe(200);
-    expect(path.dirname(body.path)).toBe(uploadDir);
-    expect(await Bun.file(body.path).exists()).toBe(true);
-  });
-
-  it('does not let a traversing filename escape the upload directory', async () => {
-    const app = makeApp(uploadDir);
-    const { res, body } = await upload(app, '../../../../src/index.ts', 'pwned');
-
-    expect(res.status).toBe(200);
-    // The stored path must stay directly inside the upload directory...
-    expect(path.dirname(body.path)).toBe(uploadDir);
-    expect(path.resolve(body.path).startsWith(path.resolve(uploadDir) + path.sep)).toBe(true);
-    // ...and nothing may appear in the sibling directory the payload aimed at.
-    expect(await fs.readdir(outsideDir)).toEqual([]);
+    expect(body.contents).toBe('payload');
+    expect(body.filename).toEndWith('_notes.txt');
+    // Nothing is staged anywhere: deciding the final bytes is the service's call,
+    // so the single write that follows belongs there too.
+    expect(await fs.readdir(os.tmpdir())).toEqual(before);
   });
 
   it('preserves the client-supplied name as originalname only', async () => {
-    const app = makeApp(uploadDir);
-    const { body } = await upload(app, '../../../../src/index.ts');
+    const { body } = await upload('../../../../src/index.ts');
 
     expect(body.originalname).toBe('../../../../src/index.ts');
     expect(body.filename).toEndWith('_index.ts');
     expect(body.filename).not.toInclude('/');
-  });
-
-  it('keeps generated names unique for identical uploads', async () => {
-    const app = makeApp(uploadDir);
-    const first = await upload(app, 'same.txt');
-    const second = await upload(app, 'same.txt');
-
-    expect(first.body.path).not.toBe(second.body.path);
-    expect((await fs.readdir(uploadDir)).length).toBe(2);
   });
 });
 

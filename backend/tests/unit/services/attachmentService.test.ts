@@ -1,11 +1,52 @@
 import type { UploadedFile } from '../../../src/utils/fileUpload';
-import { describe, it, expect, beforeEach, afterEach, mock, type Mock } from 'bun:test';
+import type { StorageDriver } from '../../../src/utils/storageService';
+import { describe, it, expect, beforeEach, mock, type Mock } from 'bun:test';
 import path from 'path';
-import os from 'os';
-import crypto from 'crypto';
 import zlib from 'zlib';
 import sharp from 'sharp';
 import { makeAttachmentService } from '../../../src/services/attachmentService';
+import { makeStoredFileName } from '../../../src/utils/fileUpload';
+import { ATTACHMENTS_UPLOAD_DIR } from '../../../src/utils/uploads';
+
+/**
+ * A storage driver that keeps objects in memory.
+ *
+ * The service used to be handed a file already staged on disk by
+ * `parseSingleFile`, so these tests wrote real temp files and asserted against
+ * paths. The service now decides the bytes and writes them itself, exactly once,
+ * so the stub is both the fixture and the assertion surface — and counting `put`
+ * calls is what proves the single write.
+ */
+const makeStorageStub = () => {
+  const objects = new Map<string, Buffer>();
+  const stub = {
+    objects,
+    put: mock(async (key: string, bytes: Buffer) => {
+      objects.set(key, bytes);
+    }),
+    open: mock(async (key: string) =>
+      objects.has(key) ? new Blob([new Uint8Array(objects.get(key)!)]) : null,
+    ),
+    delete: mock(async (key: string) => {
+      objects.delete(key);
+    }),
+  };
+  return stub as typeof stub & StorageDriver;
+};
+
+/** Mirrors what `parseSingleFile` now hands the service: bytes and a safe name. */
+const uploadOf = (
+  buffer: Buffer,
+  mimetype: string,
+  originalname: string,
+): UploadedFile =>
+  ({
+    buffer,
+    mimetype,
+    originalname,
+    filename: makeStoredFileName(originalname),
+    size: buffer.length,
+  }) as UploadedFile;
 
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
@@ -85,6 +126,7 @@ const buildApngBuffer = async (): Promise<Buffer> => {
 
 describe('AttachmentService', () => {
   let attachmentRepo: { create: Mock<any>; findById: Mock<any>; findByIdForUser: Mock<any> };
+  let storage: ReturnType<typeof makeStorageStub>;
   let service: ReturnType<typeof makeAttachmentService>;
 
   beforeEach(() => {
@@ -93,7 +135,8 @@ describe('AttachmentService', () => {
       findById: mock(),
       findByIdForUser: mock(),
     };
-    service = makeAttachmentService(attachmentRepo as any);
+    storage = makeStorageStub();
+    service = makeAttachmentService(attachmentRepo as any, storage);
   });
 
   it('normalizes mojibake original filenames before persisting', async () => {
@@ -105,17 +148,55 @@ describe('AttachmentService', () => {
       uploaded_at: new Date('2026-01-01T00:00:00.000Z'),
     });
 
-    await service.uploadAttachment('user-1', {
-      path: '/tmp/file.pdf',
-      mimetype: 'application/pdf',
-      originalname: 'éç®æç¶­èç¨å¼è¨­è¨å¹³å° å¤åé é».pdf',
-    } as UploadedFile);
+    await service.uploadAttachment(
+      'user-1',
+      uploadOf(
+        Buffer.from('%PDF-1.4 fake pdf'),
+        'application/pdf',
+        'éç®æç¶­èç¨å¼è¨­è¨å¹³å° å¤åé é».pdf',
+      ),
+    );
 
     expect(attachmentRepo.create).toHaveBeenCalledWith(
       expect.objectContaining({
         originalName: '運算思維與程式設計平台 多個頁點.pdf',
       }),
     );
+  });
+
+  it('stores the object under the upload directory and records that path', async () => {
+    attachmentRepo.create.mockResolvedValue({});
+    const file = uploadOf(Buffer.from('%PDF-1.4 fake pdf'), 'application/pdf', 'report.pdf');
+
+    await service.uploadAttachment('user-1', file);
+
+    expect([...storage.objects.keys()]).toEqual([file.filename!]);
+    expect((attachmentRepo.create.mock.calls[0][0] as { filePath: string }).filePath).toBe(
+      path.join(ATTACHMENTS_UPLOAD_DIR, file.filename!),
+    );
+  });
+
+  describe('when the record cannot be written', () => {
+    it('removes the object it already stored', async () => {
+      attachmentRepo.create.mockRejectedValue(new Error('insert failed'));
+      const file = uploadOf(Buffer.from('%PDF-1.4 fake pdf'), 'application/pdf', 'report.pdf');
+
+      await expect(service.uploadAttachment('user-1', file)).rejects.toThrow('insert failed');
+
+      expect(storage.delete).toHaveBeenCalledWith(file.filename!);
+      expect(storage.objects.size).toBe(0);
+    });
+
+    it('surfaces the original failure even when the cleanup also fails', async () => {
+      attachmentRepo.create.mockRejectedValue(new Error('insert failed'));
+      storage.delete = mock(async () => {
+        throw new Error('storage unreachable');
+      });
+      const file = uploadOf(Buffer.from('%PDF-1.4 fake pdf'), 'application/pdf', 'report.pdf');
+
+      // The compensation must never replace the error that caused it.
+      await expect(service.uploadAttachment('user-1', file)).rejects.toThrow('insert failed');
+    });
   });
 
   it('getAttachment returns null when the parent message has been recalled', async () => {
@@ -174,8 +255,8 @@ describe('AttachmentService', () => {
 
 describe('AttachmentService image compression', () => {
   let attachmentRepo: { create: Mock<any>; findById: Mock<any>; findByIdForUser: Mock<any> };
+  let storage: ReturnType<typeof makeStorageStub>;
   let service: ReturnType<typeof makeAttachmentService>;
-  const createdFiles: string[] = [];
 
   beforeEach(() => {
     attachmentRepo = {
@@ -189,36 +270,31 @@ describe('AttachmentService image compression', () => {
       findById: mock(),
       findByIdForUser: mock(),
     };
-    service = makeAttachmentService(attachmentRepo as any);
+    storage = makeStorageStub();
+    service = makeAttachmentService(attachmentRepo as any, storage);
   });
 
-  afterEach(async () => {
-    while (createdFiles.length > 0) {
-      const file = createdFiles.pop()!;
-      await Bun.file(file).delete().catch(() => {});
-      await Bun.file(`${file}.webp`).delete().catch(() => {});
-    }
-  });
-
-  // Mirrors what `parseSingleFile` hands the service: the bytes are already in
-  // memory *and* staged on disk under `path`.
-  const stageUpload = async (
+  // Mirrors what `parseSingleFile` hands the service: bytes in memory and a safe
+  // stored name. Nothing is staged on disk any more — the service performs the
+  // one and only write itself.
+  const stageUpload = (
     buffer: Buffer,
-    extension: string,
+    _extension: string,
     mimetype: string,
     originalname: string,
-  ): Promise<UploadedFile> => {
-    const filePath = path.join(os.tmpdir(), `attachment-test-${crypto.randomUUID()}${extension}`);
-    await Bun.write(filePath, buffer);
-    createdFiles.push(filePath);
-    return { path: filePath, buffer, mimetype, originalname, size: buffer.length } as UploadedFile;
-  };
+  ): UploadedFile => uploadOf(buffer, mimetype, originalname);
 
   const createdArg = () => attachmentRepo.create.mock.calls[0][0] as {
     filePath: string;
     fileType: string;
     originalName: string;
   };
+
+  /** The path the record points at, as a storage key. */
+  const storedKey = () => path.basename(createdArg().filePath);
+
+  /** The bytes actually written for this upload. */
+  const storedBytes = () => storage.objects.get(storedKey())!;
 
   const solidPng = (size: number, r: number, g: number, b: number) =>
     sharp({ create: { width: size, height: size, channels: 3, background: { r, g, b } } })
@@ -243,30 +319,33 @@ describe('AttachmentService image compression', () => {
   };
 
   it('compresses a PNG attachment to WebP and stores image/webp at the .webp path', async () => {
-    const file = await stageUpload(await solidPng(20, 10, 20, 30), '.png', 'image/png', 'photo.png');
+    const file = stageUpload(await solidPng(20, 10, 20, 30), '.png', 'image/png', 'photo.png');
 
     await service.uploadAttachment('user-1', file);
 
     const { filePath, fileType } = createdArg();
     expect(fileType).toBe('image/webp');
-    expect(filePath).toBe(`${file.path!}.webp`);
+    expect(filePath).toBe(path.join(ATTACHMENTS_UPLOAD_DIR, `${file.filename!}.webp`));
 
-    const compressedBytes = Buffer.from(await Bun.file(filePath).arrayBuffer());
+    const compressedBytes = storedBytes();
     expect(compressedBytes.subarray(0, 4).toString('ascii')).toBe('RIFF');
     expect(compressedBytes.subarray(8, 12).toString('ascii')).toBe('WEBP');
   });
 
-  it('removes the original upload once the WebP is written', async () => {
-    const file = await stageUpload(await solidPng(12, 9, 9, 9), '.png', 'image/png', 'photo.png');
+  it('writes a converted image exactly once, never an original that is then replaced', async () => {
+    const file = stageUpload(await solidPng(12, 9, 9, 9), '.png', 'image/png', 'photo.png');
 
     await service.uploadAttachment('user-1', file);
 
-    expect(await Bun.file(file.path!).exists()).toBe(false);
-    expect(await Bun.file(`${file.path!}.webp`).exists()).toBe(true);
+    // The old pipeline wrote the original, wrote the WebP and deleted the
+    // original. Only the WebP is ever written now, and nothing is deleted.
+    expect(storage.put).toHaveBeenCalledTimes(1);
+    expect(storage.delete).not.toHaveBeenCalled();
+    expect([...storage.objects.keys()]).toEqual([`${file.filename!}.webp`]);
   });
 
   it('rewrites the stored download filename extension to .webp when converting', async () => {
-    const file = await stageUpload(await solidPng(12, 1, 2, 3), '.png', 'image/png', 'holiday photo.png');
+    const file = stageUpload(await solidPng(12, 1, 2, 3), '.png', 'image/png', 'holiday photo.png');
 
     await service.uploadAttachment('user-1', file);
 
@@ -274,33 +353,32 @@ describe('AttachmentService image compression', () => {
   });
 
   it('leaves the download filename and path untouched for attachments it does not convert', async () => {
-    const file = await stageUpload(Buffer.from('%PDF-1.4 fake pdf'), '.pdf', 'application/pdf', 'report.pdf');
+    const file = stageUpload(Buffer.from('%PDF-1.4 fake pdf'), '.pdf', 'application/pdf', 'report.pdf');
 
     await service.uploadAttachment('user-1', file);
 
     const { filePath, fileType, originalName } = createdArg();
     expect(originalName).toBe('report.pdf');
     expect(fileType).toBe('application/pdf');
-    expect(filePath).toBe(file.path!);
+    expect(filePath).toBe(path.join(ATTACHMENTS_UPLOAD_DIR, file.filename!));
 
-    const bytes = Buffer.from(await Bun.file(filePath).arrayBuffer());
-    expect(bytes.toString()).toBe('%PDF-1.4 fake pdf');
+    expect(storedBytes().toString()).toBe('%PDF-1.4 fake pdf');
+    expect(storage.put).toHaveBeenCalledTimes(1);
   });
 
   it('skips APNG attachments so the animation is not flattened to one frame', async () => {
     const apng = await buildApngBuffer();
-    const file = await stageUpload(apng, '.png', 'image/png', 'anim.png');
+    const file = stageUpload(apng, '.png', 'image/png', 'anim.png');
 
     await service.uploadAttachment('user-1', file);
 
     const { filePath, fileType, originalName } = createdArg();
     expect(fileType).toBe('image/png');
     expect(originalName).toBe('anim.png');
-    expect(filePath).toBe(file.path!);
+    expect(filePath).toBe(path.join(ATTACHMENTS_UPLOAD_DIR, file.filename!));
 
     // Bytes must be byte-for-byte untouched.
-    const stored = Buffer.from(await Bun.file(filePath).arrayBuffer());
-    expect(stored.equals(apng)).toBe(true);
+    expect(storedBytes().equals(apng)).toBe(true);
   });
 
   it('skips images whose pixel count exceeds the decode limit instead of decoding them', async () => {
@@ -311,22 +389,23 @@ describe('AttachmentService image compression', () => {
     })
       .png({ compressionLevel: 9 })
       .toBuffer();
-    const file = await stageUpload(bomb, '.png', 'image/png', 'huge.png');
+    const file = stageUpload(bomb, '.png', 'image/png', 'huge.png');
 
     await service.uploadAttachment('user-1', file);
 
     const { filePath, fileType, originalName } = createdArg();
     expect(fileType).toBe('image/png');
     expect(originalName).toBe('huge.png');
-    expect(filePath).toBe(file.path!);
-    // The half-written WebP must not survive a failed conversion.
-    expect(await Bun.file(`${file.path!}.webp`).exists()).toBe(false);
+    expect(filePath).toBe(path.join(ATTACHMENTS_UPLOAD_DIR, file.filename!));
+    // A failed conversion stores the original and nothing else: with the write
+    // deferred until after the decision, there is no half-written WebP to clean up.
+    expect([...storage.objects.keys()]).toEqual([file.filename!]);
   });
 
   it('keeps the rewritten filename within the original_name column limit', async () => {
     // 251 chars + '.png' is exactly 255; naive replacement would yield 256.
     const longBase = 'a'.repeat(251);
-    const file = await stageUpload(await solidPng(10, 4, 5, 6), '.png', 'image/png', `${longBase}.png`);
+    const file = stageUpload(await solidPng(10, 4, 5, 6), '.png', 'image/png', `${longBase}.png`);
 
     await service.uploadAttachment('user-1', file);
 
@@ -337,7 +416,7 @@ describe('AttachmentService image compression', () => {
 
   it('does not split a surrogate pair when truncating a long multi-byte filename', async () => {
     const longEmojiBase = '🙂'.repeat(200); // 200 code points, 400 UTF-16 units
-    const file = await stageUpload(await solidPng(10, 7, 8, 9), '.png', 'image/png', `${longEmojiBase}.png`);
+    const file = stageUpload(await solidPng(10, 7, 8, 9), '.png', 'image/png', `${longEmojiBase}.png`);
 
     await service.uploadAttachment('user-1', file);
 
@@ -354,7 +433,7 @@ describe('AttachmentService image compression', () => {
     })
       .jpeg()
       .toBuffer();
-    const file = await stageUpload(jpegBuffer, '.jpg', 'image/jpeg', 'photo.jpg');
+    const file = stageUpload(jpegBuffer, '.jpg', 'image/jpeg', 'photo.jpg');
 
     await service.uploadAttachment('user-1', file);
 
@@ -367,20 +446,19 @@ describe('AttachmentService image compression', () => {
     })
       .png({ compressionLevel: 9 })
       .toBuffer();
-    const file = await stageUpload(tinyPng, '.png', 'image/png', 'already-small.png');
+    const file = stageUpload(tinyPng, '.png', 'image/png', 'already-small.png');
 
     await service.uploadAttachment('user-1', file);
 
     const { filePath, fileType, originalName } = createdArg();
-    expect(filePath).toBe(file.path!);
+    expect(filePath).toBe(path.join(ATTACHMENTS_UPLOAD_DIR, file.filename!));
     expect(fileType).toBe('image/png');
     expect(originalName).toBe('already-small.png');
-    expect(await Bun.file(file.path!).exists()).toBe(true);
-    expect(await Bun.file(`${file.path!}.webp`).exists()).toBe(false);
+    expect([...storage.objects.keys()]).toEqual([file.filename!]);
   });
 
   it('skips animated-GIF-capable mimetype so animation is never collapsed', async () => {
-    const file = await stageUpload(Buffer.from('GIF89afakegifbytes'), '.gif', 'image/gif', 'anim.gif');
+    const file = stageUpload(Buffer.from('GIF89afakegifbytes'), '.gif', 'image/gif', 'anim.gif');
 
     await service.uploadAttachment('user-1', file);
 
@@ -391,17 +469,17 @@ describe('AttachmentService image compression', () => {
     it(`does not flatten an animated ${actualFormat.toUpperCase()} disguised as PNG`, async () => {
       const animation = await animatedImage(actualFormat);
       expect((await sharp(animation).metadata()).pages).toBe(2);
-      const file = await stageUpload(animation, '.png', 'image/png', 'animation.png');
+      const file = stageUpload(animation, '.png', 'image/png', 'animation.png');
 
       await service.uploadAttachment('user-1', file);
 
       const { filePath, fileType, originalName } = createdArg();
-      expect(filePath).toBe(file.path!);
+      expect(filePath).toBe(path.join(ATTACHMENTS_UPLOAD_DIR, file.filename!));
       expect(fileType).toBe('image/png');
       expect(originalName).toBe('animation.png');
-      expect(await Bun.file(`${file.path!}.webp`).exists()).toBe(false);
+      expect([...storage.objects.keys()]).toEqual([file.filename!]);
 
-      const stored = Buffer.from(await Bun.file(filePath).arrayBuffer());
+      const stored = storedBytes();
       expect(stored.equals(animation)).toBe(true);
       expect((await sharp(stored).metadata()).pages).toBe(2);
     });
@@ -409,15 +487,14 @@ describe('AttachmentService image compression', () => {
 
   it('falls back to the original mimetype and leaves the file untouched when compression fails', async () => {
     const originalBytes = Buffer.from('not a real png');
-    const file = await stageUpload(originalBytes, '.png', 'image/png', 'corrupt.png');
+    const file = stageUpload(originalBytes, '.png', 'image/png', 'corrupt.png');
 
     await service.uploadAttachment('user-1', file);
 
     const { filePath, fileType } = createdArg();
     expect(fileType).toBe('image/png');
-    expect(filePath).toBe(file.path!);
+    expect(filePath).toBe(path.join(ATTACHMENTS_UPLOAD_DIR, file.filename!));
 
-    const bytes = Buffer.from(await Bun.file(filePath).arrayBuffer());
-    expect(bytes.equals(originalBytes)).toBe(true);
+    expect(storedBytes().equals(originalBytes)).toBe(true);
   });
 });

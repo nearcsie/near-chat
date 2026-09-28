@@ -1,8 +1,9 @@
 import type { UploadedFile } from './fileUpload';
+import type { StorageDriver } from './storageService';
 import crypto from 'crypto';
 import path from 'path';
 import { ValidationError } from '../utils/AppError';
-import { AVATARS_UPLOAD_DIR } from './uploads';
+import { defaultAvatarStorage } from './storageService';
 import { compressAvatarBuffer } from './imageCompression';
 
 export const AVATAR_UPLOAD_MAX_BYTES = 2 * 1024 * 1024;
@@ -86,6 +87,7 @@ export const assertValidAvatarUpload = (file: UploadedFile): string => {
 export const saveAvatarUpload = async (
   userId: string,
   file: UploadedFile,
+  storage: StorageDriver = defaultAvatarStorage,
 ): Promise<string> => {
   assertValidAvatarUpload(file);
 
@@ -106,9 +108,8 @@ export const saveAvatarUpload = async (
     throw new ValidationError('Avatar file content could not be processed as an image');
   }
   const storedName = `${userId}-${crypto.randomUUID()}.webp`;
-  const targetPath = path.join(AVATARS_UPLOAD_DIR, storedName);
 
-  await Bun.write(targetPath, compressed);
+  await storage.put(storedName, compressed);
 
   return `/uploads/avatars/${storedName}`;
 };
@@ -116,6 +117,7 @@ export const saveAvatarUpload = async (
 export const removeManagedAvatar = async (
   avatarUrl?: string,
   ownerId?: string,
+  storage: StorageDriver = defaultAvatarStorage,
 ): Promise<void> => {
   if (!avatarUrl || !avatarUrl.startsWith('/uploads/avatars/')) {
     return;
@@ -132,15 +134,9 @@ export const removeManagedAvatar = async (
     return;
   }
 
-  const targetPath = path.join(AVATARS_UPLOAD_DIR, fileName);
-
-  try {
-    await Bun.file(targetPath).delete();
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-      throw error;
-    }
-  }
+  // Deleting an object that is already gone is a no-op under the driver's
+  // contract, which is what the ENOENT tolerance here used to hand-roll.
+  await storage.delete(fileName);
 };
 
 /**

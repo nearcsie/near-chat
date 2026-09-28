@@ -87,23 +87,21 @@ describe('mapErrorToApiShape', () => {
     }
   });
 
-  it('maps attachment size overflow to 413', () => {
-    const err = { name: 'MulterError', code: 'LIMIT_FILE_SIZE', message: 'File too large' } as any;
+  // The oversized-upload path is `ValidationError('File size limit exceeded')`
+  // from `parseSingleFile`, which maps through the `AppError` branch above.
+  // `multer` is no longer a dependency, so nothing constructs a `MulterError`.
+  it('maps an unrecognized upload error object to 500 rather than a guessed status', () => {
+    const errorSpy = spyOn(logger, 'error').mockImplementation(() => {});
+    try {
+      const err = { name: 'MulterError', code: 'LIMIT_FILE_SIZE', message: 'File too large' } as unknown;
 
-    expect(mapErrorToApiShape(err)).toEqual({
-      statusCode: 413,
-      message: 'Attachment file exceeds the configured size limit',
-      code: 'LIMIT_FILE_SIZE',
-    });
-  });
-
-  it('maps non-size multer errors to 400', () => {
-    const err = { name: 'MulterError', code: 'LIMIT_FILE_COUNT', message: 'Too many files' } as any;
-
-    const result = mapErrorToApiShape(err);
-
-    expect(result.statusCode).toBe(400);
-    expect(result.code).toBe('LIMIT_FILE_COUNT');
-    expect(result.message).toBe(err.message);
+      expect(mapErrorToApiShape(err)).toEqual({
+        statusCode: 500,
+        message: 'Internal Server Error',
+        code: 'INTERNAL_ERROR',
+      });
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 });
