@@ -53,6 +53,45 @@ docker compose up -d
 UPLOADS_MOUNT_SOURCE=C:/chat-uploads
 ```
 
+#### 物件儲存（SeaweedFS，尚未使用）
+
+`docker-compose.yml` 另外定義了 `seaweedfs`：一個 S3 相容的物件儲存，供即將到來的
+S3 上傳 driver 使用（#281）。目前沒有任何東西使用它 —— 後端仍把上傳檔案寫進上述掛載，
+也不依賴它 —— 因此它被歸在 `storage` 這個 Compose profile 之下，單純執行
+`docker compose up -d` 不會啟動它。需要時請明確指定：
+
+```bash
+docker compose up -d --wait seaweedfs
+```
+
+它的 healthcheck 是一次對 bucket 的簽章請求，所以 `--wait` 返回時代表 S3 API 已在回應、
+金鑰被接受，而且 bucket 已經存在（SeaweedFS 會在啟動時建立它）。資料存放在具名磁碟卷
+`seaweedfs_data`。
+
+由於 profile 沒有啟用，單純執行 `docker compose down` 會讓這個容器繼續執行。請用
+`docker compose down seaweedfs` 停掉它，或以 `docker compose --profile storage down`
+停掉整個 stack。同理，`docker compose down -v` 會保留 `seaweedfs_data`，只有
+`docker compose --profile storage down -v` 才會刪除它。
+
+bucket 名稱與金鑰來自 `STORAGE_S3_BUCKET`、`STORAGE_S3_ACCESS_KEY_ID` 與
+`STORAGE_S3_SECRET_ACCESS_KEY`（預設為 `near-chat`、`near-chat-dev`、
+`near-chat-dev-secret`，見 `.env.example`）。它們與 `backend/src/config/env.ts`
+讀取的是同一組變數，旁邊還有預設為 `fs` 的 `STORAGE_DRIVER`。選 `s3` 時四個
+`STORAGE_S3_*` 缺一不可，否則後端拒絕啟動；在 #687 之前選它除了啟動時多一行警告之外
+不會改變任何事。未簽章或簽章錯誤的請求都會被拒絕。換了金鑰會在容器重建後生效，舊金鑰隨即失效；
+換了 bucket 名稱則會另建一個空的 bucket，舊的仍留在 volume 裡。這些是公開的開發用憑證，
+因此連接埠只發布在 `127.0.0.1`。
+
+S3 端點的位址取決於請求從哪裡發出：
+
+| 來源 | 端點 |
+|------|------|
+| compose 網路內部（backend 容器） | `http://seaweedfs:8333` |
+| 主機（`aws --endpoint-url`、`curl --aws-sigv4`） | `http://127.0.0.1:8335` |
+| 使用正式環境的瀏覽器 | 連不到。`docker-compose.prod.yml` 沒有物件儲存，且它對網際網路唯一的入口是 Cloudflare Tunnel |
+
+最後一列正是 S3 driver 仍會經由後端路由提供檔案、而不把物件 URL 寫進資料庫的原因。
+
 ### 步驟 3: 檢查容器狀態
 
 ```bash
@@ -77,6 +116,7 @@ Docker Compose 會將容器內部連接埠映射至主機的外部連接埠，�
 | **後端 API** | [http://localhost:4005](http://localhost:4005) | 4000 | Bun + Hono API 與 Socket.IO 伺服器 |
 | **資料庫** | `localhost:5435` | 5432 | PostgreSQL 18 實例 |
 | **Redis** | `localhost:6385` | 6379 | 供即時狀態使用的 Redis 8 實例。因為沒有設定密碼，只綁定在 `127.0.0.1`。後端啟動時會連線，但不依賴它：Redis 連不上只會讓即時通訊降級，不會讓 API 停擺 |
+| **SeaweedFS（S3）** | `127.0.0.1:8335` | 8333 | 供即將到來的 S3 上傳 driver 使用的 S3 相容物件儲存，目前尚無任何東西使用它。歸在 `storage` profile 之下，需明確指定啟動（`docker compose up -d --wait seaweedfs`）。只綁定在 `127.0.0.1`，因為它的憑證是公開的開發用值。詳見[物件儲存](#物件儲存seaweedfs尚未使用) |
 
 對於瀏覽器端的前端請求，請將 API 環境變數設定為：
 ```env

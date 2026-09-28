@@ -7,7 +7,8 @@ import { parsePositiveInt } from '../utils/parsePositiveInt';
  *
  * Re-reads process.env dynamically on each `env()` call. Unusable values
  * fall back to defaults, while `assertStartupEnv()` validates configuration
- * at boot and throws if fatal variables are missing.
+ * at boot and throws on fatal problems: a missing required variable, or a
+ * storage selection that cannot be honoured.
  */
 
 /** Re-exported so every default is reachable from one place. */
@@ -62,6 +63,13 @@ export const DEFAULT_PRESENCE_TTL_MS = 30_000;
 
 /** Number of refresh heartbeats within one lease TTL window. */
 export const DEFAULT_PRESENCE_REFRESH_DIVISOR = 3;
+
+/** Upload storage backends `STORAGE_DRIVER` can select. */
+export const STORAGE_DRIVERS = ['fs', 's3'] as const;
+
+export type StorageDriverName = (typeof STORAGE_DRIVERS)[number];
+
+export const DEFAULT_STORAGE_DRIVER: StorageDriverName = 'fs';
 
 /** Log level names accepted by Pino, including 'silent'. */
 export type LogLevel = LevelWithSilent;
@@ -145,6 +153,28 @@ export interface Env {
     allowedMimeTypes: string[];
     allowedExtensions: string[];
     maxBytes: number;
+  };
+
+  storage: {
+    /**
+     * Where uploads are stored. Only `fs` is implemented; `s3` is accepted and
+     * validated so its configuration can exist before its driver does (#687).
+     */
+    driver: StorageDriverName;
+    /**
+     * Object-store connection, required in full when `driver` is `s3` and
+     * ignored otherwise.
+     *
+     * Read from `STORAGE_S3_*` rather than the `S3_*` / `AWS_*` names Bun's
+     * default `Bun.s3` client reads on its own, so these values reach an S3
+     * client only by way of this module.
+     */
+    s3: {
+      endpoint: string | undefined;
+      bucket: string | undefined;
+      accessKeyId: string | undefined;
+      secretAccessKey: string | undefined;
+    };
   };
 }
 
@@ -298,6 +328,70 @@ const readRedisUrl = (source: NodeJS.ProcessEnv, problems?: EnvProblem[]): strin
   return undefined;
 };
 
+/**
+ * Resolves STORAGE_DRIVER. Unlike most settings, an unknown value is fatal
+ * rather than a fallback: the filesystem is not a safe default for someone who
+ * asked for a different store, because uploads would quietly land somewhere
+ * other than where they will later be looked for.
+ */
+const readStorageDriver = (
+  source: NodeJS.ProcessEnv,
+  problems?: EnvProblem[],
+): StorageDriverName => {
+  const configured = (source.STORAGE_DRIVER ?? '').trim().toLowerCase();
+  if (!configured) return DEFAULT_STORAGE_DRIVER;
+
+  const known = STORAGE_DRIVERS.find((driver) => driver === configured);
+  if (known) return known;
+
+  problems?.push({
+    name: 'STORAGE_DRIVER',
+    message: `is not a storage driver (expected ${STORAGE_DRIVERS.join(', ')})`,
+    value: source.STORAGE_DRIVER,
+    fatal: true,
+  });
+  return DEFAULT_STORAGE_DRIVER;
+};
+
+/** Every setting an `s3` driver needs: `Bun.S3Client` will not run unless all four are set. */
+const S3_SETTINGS = [
+  ['STORAGE_S3_ENDPOINT', 'endpoint'],
+  ['STORAGE_S3_BUCKET', 'bucket'],
+  ['STORAGE_S3_ACCESS_KEY_ID', 'accessKeyId'],
+  ['STORAGE_S3_SECRET_ACCESS_KEY', 'secretAccessKey'],
+] as const;
+
+const isHttpUrl = (raw: string): boolean => {
+  try {
+    const { protocol } = new URL(raw);
+    return protocol === 'http:' || protocol === 'https:';
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * Reports why an `s3` selection cannot be honoured. No value is echoed: any of
+ * them can carry a credential.
+ */
+const s3Problems = (s3: Env['storage']['s3']): EnvProblem[] => {
+  const problems: EnvProblem[] = S3_SETTINGS.filter(([, field]) => !s3[field]).map(([name]) => ({
+    name,
+    message: 'is required when STORAGE_DRIVER=s3',
+    fatal: true,
+  }));
+
+  if (s3.endpoint && !isHttpUrl(s3.endpoint)) {
+    problems.push({
+      name: 'STORAGE_S3_ENDPOINT',
+      message: 'is not an http(s) URL',
+      fatal: true,
+    });
+  }
+
+  return problems;
+};
+
 const readAll = (source: NodeJS.ProcessEnv, problems?: EnvProblem[]): Env => {
   const nodeEnv = source.NODE_ENV;
   const isTest = nodeEnv === 'test';
@@ -440,6 +534,16 @@ const readAll = (source: NodeJS.ProcessEnv, problems?: EnvProblem[]): Env => {
         problems,
       ),
     },
+
+    storage: {
+      driver: readStorageDriver(source, problems),
+      s3: {
+        endpoint: source.STORAGE_S3_ENDPOINT?.trim() || undefined,
+        bucket: source.STORAGE_S3_BUCKET?.trim() || undefined,
+        accessKeyId: source.STORAGE_S3_ACCESS_KEY_ID?.trim() || undefined,
+        secretAccessKey: source.STORAGE_S3_SECRET_ACCESS_KEY?.trim() || undefined,
+      },
+    },
   };
 };
 
@@ -474,6 +578,19 @@ export const envProblems = (source: NodeJS.ProcessEnv = process.env): EnvProblem
       name: 'JWT_SECRET',
       message: 'is required in production; tokens would otherwise be signed with a public dev key',
       fatal: true,
+    });
+  }
+
+  if (config.storage.driver === 's3') {
+    problems.push(...s3Problems(config.storage.s3));
+    // Remove together with the first reader of `storage` (#687). Until then a
+    // complete s3 configuration boots, and without this it would look like the
+    // object store is in use when every upload still goes to the filesystem.
+    problems.push({
+      name: 'STORAGE_DRIVER',
+      message: 'selects s3, which nothing reads yet (#687); uploads still go to the filesystem',
+      value: source.STORAGE_DRIVER,
+      fatal: false,
     });
   }
 
