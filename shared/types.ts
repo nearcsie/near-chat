@@ -247,6 +247,7 @@ export interface RtcSessionDescription {
 export interface RtcIceCandidate {
   candidate: string;
   sdpMid: string | null;
+  /** An integer from 0 to 65535. */
   sdpMLineIndex: number | null;
   usernameFragment?: string | null;
 }

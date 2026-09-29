@@ -1634,7 +1634,7 @@ receipt: a target with no connected session receives nothing. Otherwise
 
 | `statusCode` | `code` | When |
 | :--- | :--- | :--- |
-| `400` | `VALIDATION_ERROR` | Unknown `kind`, `media` or `reason`; a missing or malformed field; `sdp` over 32 KiB or `candidate.candidate` over 1 KiB (UTF-8 bytes); `sdpMid` or `usernameFragment` over 256 characters; `sdpMLineIndex` not a non-negative integer |
+| `400` | `VALIDATION_ERROR` | Unknown `kind`, `media` or `reason`; a missing or malformed field; `sdp` over 32 KiB or `candidate.candidate` over 1 KiB (UTF-8 bytes); `sdpMid` or `usernameFragment` over 256 characters; `sdpMLineIndex` not an integer from 0 to 65535 |
 | `403` | `FORBIDDEN` | `targetUserId` is the sender (`Cannot signal yourself`); or, for every `kind` except `end`, the two users are not accepted friends or either has blocked the other (`Cannot interact with this user` — one message for both, so a caller cannot tell a block from a non-friend) |
 | `429` | `TOO_MANY_REQUESTS` | More than 5 `invite`s from one caller to one target within 60 seconds, or more than 200 signals of any `kind` from one user within 10 seconds |
 | `500` | `INTERNAL_ERROR` | The relationship could not be read |

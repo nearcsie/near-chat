@@ -1630,7 +1630,7 @@ NEXT_PUBLIC_API_URL=http://localhost:4005
 
 | `statusCode` | `code` | 情境 |
 | :--- | :--- | :--- |
-| `400` | `VALIDATION_ERROR` | 未知的 `kind`、`media` 或 `reason`；欄位缺漏或格式錯誤；`sdp` 超過 32 KiB 或 `candidate.candidate` 超過 1 KiB（以 UTF-8 位元組計）；`sdpMid` 或 `usernameFragment` 超過 256 個字元；`sdpMLineIndex` 不是非負整數 |
+| `400` | `VALIDATION_ERROR` | 未知的 `kind`、`media` 或 `reason`；欄位缺漏或格式錯誤；`sdp` 超過 32 KiB 或 `candidate.candidate` 超過 1 KiB（以 UTF-8 位元組計）；`sdpMid` 或 `usernameFragment` 超過 256 個字元；`sdpMLineIndex` 不是 0 到 65535 之間的整數 |
 | `403` | `FORBIDDEN` | `targetUserId` 是自己（`Cannot signal yourself`）；或除 `end` 以外的所有 `kind`，雙方不是 accepted friend，或任一方封鎖了對方（`Cannot interact with this user`——兩種情形使用同一則訊息，發話方無從分辨是被封鎖還是非好友） |
 | `429` | `TOO_MANY_REQUESTS` | 同一組發話方與目標在 60 秒內超過 5 次 `invite`，或同一位使用者在 10 秒內送出超過 200 個任意 `kind` 的信令 |
 | `500` | `INTERNAL_ERROR` | 無法讀取雙方關係 |

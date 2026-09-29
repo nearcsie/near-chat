@@ -352,6 +352,7 @@ describe('rtc_signal relay', () => {
       await rejects(sdp({ description: undefined }));
       await rejects(ice({ sdpMLineIndex: -1 }));
       await rejects(ice({ sdpMLineIndex: 0.5 }));
+      await rejects(ice({ sdpMLineIndex: 65_536 }));
     });
   });
 
