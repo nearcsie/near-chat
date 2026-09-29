@@ -258,3 +258,107 @@ describe('Socket.IO ephemeral events E2E', () => {
     first.disconnect();
   });
 });
+
+describe('rtc_signal over a real Socket.IO server', () => {
+  const ALICE = '11111111-1111-4111-8111-111111111111';
+  const BOB = '22222222-2222-4222-8222-222222222222';
+  const CAROL = '33333333-3333-4333-8333-333333333333';
+
+  let httpServer: HttpServer;
+  let ioServer: ChatServer;
+  let url: string;
+  let clients: TestClient[];
+
+  const connectClient = async (userId: string): Promise<TestClient> => {
+    const token = await signToken({ userId, name: userId });
+    return new Promise((resolve, reject) => {
+      const socket: TestClient = createClient(url, { auth: { token }, forceNew: true, transports: ['websocket'] });
+      clients.push(socket);
+      socket.once('connect', () => resolve(socket));
+      socket.once('connect_error', reject);
+    });
+  };
+
+  const collect = (socket: TestClient) => {
+    const seen: Parameters<ServerToClientEvents['rtc_signal']>[0][] = [];
+    socket.on('rtc_signal', (event) => seen.push(event));
+    return seen;
+  };
+
+  beforeEach(async () => {
+    process.env.MAX_SESSIONS_PER_USER = '5';
+    httpServer = createServer();
+    ioServer = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer) as ChatServer;
+    clients = [];
+    const friends = new Set([[ALICE, BOB].sort().join(':')]);
+    attachSocketAuth(ioServer);
+    attachSockets(ioServer, {
+      roomMemberRepository: { findByUser: mock().mockResolvedValue([]), findMember: mock().mockResolvedValue(null) },
+      friendRepository: {
+        getFriends: mock().mockResolvedValue([]),
+        areFriends: async (a: string, b: string) => friends.has([a, b].sort().join(':')),
+        isBlocked: async () => false,
+      },
+      // Without it the process-wide presence tracker would run for these sockets.
+      presence: {
+        trackUserConnection: mock().mockResolvedValue(undefined),
+        trackUserDisconnection: mock().mockResolvedValue(undefined),
+      },
+    });
+    await new Promise<void>((resolve) => httpServer.listen(0, '127.0.0.1', () => resolve()));
+    url = `http://127.0.0.1:${(httpServer.address() as AddressInfo).port}`;
+  });
+
+  afterEach(async () => {
+    delete process.env.MAX_SESSIONS_PER_USER;
+    clients.forEach((socket) => {
+      try { socket.disconnect(); } catch {}
+    });
+    await Promise.race([
+      new Promise<void>((resolve) => ioServer.close(() => resolve())),
+      new Promise<void>((resolve) => setTimeout(resolve, 300)),
+    ]);
+  });
+
+  it('delivers an accept to every caller session and to the callee\'s other sessions, but not back to the sender', async () => {
+    const aliceTabs = [await connectClient(ALICE), await connectClient(ALICE)];
+    const bobSender = await connectClient(BOB);
+    const bobOther = await connectClient(BOB);
+    const seenByAlice = aliceTabs.map(collect);
+    const seenBySender = collect(bobSender);
+    const seenByOther = collect(bobOther);
+
+    const ack = await bobSender.emitWithAck('rtc_signal', {
+      kind: 'accept', callId: 'call-1', targetUserId: ALICE, sessionTag: 'tag-1',
+    });
+
+    expect(ack).toEqual({ ok: true });
+    const expected = { kind: 'accept' as const, callId: 'call-1', targetUserId: ALICE, sessionTag: 'tag-1', fromUserId: BOB };
+    await waitForExpect(() => {
+      expect(seenByAlice).toEqual([[expected], [expected]]);
+      expect(seenByOther).toEqual([expected]);
+    });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(seenBySender).toEqual([]);
+  });
+
+  it('answers a signal to a non-friend through the ack alone', async () => {
+    const alice = await connectClient(ALICE);
+    const carol = await connectClient(CAROL);
+    const seenByCarol = collect(carol);
+    const errors: unknown[] = [];
+    alice.on('error', (payload) => errors.push(payload));
+
+    const ack = await alice.emitWithAck('rtc_signal', {
+      kind: 'invite', callId: 'call-1', targetUserId: CAROL, media: 'video',
+    });
+
+    expect(ack).toEqual({
+      ok: false,
+      error: { statusCode: 403, message: 'Cannot interact with this user', code: 'FORBIDDEN' },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(seenByCarol).toEqual([]);
+    expect(errors).toEqual([]);
+  });
+});

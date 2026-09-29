@@ -17,7 +17,7 @@ This directory contains the TypeScript source code for the backend service built
 | [models/](models/) | **Data Access Layer** | Executes raw SQL statements, and holds the shared `Bun.SQL` client in `db.ts`. Repositories must conform to corresponding interfaces (e.g., `IRoomRepository.ts`) to allow mock testing. |
 | [utils/](utils/) | **Shared Utilities** | Cross-cutting helpers: `AppError.ts` / `mapError.ts`, JWT and cookie handling, upload path resolution, the `inactivityJob.ts` emergency-alert scheduler, and `redis.ts` — the Redis connection manager (command / publisher / subscriber), which owns reconnection, subscription replay and bounded shutdown so nothing above it touches a Redis client directly. |
 | [middlewares/](middlewares/) | **Middlewares** | Intercepts HTTP requests (JWT validation in `authMiddleware.ts`, security headers, global exception catching in `errorHandler.ts`). |
-| [realtime/](realtime/) | **Realtime layer** | Handles Socket.IO connection handshakes, JWT authorization, durable room subscriptions, presence, and ephemeral typing. Durable message commands and read positions use REST; the publisher sends their committed events to sockets. |
+| [realtime/](realtime/) | **Realtime layer** | Handles Socket.IO connection handshakes, JWT authorization, durable room subscriptions, presence, ephemeral typing, and the WebRTC call-signal relay (`rtcSignaling.ts`: validates, authorizes against friendship and blocks, rate limits, and forwards `rtc_signal` without storing anything). Durable message commands and read positions use REST; the publisher sends their committed events to sockets. |
 
 ## AI Agent Guidelines
 

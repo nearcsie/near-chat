@@ -61,13 +61,16 @@
 
 ### Socket.io 即時通訊
 
-Socket.IO 是伺服器到客戶端的事件傳輸層。持久化命令統一走 REST，讓
-驗證、`Idempotency-Key`、`If-Match`、交易與重試使用同一份契約。socket
-建立連線時，伺服器會依目前有效的 `room_members` 自動建立聊天室訂閱。
+Socket.IO 主要是伺服器到客戶端的事件傳輸層。客戶端經由它送出的只有兩種
+短暫訊號：`typing` 與 `rtc_signal`（通話信令），兩者都不會被保存，斷線後也
+不會補收。持久化命令統一走 REST，讓驗證、`Idempotency-Key`、`If-Match`、
+交易與重試使用同一份契約。socket 建立連線時，伺服器會依目前有效的
+`room_members` 自動建立聊天室訂閱。
 
 | 類型 | 事件名稱 | 驗證要求 | 說明 |
 | :--- | :--- | :--- | :--- |
-| | `typing` | 連線需驗證 | 廣播輸入狀態給房間內其他使用者 |
+| **客戶端發送** | `typing` | 連線需驗證 | 廣播輸入狀態給房間內其他使用者 |
+| | `rtc_signal` | 連線需驗證 | 將 WebRTC 通話信令轉送給好友。詳見 [`rtc_signal` 通話信令](#rtc_signal-通話信令)。 |
 | **伺服器推送** | `new_message` | 連線需驗證 | 收到新訊息通知（含提及訊息） |
 | | `message_recalled` | 連線需驗證 | 訊息已被原發送者收回 |
 | | `user_typing` | 連線需驗證 | 其他成員正在輸入中之狀態 |
@@ -76,6 +79,7 @@ Socket.IO 是伺服器到客戶端的事件傳輸層。持久化命令統一走 
 | | `friend_request` | 連線需驗證 | 好友請求狀態變更的即時通知（已送出、已接受、已拒絕） |
 | | `user_status` | 連線需驗證 | 好友的上線 / 下線狀態變更 |
 | | `emergency_alert` | 連線需驗證 | 收到緊急聯絡人發送之警報通知 |
+| | `rtc_signal` | 連線需驗證 | 好友轉送過來的通話信令 |
 | | `error` | 連線需驗證 | 事件處理失敗之錯誤回報 |
 
 ---
@@ -1572,7 +1576,7 @@ NEXT_PUBLIC_API_URL=http://localhost:4005
 - **Namespace**: `/`
 - **驗證**: 連線時需在 Socket.IO `auth.token` handshake 欄位帶上 access token。
 - **訂閱**: 連線後伺服器會加入 `user_<userId>`，並加入 `room_members` 中所有非 pending 聊天室；撤銷成員資格時會移除該使用者的所有 session。
-- **部署範圍**: 設定 `REDIS_URL` 後，事件會透過 Redis cluster adapter 在 `near-chat-ws` channel 上發布，因此房間與使用者事件、room subscription 變更與強制斷線都能送達任何實例上的客戶端。投遞語意是 at most once：Redis pub/sub 不保留 backlog，連線中斷期間錯過的事件不會補送，客戶端仍以 Sync Cursor 復原而非依賴 socket。未設定 `REDIS_URL` 時使用 in-memory adapter，後端即為**單一實例**——部署兩個以上實例時，連到其他實例的客戶端會靜默漏收事件，且那些 socket 不會斷線，也就不會觸發任何復原。目前仍不支援 replica 數量大於 1 的部署：每位使用者的 session 上限與限流仍是 per-instance。
+- **部署範圍**: 設定 `REDIS_URL` 後，事件會透過 Redis cluster adapter 在 `near-chat-ws` channel 上發布，因此房間與使用者事件、room subscription 變更與強制斷線都能送達任何實例上的客戶端。投遞語意是 at most once：Redis pub/sub 不保留 backlog，連線中斷期間錯過的事件不會補送，客戶端仍以 Sync Cursor 復原而非依賴 socket。未設定 `REDIS_URL` 時使用 in-memory adapter，後端即為**單一實例**——部署兩個以上實例時，連到其他實例的客戶端會靜默漏收事件，且那些 socket 不會斷線，也就不會觸發任何復原。目前仍不支援 replica 數量大於 1 的部署：每位使用者的 session 上限，以及 HTTP 與通話信令的限流，仍是 per-instance。
 - **復原**: 客戶端必須先等待伺服器發出 `realtime_ready`，再於每次連線與 token refresh 後呼叫 `GET /sync`。不使用 `connectionStateRecovery`，Sync Cursor 是唯一復原路徑。若訂閱恢復失敗，伺服器會在發送 `realtime_ready` 前中斷 socket，讓客戶端重新握手。此外有兩種情形會在連線期間再次送出 `realtime_ready`，原因相同——訂閱變更本身不會補送 socket 失去同步期間已發布的內容：其一是伺服器還原自己先前撤銷的訂閱（條件式刪除失敗的踢除），其二是 Redis subscriber 重連後的校正讓該 socket 離開了已不再允許的房間。只有實際受影響的 socket 會收到，不會廣播給所有已連線的客戶端。
 
 ### 客戶端發送事件
@@ -1580,6 +1584,7 @@ NEXT_PUBLIC_API_URL=http://localhost:4005
 | 事件名稱 | Payload | 說明 |
 | :--- | :--- | :--- |
 | `typing` | `{ roomId: string, isTyping: boolean }` | 廣播輸入中狀態 |
+| `rtc_signal` | `RtcSignal`，另附一個 ack callback，接收 `{ ok: true } \| { ok: false, error: ApiError }` | 轉送 WebRTC 通話信令。詳見 [`rtc_signal` 通話信令](#rtc_signal-通話信令)。 |
 
 ### 伺服器發送事件
 
@@ -1591,11 +1596,60 @@ NEXT_PUBLIC_API_URL=http://localhost:4005
 | `user_typing` | `{ roomId: string, userId: string, isTyping: boolean }` | 其他成員的輸入狀態 |
 | `read_update` | `{ roomId: string, userId: string, messageId: string, readPosition?: number }` | 其他成員的已讀游標更新 |
 | `room_update` | `{ type: string, roomId: string, data: unknown }` | 房間或成員狀態變更。`type` 欄位決定子類型，詳見 [`room_update` 子類型](#room_update-子類型)。 |
-| `friend_request` | `{ requesterId: string, addresseeId: string, status: 'pending' \| 'accepted' \| 'rejected' \| 'deleted' \| 'blocked' \| 'unblocked', createdAt: string }` | 好友生命週期通知。傳送給相關使用者；客戶端收到後不論 `status` 為何，皆應重新拉取好友與待確認請求列表。 |
+| `friend_request` | `{ requesterId: string, addresseeId: string, status: 'pending' \| 'accepted' \| 'rejected' \| 'deleted' \| 'blocked' \| 'unblocked', createdAt: string }` | 好友生命週期通知。傳送給變更的另一方；`deleted` 與 `blocked` 也會傳送給執行變更者本人的所有 session，讓執行者的其他分頁得知應結束與該使用者的通話。客戶端收到後不論 `status` 為何，皆應重新拉取好友與待確認請求列表。 |
 | `user_status` | `{ userId: string, status: 'online' \| 'offline' }` | 好友的上線 / 下線狀態更新。於好友連線或斷線時推送，以及持有其最後一條 session 的 instance 正常關機時推送。異常終止（SIGKILL、OOM、container 被回收）則不會推送任何事件：presence lease 只能靠自身 TTL 過期，且沒有任何元件在監看該過期，因此好友會停留在過期的「在線」，直到下一次 `GET /api/v1/friends`。事件會送往每位好友的 `user_<id>` room，因此能送達他們在任一 instance 上的 session。在 Redis 可連線的情況下，每次狀態轉換只會由取得第一個 lease 或釋放最後一個 lease 的那個 instance 對整個 cluster 宣告一次。**降級情境：** 若 Redis command connection 中斷，各 instance 會退回依自己的本機狀態判斷，因此客戶端可能收到重複的 `online`，或在使用者仍連線於其他 instance 時收到 `offline`。中斷期間 `GET /api/v1/friends` 無法用來校正：其 `status` 來自同一組 presence 查詢，同樣會退回成回應端 instance 自己的連線，因而把連在其他 instance 的使用者回報為 offline。兩條路徑都要等 Redis 恢復連線後才會收斂。 |
 | `emergency_alert` | `{ userId: string, message: string }` | 收到緊急聯絡人的警報通知 |
 | `realtime_ready` | `void` | 有效聊天室訂閱已恢復；客戶端可以開始 `/sync`。每次連線送出一次；伺服器還原先前撤銷的訂閱，或讓該 socket 離開已不再允許的房間時，也會單獨再送給受影響的 socket |
-| `error` | `ApiError` | 事件處理失敗的錯誤回報 |
+| `rtc_signal` | `RtcSignal & { fromUserId: string }` | 好友送來的通話信令，或是自己在另一個 session 送出、被鏡像過來的 `accept`／`end`。詳見 [`rtc_signal` 通話信令](#rtc_signal-通話信令)。 |
+| `error` | `ApiError` | 事件處理失敗的錯誤回報。`rtc_signal` 的失敗只經由該事件的 ack 回報，不會出現在這裡 |
+
+### `rtc_signal` 通話信令
+
+轉送兩位使用者建立 1 對 1 WebRTC 通話時交換的信令。媒體本身走 P2P；伺服器
+不保存任何通話狀態、不寫入任何資料，斷線後也不會補送信令。
+
+**客戶端 → 伺服器：** `socket.emit('rtc_signal', payload, ack)`，`payload` 為
+下列其中一種，以 `kind` 區分：
+
+| `kind` | 欄位 | 用途 |
+| :--- | :--- | :--- |
+| `invite` | `callId`、`targetUserId`、`media: 'audio' \| 'video'` | 對目標發起來電 |
+| `accept` | `callId`、`targetUserId`、`sessionTag` | 接聽，由接起電話的分頁送出 |
+| `sdp` | `callId`、`targetUserId`、`sessionTag`、`description: { type: 'offer' \| 'answer', sdp: string }` | session description 的 offer 或 answer |
+| `ice` | `callId`、`targetUserId`、`sessionTag`、`candidate: { candidate: string, sdpMid: string \| null, sdpMLineIndex: number \| null, usernameFragment?: string \| null }` | trickle ICE candidate；`candidate` 為空字串表示 end-of-candidates |
+| `end` | `callId`、`targetUserId`、`sessionTag?`、`reason: 'declined' \| 'cancelled' \| 'hangup' \| 'timeout' \| 'failed'` | 拒接、取消或掛斷 |
+
+- `callId` 與 `sessionTag` 由客戶端自訂，長度 1 到 64 個字元，只允許
+  `[A-Za-z0-9_-]`。`sessionTag` 用來識別接聽的分頁，請隨機產生，不要使用
+  `socket.id`：每次 token 刷新都會換一個新的 socket。`end` 不帶 `sessionTag` 時
+  請直接省略，不要送 `null`。
+- `targetUserId` 上限 128 個字元，比對時不分大小寫。
+
+**Ack：** 信令轉送出去後回傳 `{ ok: true }`。這不是送達回條：目標沒有任何已
+連線的 session 時，不會有人收到。否則回傳 `{ ok: false, error: ApiError }`：
+
+| `statusCode` | `code` | 情境 |
+| :--- | :--- | :--- |
+| `400` | `VALIDATION_ERROR` | 未知的 `kind`、`media` 或 `reason`；欄位缺漏或格式錯誤；`sdp` 超過 32 KiB 或 `candidate.candidate` 超過 1 KiB（以 UTF-8 位元組計）；`sdpMid` 或 `usernameFragment` 超過 256 個字元；`sdpMLineIndex` 不是非負整數 |
+| `403` | `FORBIDDEN` | `targetUserId` 是自己（`Cannot signal yourself`）；或除 `end` 以外的所有 `kind`，雙方不是 accepted friend，或任一方封鎖了對方（`Cannot interact with this user`——兩種情形使用同一則訊息，發話方無從分辨是被封鎖還是非好友） |
+| `429` | `TOO_MANY_REQUESTS` | 同一組發話方與目標在 60 秒內超過 5 次 `invite`，或同一位使用者在 10 秒內送出超過 200 個任意 `kind` 的信令 |
+| `500` | `INTERNAL_ERROR` | 無法讀取雙方關係 |
+
+**伺服器 → 客戶端：** `rtc_signal`，內容為上述驗證通過的欄位，再加上伺服器
+依連線推導的 `fromUserId`。客戶端自帶的 `fromUserId` 或其他多餘欄位一律捨棄。
+
+**規則：**
+
+- 每個信令都會重新讀取雙方關係，不做快取，因此解除好友或封鎖會從下一個信令起
+  生效。`end` 不檢查關係，確保任一種變更之後掛斷仍送得到對方。也因為這項例外，
+  客戶端必須忽略 `callId` 不認得的 `end`。
+- 信令會送達 `targetUserId` 的所有 session。`accept` 與 `end` 另外會送達發話方
+  自己的其他 session（送出的 socket 除外），讓仍在響鈴的分頁停止響鈴。
+- 同一位使用者的信令依抵達順序轉送，token 刷新造成的 socket 替換前後也維持順序。
+- 限流為 per-instance。每位使用者的總量限制會計入所有通過驗證的信令，包含之後被
+  `403` 拒絕的；`invite` 限制則計入對其他使用者的邀請。兩者都與 HTTP 限流共用
+  同一個開關：`RATE_LIMIT_DISABLED=true` 時關閉，`NODE_ENV=test` 下也關閉。
+- 接聽通話會把 ICE candidate 揭露給對方，而 candidate 內含 IP 位址。
 
 ---
 
