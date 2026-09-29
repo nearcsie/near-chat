@@ -219,7 +219,8 @@ export interface JwtPayload {
 }
 
 // ---------------------------------------------------------------------------
-// API error shape (used by REST responses and Socket.IO error events)
+// API error shape (used by REST responses, Socket.IO error events and the
+// `rtc_signal` ack)
 // ---------------------------------------------------------------------------
 
 export interface ApiError {
@@ -230,12 +231,56 @@ export interface ApiError {
 }
 
 // ---------------------------------------------------------------------------
-// Socket.IO event maps — matches api-documentation.md Section 2
+// WebRTC call signaling — relayed over Socket.IO, never persisted
+// ---------------------------------------------------------------------------
+
+export type RtcMedia = 'audio' | 'video';
+
+export type RtcEndReason = 'declined' | 'cancelled' | 'hangup' | 'timeout' | 'failed';
+
+export interface RtcSessionDescription {
+  type: 'offer' | 'answer';
+  sdp: string;
+}
+
+/** An ICE candidate. An empty `candidate` string marks end-of-candidates. */
+export interface RtcIceCandidate {
+  candidate: string;
+  sdpMid: string | null;
+  /** An integer from 0 to 65535. */
+  sdpMLineIndex: number | null;
+  usernameFragment?: string | null;
+}
+
+/**
+ * One call signal from a client. `sessionTag` is chosen at random by the tab
+ * that answers, not taken from `socket.id`: the socket is replaced on every
+ * token refresh, while the call has to outlive it.
+ */
+export type RtcSignal =
+  | { kind: 'invite'; callId: string; targetUserId: string; media: RtcMedia }
+  | { kind: 'accept'; callId: string; targetUserId: string; sessionTag: string }
+  | { kind: 'sdp'; callId: string; targetUserId: string; sessionTag: string; description: RtcSessionDescription }
+  | { kind: 'ice'; callId: string; targetUserId: string; sessionTag: string; candidate: RtcIceCandidate }
+  | { kind: 'end'; callId: string; targetUserId: string; sessionTag?: string; reason: RtcEndReason };
+
+/** A relayed call signal: the validated fields plus the sender the server derived. */
+export type RtcSignalEvent = RtcSignal & { fromUserId: string };
+
+/** `ok: true` means the signal was relayed, not that any session received it. */
+export type RtcSignalAck = { ok: true } | { ok: false; error: ApiError };
+
+// ---------------------------------------------------------------------------
+// Socket.IO event maps — matches api-documentation.md Section 3
 // ---------------------------------------------------------------------------
 
 export interface ClientToServerEvents {
-  /** Typing is ephemeral; all durable commands are REST requests. */
+  /**
+   * Typing and call signals are ephemeral and never recovered after a
+   * disconnection; all durable commands are REST requests.
+   */
   typing: (payload: { roomId: string; isTyping: boolean }) => void;
+  rtc_signal: (payload: RtcSignal, ack: (result: RtcSignalAck) => void) => void;
 }
 
 export interface ServerToClientEvents {
@@ -250,6 +295,7 @@ export interface ServerToClientEvents {
   error:            (payload: ApiError) => void;
   user_status:      (payload: { userId: string; status: 'online' | 'offline' }) => void;
   realtime_ready:   () => void;
+  rtc_signal:       (payload: RtcSignalEvent) => void;
 }
 
 // ---------------------------------------------------------------------------

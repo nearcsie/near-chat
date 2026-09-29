@@ -3,13 +3,15 @@ import { ForbiddenError, ValidationError } from '../utils/AppError';
 import type { IRoomMemberRepository } from '../models/IRoomMemberRepository';
 import type { ChatServer } from './authSocket';
 import { trackUserConnection, trackUserDisconnection, type PresenceTracker } from './presence';
+import { createRtcSignaling, type RtcRelationships } from './rtcSignaling';
 import { mapErrorToApiShape } from '../utils/mapError';
 import { env } from '../config/env';
 import { logger } from '../utils/logger';
 
 interface SocketDeps {
   roomMemberRepository: Pick<IRoomMemberRepository, 'findMember' | 'findByUser'>;
-  friendRepository?: { getFriends(userId: string): Promise<FriendResponse[]> };
+  /** Read for presence fan-out and to authorize call signals. */
+  friendRepository?: { getFriends(userId: string): Promise<FriendResponse[]> } & RtcRelationships;
   withRoomSubscriptionLock?: <T>(
     userId: string,
     roomId: string,
@@ -70,9 +72,10 @@ const typingTtlMs = (): number => env().realtime.typingTtlMs;
 /** Timeout before unestablished socket reservations are released. */
 const sessionReservationTtlMs = (): number => env().realtime.sessionReservationTtlMs;
 
-/** Attaches ephemeral Socket.IO listeners for presence and typing indicators. */
+/** Attaches ephemeral Socket.IO listeners for presence, typing indicators and call signals. */
 export const attachSockets = (io: ChatServer, deps: SocketDeps): void => {
   const presence = deps.presence ?? { trackUserConnection, trackUserDisconnection };
+  const rtcSignaling = createRtcSignaling(io, deps.friendRepository);
   const sessionLimit = maxSessionsPerUser();
   const sessionCounts = new Map<string, number>();
 
@@ -567,5 +570,6 @@ export const attachSockets = (io: ChatServer, deps: SocketDeps): void => {
       }
     });
 
+    rtcSignaling.attach(socket, userId);
   });
 };

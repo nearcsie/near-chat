@@ -61,14 +61,17 @@ This document defines the RESTful API and Socket.IO real-time communication inte
 
 ### Socket.IO Real-Time Communication
 
-Socket.IO is a server-to-client event transport. Durable commands are REST
-requests so authentication, `Idempotency-Key`, `If-Match`, transactions and
-retries share one contract. The server derives room subscriptions from active
-membership when a socket connects.
+Socket.IO is mainly a server-to-client event transport. The only signals a
+client sends over it are two ephemeral ones, `typing` and `rtc_signal` (call
+signaling); neither is stored or recovered after a disconnection. Durable
+commands are REST requests so authentication, `Idempotency-Key`, `If-Match`,
+transactions and retries share one contract. The server derives room
+subscriptions from active membership when a socket connects.
 
 | Type | Event Name | Auth Required | Description |
 | :--- | :--- | :--- | :--- |
-| | `typing` | Yes (On connection) | Broadcast typing state to other room members |
+| **Client-to-Server** | `typing` | Yes (On connection) | Broadcast typing state to other room members |
+| | `rtc_signal` | Yes (On connection) | Relay a WebRTC call signal to a friend. See [`rtc_signal` Call Signaling](#rtc_signal-call-signaling). |
 | **Server-to-Client** | `new_message` | Yes (On connection) | Receive new message notification (including mentions) |
 | | `message_recalled` | Yes (On connection) | Message has been recalled by the sender |
 | | `user_typing` | Yes (On connection) | Typing state changes of other members |
@@ -77,6 +80,7 @@ membership when a socket connects.
 | | `friend_request` | Yes (On connection) | Real-time notification for friend request status changes (sent, accepted, rejected) |
 | | `user_status` | Yes (On connection) | Online/offline presence change of a friend |
 | | `emergency_alert` | Yes (On connection) | Receive emergency alert notification from contact |
+| | `rtc_signal` | Yes (On connection) | A call signal relayed from a friend |
 | | `error` | Yes (On connection) | Error report for failed event processing |
 
 ---
@@ -1574,7 +1578,7 @@ endpoint sets the flag; see `docs/DEVELOPMENT.md` for the bootstrap procedure.
 - **Namespace**: `/`
 - **Authentication**: Connection requires the access token in the Socket.IO `auth.token` handshake field.
 - **Subscriptions**: Upon connection, the server adds the socket to `user_<userId>` and to every non-pending room in `room_members`. Membership revocation removes every session from that room.
-- **Deployment scope**: With `REDIS_URL` set, events are published through a Redis cluster adapter on the `near-chat-ws` channel, so room and user events, room subscription changes and forced disconnects all reach clients held by any instance. Delivery is at most once: Redis pub/sub keeps no backlog, so an instance that was unreachable does not receive what it missed, and clients recover through their Sync Cursor rather than through the socket. Without `REDIS_URL` the in-memory adapter is used and the backend is a **single instance** — two or more would silently drop events for clients connected to a different one, and those sockets stay connected, so no recovery is triggered. More than one replica is still not a supported deployment: the per-user session limit and rate limits remain per-instance.
+- **Deployment scope**: With `REDIS_URL` set, events are published through a Redis cluster adapter on the `near-chat-ws` channel, so room and user events, room subscription changes and forced disconnects all reach clients held by any instance. Delivery is at most once: Redis pub/sub keeps no backlog, so an instance that was unreachable does not receive what it missed, and clients recover through their Sync Cursor rather than through the socket. Without `REDIS_URL` the in-memory adapter is used and the backend is a **single instance** — two or more would silently drop events for clients connected to a different one, and those sockets stay connected, so no recovery is triggered. More than one replica is still not a supported deployment: the per-user session limit and the HTTP and call-signal rate limits remain per-instance.
 - **Recovery**: Clients wait for the server's `realtime_ready` event, then call `GET /sync` after every connection and token refresh. `connectionStateRecovery` is disabled; Sync Cursor is the single recovery path. If subscription restoration fails, the server disconnects the socket without sending `realtime_ready`, so the client retries the handshake. The server may also send `realtime_ready` again mid-session in two cases, both because the subscription change replays nothing that was published while the socket was out of step: after it restores a subscription it had revoked (a kick that lost its conditional delete), and after a Redis subscriber reconnect made it leave a room the socket was no longer permitted to hold. Only the sockets actually affected receive it, never every connected client.
 
 ### Client-to-Server Events
@@ -1582,6 +1586,7 @@ endpoint sets the flag; see `docs/DEVELOPMENT.md` for the bootstrap procedure.
 | Event Name | Payload | Description |
 | :--- | :--- | :--- |
 | `typing` | `{ roomId: string, isTyping: boolean }` | Broadcast typing state |
+| `rtc_signal` | `RtcSignal`, plus an ack callback receiving `{ ok: true } \| { ok: false, error: ApiError }` | Relay a WebRTC call signal. See [`rtc_signal` Call Signaling](#rtc_signal-call-signaling). |
 
 ### Server-to-Client Events
 
@@ -1593,11 +1598,68 @@ endpoint sets the flag; see `docs/DEVELOPMENT.md` for the bootstrap procedure.
 | `user_typing` | `{ roomId: string, userId: string, isTyping: boolean }` | Typing status of other members |
 | `read_update` | `{ roomId: string, userId: string, messageId: string, readPosition?: number }` | Read receipt updates of other members |
 | `room_update` | `{ type: string, roomId: string, data: unknown }` | Room or membership state change. `type` determines the subtype. See [`room_update` Subtypes](#room_update-subtypes). |
-| `friend_request` | `{ requesterId: string, addresseeId: string, status: 'pending' \| 'accepted' \| 'rejected' \| 'deleted' \| 'blocked' \| 'unblocked', createdAt: string }` | Friend lifecycle notification. Delivered to the relevant user; the client should refresh friend and pending-request lists upon receiving this event regardless of `status`. |
+| `friend_request` | `{ requesterId: string, addresseeId: string, status: 'pending' \| 'accepted' \| 'rejected' \| 'deleted' \| 'blocked' \| 'unblocked', createdAt: string }` | Friend lifecycle notification. Delivered to the other party of the change; `deleted` and `blocked` are also delivered to every session of the user who made the change, so their other tabs learn to end a call with that user. The client should refresh friend and pending-request lists upon receiving this event regardless of `status`. |
 | `user_status` | `{ userId: string, status: 'online' \| 'offline' }` | Presence update for a friend. Delivered when a friend connects or disconnects, and when the instance holding their last session shuts down gracefully. An abnormal termination (SIGKILL, OOM, a reclaimed container) announces nothing: the presence lease expires on its own TTL and no component watches for that, so friends keep a stale `online` until their next `GET /api/v1/friends`. Addressed to every friend's `user_<id>` room, so it reaches their sessions on any instance. While Redis is reachable a transition is announced once for the whole cluster, by the instance that took the first lease or released the last one. **Degraded case:** if the Redis command connection is down, each instance falls back to its own local view — so a client may receive a duplicate `online`, or an `offline` while the user is still connected to another instance. `GET /api/v1/friends` does not correct this during the outage: it derives `status` from the same presence lookup, which also falls back to the answering instance's own connections and so reports a user connected elsewhere as offline. Both paths converge once Redis is reachable again. |
 | `emergency_alert` | `{ userId: string, message: string }` | Receive emergency alert from contact |
 | `realtime_ready` | `void` | Durable room subscriptions have been restored; the client may begin `/sync`. Sent once per connection, and again to an individual socket whenever the server restores a subscription it had revoked, or leaves a room that socket was no longer permitted to hold |
-| `error` | `ApiError` | Error report for failed event processing |
+| `rtc_signal` | `RtcSignal & { fromUserId: string }` | A call signal from a friend, or the sender's own `accept` / `end` mirrored from another of their sessions. See [`rtc_signal` Call Signaling](#rtc_signal-call-signaling). |
+| `error` | `ApiError` | Error report for failed event processing. `rtc_signal` failures are reported only through that event's ack, never here |
+
+### `rtc_signal` Call Signaling
+
+Relays the signals two users exchange to set up a 1:1 WebRTC call. The media
+flows peer-to-peer; the server keeps no call state, writes nothing, and never
+replays a signal after a disconnection.
+
+**Client → server:** `socket.emit('rtc_signal', payload, ack)`, where `payload`
+is one of the following, told apart by `kind`:
+
+| `kind` | Fields | Purpose |
+| :--- | :--- | :--- |
+| `invite` | `callId`, `targetUserId`, `media: 'audio' \| 'video'` | Ring the target |
+| `accept` | `callId`, `targetUserId`, `sessionTag` | Answer, from the tab that picked up |
+| `sdp` | `callId`, `targetUserId`, `sessionTag`, `description: { type: 'offer' \| 'answer', sdp: string }` | Session description offer or answer |
+| `ice` | `callId`, `targetUserId`, `sessionTag`, `candidate: { candidate: string, sdpMid: string \| null, sdpMLineIndex: number \| null, usernameFragment?: string \| null }` | Trickled ICE candidate; an empty `candidate` marks end-of-candidates |
+| `end` | `callId`, `targetUserId`, `sessionTag?`, `reason: 'declined' \| 'cancelled' \| 'hangup' \| 'timeout' \| 'failed'` | Decline, cancel or hang up |
+
+- `callId` and `sessionTag` are 1–64 characters of `[A-Za-z0-9_-]`, chosen by the
+  client. `sessionTag` identifies the answering tab: generate it at random rather
+  than using `socket.id`, which changes on every token refresh. On `end`, omit it
+  rather than sending `null`.
+- `targetUserId` is at most 128 characters and is compared case-insensitively.
+
+**Ack:** `{ ok: true }` once the signal has been relayed. This is not a delivery
+receipt: a target with no connected session receives nothing. Otherwise
+`{ ok: false, error: ApiError }`:
+
+| `statusCode` | `code` | When |
+| :--- | :--- | :--- |
+| `400` | `VALIDATION_ERROR` | Unknown `kind`, `media` or `reason`; a missing or malformed field; `sdp` over 32 KiB or `candidate.candidate` over 1 KiB (UTF-8 bytes); `sdpMid` or `usernameFragment` over 256 characters; `sdpMLineIndex` not an integer from 0 to 65535 |
+| `403` | `FORBIDDEN` | `targetUserId` is the sender (`Cannot signal yourself`); or, for every `kind` except `end`, the two users are not accepted friends or either has blocked the other (`Cannot interact with this user` — one message for both, so a caller cannot tell a block from a non-friend) |
+| `429` | `TOO_MANY_REQUESTS` | More than 5 `invite`s from one caller to one target within 60 seconds, or more than 200 signals of any `kind` from one user within 10 seconds |
+| `500` | `INTERNAL_ERROR` | The relationship could not be read |
+
+**Server → client:** `rtc_signal` carrying the validated fields above plus
+`fromUserId`, which the server takes from the connection. A `fromUserId` or any
+other extra field sent by the client is dropped.
+
+**Rules:**
+
+- The relationship is read again for every signal and never cached, so an
+  unfriend or a block applies from the next signal. `end` is exempt, so a hangup
+  still reaches the peer after either change. Because of that exemption a client
+  must ignore an `end` whose `callId` it does not know.
+- A signal reaches every session of `targetUserId`. `accept` and `end` also reach
+  the sender's other sessions (all but the sending socket), so tabs that are still
+  ringing can stop.
+- Signals from one user are relayed in the order they arrive, including across
+  the socket replacement a token refresh causes.
+- Rate limits are counted per instance. The per-user limit counts every signal
+  that passed validation, including ones then refused with `403`; the `invite`
+  limit counts invitations to another user. Both follow the HTTP limits'
+  switch: off when `RATE_LIMIT_DISABLED=true`, and under `NODE_ENV=test`.
+- Accepting a call exposes ICE candidates to the peer, and those candidates carry
+  IP addresses.
 
 ---
 

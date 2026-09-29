@@ -221,6 +221,40 @@ describe('friendService', () => {
     expect(privateRooms.markPrivateReadOnly).toHaveBeenCalledWith('u1', 'u2');
   });
 
+  it('removeFriend tells both the former friend and the actor\'s own sessions', async () => {
+    const mockRepo = {
+      deleteFriendship: mock().mockResolvedValue(undefined)
+    } as any;
+    const notifyUser = mock();
+    const service = makeFriendService(mockRepo, notifyUser, { markPrivateReadOnly: mock() });
+
+    await service.removeFriend('u1', 'u2');
+
+    const event = { requesterId: 'u1', addresseeId: 'u2', status: 'deleted', createdAt: expect.any(Date) };
+    expect(notifyUser).toHaveBeenCalledTimes(2);
+    expect(notifyUser).toHaveBeenCalledWith('u2', 'friend_request', event);
+    expect(notifyUser.mock.calls.filter(([userId]) => userId === 'u1')).toEqual([
+      ['u1', 'friend_request', event],
+    ]);
+  });
+
+  it('blockUser tells both the blocked user and the blocker\'s own sessions', async () => {
+    const mockRepo = {
+      blockUser: mock().mockResolvedValue(undefined),
+    } as any;
+    const notifyUser = mock();
+    const service = makeFriendService(mockRepo, notifyUser, { markPrivateReadOnly: mock() });
+
+    await service.blockUser('u1', 'u2');
+
+    const event = { requesterId: 'u1', addresseeId: 'u2', status: 'blocked', createdAt: expect.any(Date) };
+    expect(notifyUser).toHaveBeenCalledTimes(2);
+    expect(notifyUser).toHaveBeenCalledWith('u2', 'friend_request', event);
+    expect(notifyUser.mock.calls.filter(([userId]) => userId === 'u1')).toEqual([
+      ['u1', 'friend_request', event],
+    ]);
+  });
+
   it('blockUser throws when blocking yourself', async () => {
     const service = makeFriendService({} as any);
     await expect(service.blockUser('u1', 'u1')).rejects.toThrow('Cannot block yourself');

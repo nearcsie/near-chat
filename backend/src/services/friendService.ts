@@ -127,12 +127,17 @@ export function makeFriendService(
       await repo.deleteFriendship(userId, friendId);
       await privateRooms?.markPrivateReadOnly(userId, friendId);
       if (notifyUser) {
-        notifyUser(friendId, 'friend_request', {
+        const event = {
           requesterId: userId,
           addresseeId: friendId,
           status: 'deleted',
           createdAt: new Date(),
-        });
+        };
+        notifyUser(friendId, 'friend_request', event);
+        // The actor's own sessions are told as well: a tab other than the one
+        // that made this request has no other way to learn it should end a
+        // call with the former friend.
+        notifyUser(userId, 'friend_request', event);
       }
     },
 
@@ -170,12 +175,16 @@ export function makeFriendService(
           await removeUserFromRoom?.(userId, privateRoomId);
           await removeUserFromRoom?.(targetUserId, privateRoomId);
         }
-        notifyUser?.(targetUserId, 'friend_request', {
+        const event = {
           requesterId: userId,
           addresseeId: targetUserId,
           status: 'blocked',
           createdAt: new Date(),
-        });
+        };
+        notifyUser?.(targetUserId, 'friend_request', event);
+        // Told to the blocker's own sessions too, for the same reason as in
+        // `removeFriend`: any of them may be in a call with the blocked user.
+        notifyUser?.(userId, 'friend_request', event);
         return { status: 'blocked' as const };
       };
       if (repo.withUserPairLock) return repo.withUserPairLock(userId, targetUserId, block);

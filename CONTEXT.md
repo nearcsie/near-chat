@@ -93,6 +93,12 @@ A short-lived signal that a user is composing in a room. Expires on its own and
 is never recovered after a disconnection.
 _Avoid_: Typing event, activity
 
+**Call Signal**:
+A short-lived message two friends exchange to set up, answer or end a 1:1 call.
+Relayed to the other user's Sessions and never stored, so one sent while its
+target is disconnected is lost rather than recovered.
+_Avoid_: Call event, signaling message
+
 **Emergency Alert**:
 A notification raised on a user's behalf to their designated contacts. Durable
 before it is ever announced, because a recipient who was offline must still

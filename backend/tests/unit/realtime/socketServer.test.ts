@@ -72,6 +72,7 @@ describe('attachSockets', () => {
     expect(handlers.recall_message).toBeUndefined();
     expect(handlers.read_receipt).toBeUndefined();
     expect(handlers.typing).toBeDefined();
+    expect(handlers.rtc_signal).toBeDefined();
   });
 
   it('broadcasts typing only after validating current membership', async () => {
@@ -223,7 +224,7 @@ describe('attachSockets', () => {
   });
 
   describe('with friendRepository', () => {
-    const friendRepo = { getFriends: mock() };
+    const friendRepo = { getFriends: mock(), areFriends: mock(), isBlocked: mock() };
 
     beforeEach(() => {
       presence.trackUserConnection.mockClear();
