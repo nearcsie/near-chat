@@ -26,7 +26,7 @@
   "dependencies": {
     "@hono/zod-validator": "^0.9.1",
     "@socket.io/bun-engine": "^0.1.2",
-    "hono": "^4.13.8",
+    "hono": "^4.13.11",
     "hono-rate-limiter": "^0.5.4",
     "pino": "^10.3.1",
     "sharp": "^0.35.4",
