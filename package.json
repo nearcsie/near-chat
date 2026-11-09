@@ -11,7 +11,7 @@
     "test:compose-invariants": "node scripts/check-compose-invariants.test.mjs"
   },
   "devDependencies": {
-    "semver": "^7.8.5",
+    "semver": "^7.8.6",
     "yaml": "^2.9.1"
   },
   "packageManager": "pnpm@11.15.0",
